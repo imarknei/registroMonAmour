@@ -29,6 +29,11 @@ export const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
   appId: "1:709382571048:web:66a1f8bf1bd86da51ee11d",
 };
 
+// Helper universal para eliminar campos 'undefined' antes de enviar a Firebase
+export const sanitizeForFirebase = <T>(data: T): T => {
+  return JSON.parse(JSON.stringify(data));
+};
+
 // Recuperar configuración guardada en LocalStorage o variables de entorno
 export const getStoredFirebaseConfig = (): FirebaseConfig => {
   try {
@@ -123,16 +128,38 @@ export const subscribeToRooms = async (
       (snapshot) => {
         if (snapshot.exists()) {
           const val = snapshot.val();
-          const roomsList: Room[] = Array.isArray(val)
+          const rawList: Room[] = Array.isArray(val)
             ? val.filter(Boolean)
             : Object.values(val);
 
-          // Ordenar por número/ID lógico
+          // Normalizar estructura para asegurar compatibilidad en todos los navegadores
+          const roomsList: Room[] = rawList.map((r: any) => ({
+            id: r.id,
+            number: r.number,
+            name: r.name,
+            type: r.type,
+            tag: r.tag,
+            status: r.status || 'disponible',
+            cleaningStartTime: r.cleaningStartTime || undefined,
+            currentStay: r.currentStay
+              ? {
+                  ...r.currentStay,
+                  consumptions: r.currentStay.consumptions
+                    ? Array.isArray(r.currentStay.consumptions)
+                      ? r.currentStay.consumptions
+                      : Object.values(r.currentStay.consumptions)
+                    : [],
+                }
+              : undefined,
+          }));
+
+          // Ordenar por número/ID lógico (1, 2, 3...)
           roomsList.sort((a, b) => {
             const numA = parseInt(a.id.replace(/\D/g, '')) || 999;
             const numB = parseInt(b.id.replace(/\D/g, '')) || 999;
             return numA - numB;
           });
+
           onData(roomsList);
         }
       },
@@ -260,9 +287,10 @@ export const syncRoomToFirestore = async (room: Room): Promise<void> => {
   if (!db) return;
   try {
     const { ref, set } = await import('firebase/database');
-    await set(ref(db, `rooms/${room.id}`), { ...room, updatedAt: new Date().toISOString() });
+    const cleanRoom = sanitizeForFirebase({ ...room, updatedAt: new Date().toISOString() });
+    await set(ref(db, `rooms/${room.id}`), cleanRoom);
   } catch (err) {
-    console.warn(`Error guardando room ${room.id} en Firebase:`, err);
+    console.error(`Error guardando room ${room.id} en Firebase:`, err);
   }
 };
 
@@ -271,9 +299,10 @@ export const syncProductToFirestore = async (product: Product): Promise<void> =>
   if (!db) return;
   try {
     const { ref, set } = await import('firebase/database');
-    await set(ref(db, `products/${product.id}`), { ...product, updatedAt: new Date().toISOString() });
+    const cleanProd = sanitizeForFirebase({ ...product, updatedAt: new Date().toISOString() });
+    await set(ref(db, `products/${product.id}`), cleanProd);
   } catch (err) {
-    console.warn(`Error guardando product ${product.id} en Firebase:`, err);
+    console.error(`Error guardando product ${product.id} en Firebase:`, err);
   }
 };
 
@@ -284,7 +313,7 @@ export const deleteProductFromFirestore = async (productId: string): Promise<voi
     const { ref, remove } = await import('firebase/database');
     await remove(ref(db, `products/${productId}`));
   } catch (err) {
-    console.warn(`Error eliminando product ${productId} de Firebase:`, err);
+    console.error(`Error eliminando product ${productId} de Firebase:`, err);
   }
 };
 
@@ -293,9 +322,10 @@ export const syncTariffsToFirestore = async (tariffs: TariffCatalog): Promise<vo
   if (!db) return;
   try {
     const { ref, set } = await import('firebase/database');
-    await set(ref(db, 'motel_config/tariffs'), { ...tariffs, updatedAt: new Date().toISOString() });
+    const cleanTariffs = sanitizeForFirebase({ ...tariffs, updatedAt: new Date().toISOString() });
+    await set(ref(db, 'motel_config/tariffs'), cleanTariffs);
   } catch (err) {
-    console.warn('Error guardando tariffs en Firebase:', err);
+    console.error('Error guardando tariffs en Firebase:', err);
   }
 };
 
@@ -304,9 +334,10 @@ export const syncShiftToFirestore = async (shift: Shift): Promise<void> => {
   if (!db) return;
   try {
     const { ref, set } = await import('firebase/database');
-    await set(ref(db, `shifts/${shift.id}`), shift);
+    const cleanShift = sanitizeForFirebase(shift);
+    await set(ref(db, `shifts/${shift.id}`), cleanShift);
   } catch (err) {
-    console.warn(`Error guardando shift ${shift.id} en Firebase:`, err);
+    console.error(`Error guardando shift ${shift.id} en Firebase:`, err);
   }
 };
 
@@ -315,9 +346,10 @@ export const syncExpenseToFirestore = async (expense: Expense): Promise<void> =>
   if (!db) return;
   try {
     const { ref, set } = await import('firebase/database');
-    await set(ref(db, `expenses/${expense.id}`), expense);
+    const cleanExpense = sanitizeForFirebase(expense);
+    await set(ref(db, `expenses/${expense.id}`), cleanExpense);
   } catch (err) {
-    console.warn(`Error guardando expense ${expense.id} en Firebase:`, err);
+    console.error(`Error guardando expense ${expense.id} en Firebase:`, err);
   }
 };
 
@@ -339,17 +371,17 @@ export const uploadAllDataToFirebase = async (data: {
     data.rooms.forEach((r) => {
       roomsMap[r.id] = r;
     });
-    await set(ref(db, 'rooms'), roomsMap);
+    await set(ref(db, 'rooms'), sanitizeForFirebase(roomsMap));
 
     // 2. Productos
     const prodMap: Record<string, Product> = {};
     data.products.forEach((p) => {
       prodMap[p.id] = p;
     });
-    await set(ref(db, 'products'), prodMap);
+    await set(ref(db, 'products'), sanitizeForFirebase(prodMap));
 
     // 3. Tarifas
-    await set(ref(db, 'motel_config/tariffs'), data.tariffs);
+    await set(ref(db, 'motel_config/tariffs'), sanitizeForFirebase(data.tariffs));
 
     // 4. Turnos si existen
     if (data.shiftsHistory && data.shiftsHistory.length > 0) {
@@ -357,7 +389,7 @@ export const uploadAllDataToFirebase = async (data: {
       data.shiftsHistory.forEach((s) => {
         shiftsMap[s.id] = s;
       });
-      await set(ref(db, 'shifts'), shiftsMap);
+      await set(ref(db, 'shifts'), sanitizeForFirebase(shiftsMap));
     }
 
     // 5. Gastos si existen
@@ -366,12 +398,12 @@ export const uploadAllDataToFirebase = async (data: {
       data.expenses.forEach((e) => {
         expMap[e.id] = e;
       });
-      await set(ref(db, 'expenses'), expMap);
+      await set(ref(db, 'expenses'), sanitizeForFirebase(expMap));
     }
 
     return { success: true, message: 'Todos los datos se subieron a Firebase con éxito.' };
   } catch (err: any) {
-    console.warn('Error subiendo todo a Firebase:', err);
+    console.error('Error subiendo todo a Firebase:', err);
     return { success: false, message: err.message || 'Error al subir datos' };
   }
 };
