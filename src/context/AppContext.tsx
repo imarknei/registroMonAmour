@@ -41,6 +41,8 @@ import {
   subscribeToProducts,
   subscribeToTariffs,
   subscribeToExpenses,
+  subscribeToAllShifts,
+  subscribeToAllStays,
   subscribeToShifts,
   subscribeToCompletedStays,
   syncRoomToFirestore,
@@ -48,8 +50,9 @@ import {
   deleteProductFromFirestore,
   syncTariffsToFirestore,
   syncShiftToFirestore,
-  syncExpenseToFirestore,
+  syncStayToFirebase,
   syncCompletedStayToFirebase,
+  syncExpenseToFirestore,
   getFirebaseDb,
   getStoredFirebaseConfig,
 } from '../services/firebase';
@@ -351,16 +354,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (unsubExp) unsubs.push(unsubExp);
 
-      // Subscribe to Realtime Shifts History (Historial de turnos y arqueos para el admin)
-      const unsubShifts = await subscribeToShifts((firestoreShifts) => {
+      // Subscribe to Realtime Shifts History (Todos los turnos para el admin)
+      const unsubShifts = await subscribeToAllShifts((firestoreShifts) => {
         if (firestoreShifts) {
           setShiftsHistory(firestoreShifts);
+          // Sincronizar también turnos activos en curso
+          const openMap: Record<string, Shift> = {};
+          firestoreShifts.filter((s) => s.status === 'open').forEach((s) => {
+            openMap[s.receptionistId] = s;
+          });
+          if (Object.keys(openMap).length > 0) {
+            setActiveShifts((prev) => ({ ...prev, ...openMap }));
+          }
         }
       });
       if (unsubShifts) unsubs.push(unsubShifts);
 
-      // Subscribe to Realtime Completed Stays (Reportes de ventas en vivo para el admin)
-      const unsubStays = await subscribeToCompletedStays((firestoreStays) => {
+      // Subscribe to Realtime All Stays (Todas las habitaciones y estadías en vivo)
+      const unsubStays = await subscribeToAllStays((firestoreStays) => {
         if (firestoreStays) {
           setCompletedStays(firestoreStays);
         }
@@ -588,6 +599,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Sync to Cloud Firebase Realtime DB
     syncRoomToFirestore(updatedRoom);
+    syncStayToFirebase(newStay);
+    setCompletedStays((prev) => [newStay, ...prev.filter((s) => s.id !== newStay.id)]);
 
     playSuccessChime();
     showToast({
@@ -640,16 +653,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString(),
     };
 
+    const updatedStay: Stay = {
+      ...room.currentStay,
+      consumptions: [...room.currentStay.consumptions, consumptionItem],
+    };
+
     const updatedRoom: Room = {
       ...room,
-      currentStay: {
-        ...room.currentStay,
-        consumptions: [...room.currentStay.consumptions, consumptionItem],
-      },
+      currentStay: updatedStay,
     };
 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
     syncRoomToFirestore(updatedRoom);
+    syncStayToFirebase(updatedStay);
+    setCompletedStays((prev) => prev.map((s) => (s.id === updatedStay.id ? updatedStay : s)));
 
     // 3. Play sound & emit interactive toast with UNDO action
     playAddConsumptionSound();
@@ -684,16 +701,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncProductToFirestore(updatedProduct);
     }
 
+    const updatedStay: Stay = {
+      ...room.currentStay,
+      consumptions: room.currentStay.consumptions.filter((c) => c.id !== consumptionId),
+    };
+
     const updatedRoom: Room = {
       ...room,
-      currentStay: {
-        ...room.currentStay,
-        consumptions: room.currentStay.consumptions.filter((c) => c.id !== consumptionId),
-      },
+      currentStay: updatedStay,
     };
 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
     syncRoomToFirestore(updatedRoom);
+    syncStayToFirebase(updatedStay);
+    setCompletedStays((prev) => prev.map((s) => (s.id === updatedStay.id ? updatedStay : s)));
 
     if (!silent) {
       playUndoSound();
