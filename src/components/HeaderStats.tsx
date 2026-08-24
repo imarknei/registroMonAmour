@@ -120,13 +120,22 @@ export const HeaderStats: React.FC = () => {
         {currentShift && (
           <div className="text-right text-xs space-y-0.5 pr-1 hidden xs:block">
             <div className="text-rose-100">
-              <span className="opacity-75">Gaveta (c/Caja Chica):</span>{' '}
+              <span className="opacity-75">Gaveta (c/Caja Chica y Pagos):</span>{' '}
               <strong className="font-mono font-bold text-white">
-                {formatBs((currentShift.initialCashFloat || 100) + currentShift.expectedCash)}
+                {formatBs(
+                  (currentShift.initialCashFloat || 100) +
+                    currentShift.expectedCash -
+                    (currentShift.totalExpensesCash || 0)
+                )}
               </strong>
             </div>
             <div className="text-rose-200 text-[11px]">
               <span className="opacity-75">Ventas:</span> Efec: {formatBs(currentShift.expectedCash)} | QR: {formatBs(currentShift.expectedQr)}
+              {(currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0) > 0 && (
+                <span className="text-amber-200 font-semibold ml-1.5">
+                  | Pagos: -{formatBs((currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0))}
+                </span>
+              )}
             </div>
           </div>
         )}

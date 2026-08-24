@@ -1,9 +1,12 @@
 /**
- * Servicio de Integración con Firebase Cloud Firestore
+ * Servicio de Integración y Sincronización en Tiempo Real con Firebase Cloud Firestore
  * Motel "Mon Amour"
  * 
- * Permite sincronización en tiempo real entre múltiples dispositivos (Recepción, Celular de Administrador, etc.)
+ * Permite que los cambios de inventario, habitaciones y turnos se sincronicen
+ * en vivo (en milisegundos) entre todos los dispositivos conectados (Recepción, Celulares, etc.)
  */
+
+import { Room, Product, TariffCatalog, Shift, Expense, Stay } from '../types';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -51,7 +54,7 @@ export const clearStoredFirebaseConfig = (): void => {
   localStorage.removeItem(FIREBASE_STORAGE_KEY);
 };
 
-// Variable para almacenar la instancia de Firestore si está disponible
+// Instancias globales
 let firestoreDb: any = null;
 let firebaseApp: any = null;
 
@@ -62,9 +65,8 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
   }
 
   try {
-    // Importación dinámica para compatibilidad con o sin paquete firebase precompilado
     const { initializeApp, getApps, getApp } = await import('firebase/app');
-    const { getFirestore } = await import('firebase/firestore');
+    const { getFirestore, enableIndexedDbPersistence } = await import('firebase/firestore');
 
     if (getApps().length === 0) {
       firebaseApp = initializeApp(finalConfig);
@@ -73,6 +75,14 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
     }
 
     firestoreDb = getFirestore(firebaseApp);
+
+    // Intentar habilitar persistencia local offline (si el navegador lo permite)
+    try {
+      await enableIndexedDbPersistence(firestoreDb);
+    } catch {
+      // Ignorar si ya está inicializado o en múltiples pestañas
+    }
+
     return { success: true, db: firestoreDb };
   } catch (err: any) {
     console.warn('Error inicializando Firebase:', err);
@@ -81,3 +91,218 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
 };
 
 export const getFirestoreDb = () => firestoreDb;
+
+// ==========================================
+// 🔄 LISTENERS EN TIEMPO REAL (onSnapshot)
+// ==========================================
+
+export const subscribeToRooms = async (
+  onData: (rooms: Room[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = firestoreDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { collection, onSnapshot } = await import('firebase/firestore');
+    const roomsCol = collection(db, 'rooms');
+
+    const unsubscribe = onSnapshot(
+      roomsCol,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const roomsList: Room[] = [];
+          snapshot.forEach((doc) => {
+            roomsList.push(doc.data() as Room);
+          });
+          // Ordenar por ID para mantener orden lógico 1, 2, 3...
+          roomsList.sort((a, b) => {
+            const numA = parseInt(a.id.replace(/\D/g, '')) || 999;
+            const numB = parseInt(b.id.replace(/\D/g, '')) || 999;
+            return numA - numB;
+          });
+          onData(roomsList);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de rooms:', err);
+        onError?.(err);
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Error suscribiendo a rooms:', err);
+    return null;
+  }
+};
+
+export const subscribeToProducts = async (
+  onData: (products: Product[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = firestoreDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { collection, onSnapshot } = await import('firebase/firestore');
+    const prodCol = collection(db, 'products');
+
+    const unsubscribe = onSnapshot(
+      prodCol,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const prodList: Product[] = [];
+          snapshot.forEach((doc) => {
+            prodList.push(doc.data() as Product);
+          });
+          onData(prodList);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de products:', err);
+        onError?.(err);
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Error suscribiendo a products:', err);
+    return null;
+  }
+};
+
+export const subscribeToTariffs = async (
+  onData: (tariffs: TariffCatalog) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = firestoreDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { doc, onSnapshot } = await import('firebase/firestore');
+    const tariffDoc = doc(db, 'motel_config', 'tariffs');
+
+    const unsubscribe = onSnapshot(
+      tariffDoc,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onData(snapshot.data() as TariffCatalog);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de tariffs:', err);
+        onError?.(err);
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Error suscribiendo a tariffs:', err);
+    return null;
+  }
+};
+
+export const subscribeToExpenses = async (
+  onData: (expenses: Expense[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = firestoreDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { collection, onSnapshot, query, orderBy, limit } = await import('firebase/firestore');
+    const expCol = collection(db, 'expenses');
+    const q = query(expCol, orderBy('timestamp', 'desc'), limit(100));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const expList: Expense[] = [];
+        snapshot.forEach((doc) => {
+          expList.push(doc.data() as Expense);
+        });
+        onData(expList);
+      },
+      (err) => {
+        console.warn('Error en listener de expenses:', err);
+        onError?.(err);
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Error suscribiendo a expenses:', err);
+    return null;
+  }
+};
+
+// ==========================================
+// 💾 ESCRITURAS A FIRESTORE (Mutaciones)
+// ==========================================
+
+export const syncRoomToFirestore = async (room: Room): Promise<void> => {
+  const db = firestoreDb;
+  if (!db) return;
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'rooms', room.id), { ...room, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn(`Error guardando room ${room.id} en Firestore:`, err);
+  }
+};
+
+export const syncProductToFirestore = async (product: Product): Promise<void> => {
+  const db = firestoreDb;
+  if (!db) return;
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'products', product.id), { ...product, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn(`Error guardando product ${product.id} en Firestore:`, err);
+  }
+};
+
+export const deleteProductFromFirestore = async (productId: string): Promise<void> => {
+  const db = firestoreDb;
+  if (!db) return;
+  try {
+    const { doc, deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(db, 'products', productId));
+  } catch (err) {
+    console.warn(`Error eliminando product ${productId} de Firestore:`, err);
+  }
+};
+
+export const syncTariffsToFirestore = async (tariffs: TariffCatalog): Promise<void> => {
+  const db = firestoreDb;
+  if (!db) return;
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'motel_config', 'tariffs'), { ...tariffs, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('Error guardando tariffs en Firestore:', err);
+  }
+};
+
+export const syncShiftToFirestore = async (shift: Shift): Promise<void> => {
+  const db = firestoreDb;
+  if (!db) return;
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'shifts', shift.id), shift);
+  } catch (err) {
+    console.warn(`Error guardando shift ${shift.id} en Firestore:`, err);
+  }
+};
+
+export const syncExpenseToFirestore = async (expense: Expense): Promise<void> => {
+  const db = firestoreDb;
+  if (!db) return;
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'expenses', expense.id), expense);
+  } catch (err) {
+    console.warn(`Error guardando expense ${expense.id} en Firestore:`, err);
+  }
+};

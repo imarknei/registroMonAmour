@@ -25,7 +25,7 @@ export interface Room {
   cleaningStartTime?: string;
 }
 
-export type PlanType = '1h' | '2h' | '3h' | 'promo190' | 'noche12h' | 'personalizado';
+export type PlanType = '1h' | '2h' | '3h' | 'promo190' | 'promo3h' | 'noche12h' | 'noche' | 'personalizado';
 
 export type PaymentMethod = 'efectivo' | 'qr' | 'mixto';
 
@@ -104,6 +104,28 @@ export interface User {
 
 export type ShiftType = 'dia' | 'noche';
 
+export type ExpenseCategory =
+  | 'proveedores'       // Ej: Coca-Cola, Cerveza, Bebidas, Preservativos
+  | 'mantenimiento'     // Ej: Albañil, Plomero, Electricista, Reparaciones
+  | 'servicios'         // Ej: Luz, Agua, Internet, Gas
+  | 'limpieza_insumos'  // Ej: Detergentes, Papel higiénico, Jabón
+  | 'personal_adelanto' // Ej: Pago de jornales, adelanto de sueldo
+  | 'otros';
+
+export interface Expense {
+  id: string;
+  description: string; // Ej: "Coca-Cola (packs de mini sodas)", "Albañil reparación hab 3"
+  category: ExpenseCategory;
+  amount: number;
+  paymentMethod: 'efectivo' | 'qr';
+  timestamp: string;
+  shiftId: string;
+  registeredById: string;
+  registeredByName: string;
+  receiptNumber?: string;
+  notes?: string;
+}
+
 export interface Shift {
   id: string;
   receptionistId: string;
@@ -117,8 +139,11 @@ export interface Shift {
   handoverCashFloat?: number; // Fondo de caja chica dejado al siguiente turno
   expectedCash: number; // Ventas esperadas en efectivo
   expectedQr: number;   // Ventas esperadas en QR
-  totalPhysicalCashInDrawer?: number; // Total físico contado en gaveta (Fondo + Ventas)
-  declaredCash?: number; // Ventas declaradas en efectivo (Total contado - Fondo)
+  expenses?: Expense[]; // Lista de pagos/egresos registrados durante el turno
+  totalExpensesCash?: number; // Total egresos pagados en efectivo
+  totalExpensesQr?: number;   // Total egresos pagados en QR
+  totalPhysicalCashInDrawer?: number; // Total físico contado en gaveta
+  declaredCash?: number; // Ventas netas declaradas en efectivo (Total contado - Fondo + Egresos)
   declaredQr?: number;   // Ventas declaradas en QR
   differenceCash?: number;
   differenceQr?: number;
@@ -141,6 +166,8 @@ export interface WeeklyDiscountReport {
   totalExpectedQr: number;
   totalDeclaredCash: number;
   totalDeclaredQr: number;
+  totalExpensesCash?: number;
+  totalExpensesQr?: number;
   totalFaltante: number;
   totalDiscount: number;
 }

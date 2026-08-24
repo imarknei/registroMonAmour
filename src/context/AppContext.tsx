@@ -1,16 +1,25 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import {
   Room,
-  TariffCatalog,
+  RoomStatus,
   Product,
+  TariffCatalog,
   User,
   Shift,
   Stay,
-  PlanType,
-  PaymentMethod,
-  RoomStatus,
-  ConsumptionItem,
   ToastMessage,
+  PaymentMethod,
+  ConsumptionItem,
+  Expense,
+  ExpenseCategory,
+  PlanType,
 } from '../types';
 import {
   INITIAL_ROOMS,
@@ -19,14 +28,29 @@ import {
   SYSTEM_USERS,
 } from '../data/initialData';
 import { calculateStayTime } from '../utils/timeUtils';
-import { formatBs } from '../utils/formatUtils';
 import {
-  playSuccessChime,
-  playOvertimeAlert,
   playWarningBeep,
+  playOvertimeAlert,
+  playSuccessChime,
   playAddConsumptionSound,
   playUndoSound,
 } from '../utils/soundUtils';
+import { formatBs } from '../utils/formatUtils';
+import {
+  initializeFirebaseClient,
+  subscribeToRooms,
+  subscribeToProducts,
+  subscribeToTariffs,
+  subscribeToExpenses,
+  syncRoomToFirestore,
+  syncProductToFirestore,
+  deleteProductFromFirestore,
+  syncTariffsToFirestore,
+  syncShiftToFirestore,
+  syncExpenseToFirestore,
+  getFirestoreDb,
+  getStoredFirebaseConfig,
+} from '../services/firebase';
 
 interface AppContextType {
   // State
@@ -37,21 +61,36 @@ interface AppContextType {
   currentShift: Shift | null;
   shiftsHistory: Shift[];
   completedStays: Stay[];
-  nowTimestamp: number;
+  expenses: Expense[];
   soundAlertsEnabled: boolean;
   toasts: ToastMessage[];
-
-  // Toast actions
-  showToast: (toast: Omit<ToastMessage, 'id'>) => string;
-  dismissToast: (id: string) => void;
+  nowTimestamp: number;
+  isFirestoreConnected: boolean;
 
   // Actions
   setCurrentUserById: (userId: string) => void;
   toggleSoundAlerts: () => void;
-  registerStay: (params: {
+  showToast: (toast: Omit<ToastMessage, 'id'>) => string;
+  dismissToast: (id: string) => void;
+
+  // Room Operations
+  registerStay: (entryData: {
     roomId: string;
-    chosenPlan: PlanType;
-    durationMinutes: number;
+    chosenPlan: '1h' | '2h' | '3h' | 'noche' | 'promo3h' | any;
+    durationMinutes?: number;
+    chosenDurationMinutes?: number;
+    basePrice: number;
+    paymentMethod: PaymentMethod;
+    cashPaid?: number;
+    qrPaid?: number;
+    vehiclePlate?: string;
+    notes?: string;
+  }) => void;
+  registerRoomEntry: (entryData: {
+    roomId: string;
+    chosenPlan: '1h' | '2h' | '3h' | 'noche' | 'promo3h' | any;
+    durationMinutes?: number;
+    chosenDurationMinutes?: number;
     basePrice: number;
     paymentMethod: PaymentMethod;
     cashPaid?: number;
@@ -72,6 +111,18 @@ interface AppContextType {
     }
   ) => Stay | null;
   changeRoomStatus: (roomId: string, newStatus: RoomStatus) => void;
+
+  // Expenses / Shift Payments
+  addExpenseToShift: (expenseData: {
+    description: string;
+    category: ExpenseCategory;
+    amount: number;
+    paymentMethod: 'efectivo' | 'qr';
+    receiptNumber?: string;
+    notes?: string;
+  }) => void;
+
+  // Shift & Cash Closing
   closeCurrentShift: (
     responsiblePersonName: string,
     totalPhysicalCashInDrawer: number,
@@ -79,7 +130,7 @@ interface AppContextType {
     handoverCashFloat: number,
     notes?: string
   ) => Shift | null;
-  
+
   // Admin functions
   saveProduct: (product: Product) => void;
   deleteProductById: (productId: string) => void;
@@ -99,6 +150,7 @@ const STORAGE_KEYS = {
   SHIFTS_HISTORY: 'mon_amour_shifts_v1',
   ACTIVE_SHIFTS: 'mon_amour_active_shifts_v1',
   COMPLETED_STAYS: 'mon_amour_completed_stays_v1',
+  EXPENSES: 'mon_amour_expenses_v1',
   SOUND_ENABLED: 'mon_amour_sound_enabled_v1',
 };
 
@@ -133,8 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-      return saved || SYSTEM_USERS[1].id; // Default to Recepcionista Día
+      return localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID) || SYSTEM_USERS[1].id;
     } catch {
       return SYSTEM_USERS[1].id;
     }
@@ -149,7 +200,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Active shifts dictionary keyed by receptionist ID
   const [activeShifts, setActiveShifts] = useState<Record<string, Shift>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_SHIFTS);
@@ -162,6 +212,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [completedStays, setCompletedStays] = useState<Stay[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.COMPLETED_STAYS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.EXPENSES);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -182,6 +241,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Ticking clock for real-time room timers
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
+
+  // Firebase connection state
+  const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
 
   // Current logged in user object
   const currentUser = SYSTEM_USERS.find((u) => u.id === currentUserId) || SYSTEM_USERS[1];
@@ -219,6 +281,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [completedStays]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+  }, [expenses]);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, JSON.stringify(soundAlertsEnabled));
   }, [soundAlertsEnabled]);
 
@@ -230,7 +296,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(timer);
   }, []);
 
-  // 4. Ensure current user has an active shift
+  // 4. Firebase Cloud Firestore REALTIME SYNC (onSnapshot)
+  useEffect(() => {
+    let unsubs: (() => void)[] = [];
+
+    const setupFirebaseSync = async () => {
+      const conf = getStoredFirebaseConfig();
+      if (!conf || !conf.projectId || !conf.apiKey) return;
+
+      const initRes = await initializeFirebaseClient(conf);
+      if (!initRes.success) return;
+
+      setIsFirestoreConnected(true);
+
+      // Subscribe to Realtime Rooms
+      const unsubRooms = await subscribeToRooms((firestoreRooms) => {
+        if (firestoreRooms && firestoreRooms.length > 0) {
+          setRooms(firestoreRooms);
+        }
+      });
+      if (unsubRooms) unsubs.push(unsubRooms);
+
+      // Subscribe to Realtime Products (Minibar/Inventario)
+      const unsubProd = await subscribeToProducts((firestoreProducts) => {
+        if (firestoreProducts && firestoreProducts.length > 0) {
+          setProducts(firestoreProducts);
+        }
+      });
+      if (unsubProd) unsubs.push(unsubProd);
+
+      // Subscribe to Realtime Tariffs
+      const unsubTariffs = await subscribeToTariffs((firestoreTariffs) => {
+        if (firestoreTariffs) {
+          setTariffs(firestoreTariffs);
+        }
+      });
+      if (unsubTariffs) unsubs.push(unsubTariffs);
+
+      // Subscribe to Realtime Expenses
+      const unsubExp = await subscribeToExpenses((firestoreExpenses) => {
+        if (firestoreExpenses) {
+          setExpenses(firestoreExpenses);
+        }
+      });
+      if (unsubExp) unsubs.push(unsubExp);
+    };
+
+    setupFirebaseSync();
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, []);
+
+  // 5. Ensure current user has an active shift
   const ensureActiveShift = useCallback((user: User): Shift => {
     if (activeShifts[user.id]) {
       return activeShifts[user.id];
@@ -247,6 +366,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       initialCashFloat: 100,
       expectedCash: 0,
       expectedQr: 0,
+      totalExpensesCash: 0,
+      totalExpensesQr: 0,
+      expenses: [],
       salesCount: 0,
       stayIds: [],
     };
@@ -256,6 +378,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       [user.id]: newShift,
     }));
 
+    syncShiftToFirestore(newShift);
     return newShift;
   }, [activeShifts]);
 
@@ -285,7 +408,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [dismissToast]
   );
 
-  // 5. Sound alerts watchdog for occupied rooms
+  // Sound alerts watchdog for occupied rooms
   useEffect(() => {
     if (!soundAlertsEnabled) return;
 
@@ -300,44 +423,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           playWarningBeep();
           setPlayedAlerts((prev) => ({
             ...prev,
-            [stayKey]: { ...prev[stayKey], warning: true },
+            [stayKey]: { ...alertState, warning: true },
           }));
+          showToast({
+            title: `¡Tiempo por Vencer!`,
+            message: `${room.name}: Quedan menos de 5 minutos de estadía.`,
+            type: 'warning',
+          });
         }
 
         if (calc.isOvertime && !alertState.overtime) {
           playOvertimeAlert();
           setPlayedAlerts((prev) => ({
             ...prev,
-            [stayKey]: { ...prev[stayKey], overtime: true },
+            [stayKey]: { ...alertState, overtime: true },
           }));
+          showToast({
+            title: `¡Tiempo Excedido!`,
+            message: `${room.name}: Ha excedido el tiempo fijado. Recargo actual: ${formatBs(calc.overtimeCharge)}.`,
+            type: 'error',
+          });
         }
       }
     });
-  }, [nowTimestamp, rooms, soundAlertsEnabled, playedAlerts]);
+  }, [nowTimestamp, rooms, soundAlertsEnabled, playedAlerts, showToast]);
 
   // Actions
   const setCurrentUserById = (userId: string) => {
     setCurrentUserId(userId);
+    const selectedUser = SYSTEM_USERS.find((u) => u.id === userId);
+    if (selectedUser) {
+      showToast({
+        title: 'Usuario Actualizado',
+        message: `Sesión activa: ${selectedUser.name} (${selectedUser.shiftName})`,
+        type: 'info',
+        durationMs: 3000,
+      });
+    }
   };
 
   const toggleSoundAlerts = () => {
-    setSoundAlertsEnabled((prev) => !prev);
+    setSoundAlertsEnabled((prev) => {
+      const next = !prev;
+      showToast({
+        title: next ? 'Sonido Activado' : 'Sonido Silenciado',
+        message: next
+          ? 'Se emitirán tonos de alerta antes de vencer el tiempo y al registrar consumos.'
+          : 'Alertas sonoras silenciadas.',
+        type: 'info',
+        durationMs: 2500,
+      });
+      return next;
+    });
   };
 
-  const registerStay = ({
-    roomId,
-    chosenPlan,
-    durationMinutes,
-    basePrice,
-    paymentMethod,
-    cashPaid,
-    qrPaid,
-    vehiclePlate,
-    notes,
-  }: {
+  // ROOM OPERATIONS
+  const registerRoomEntry = (entryData: {
     roomId: string;
     chosenPlan: PlanType;
-    durationMinutes: number;
+    chosenDurationMinutes?: number;
+    durationMinutes?: number;
     basePrice: number;
     paymentMethod: PaymentMethod;
     cashPaid?: number;
@@ -345,76 +490,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     vehiclePlate?: string;
     notes?: string;
   }) => {
-    const room = rooms.find((r) => r.id === roomId);
+    const room = rooms.find((r) => r.id === entryData.roomId);
     if (!room) return;
 
+    const duration = entryData.chosenDurationMinutes || entryData.durationMinutes || 60;
+    const stayId = `stay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const newStay: Stay = {
-      id: `stay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      roomId,
+      id: stayId,
+      roomId: room.id,
       roomName: room.name,
       roomType: room.type,
+      startTime: new Date().toISOString(),
+      chosenPlan: entryData.chosenPlan,
+      chosenDurationMinutes: duration,
+      baseRoomPrice: entryData.basePrice,
+      paymentMethod: entryData.paymentMethod,
+      cashPaid: entryData.cashPaid,
+      qrPaid: entryData.qrPaid,
+      vehiclePlate: entryData.vehiclePlate,
       receptionistId: currentUser.id,
       receptionistName: currentUser.name,
-      startTime: new Date().toISOString(),
-      chosenDurationMinutes: durationMinutes,
-      chosenPlan,
-      baseRoomPrice: basePrice,
-      paymentMethod,
-      cashPaid,
-      qrPaid,
       consumptions: [],
-      vehiclePlate: vehiclePlate?.trim() || undefined,
-      notes: notes?.trim() || undefined,
+      notes: entryData.notes,
       status: 'active',
     };
 
-    // Update room
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id === roomId
-          ? {
-              ...r,
-              status: 'ocupada',
-              currentStay: newStay,
-            }
-          : r
-      )
-    );
+    const updatedRoom: Room = {
+      ...room,
+      status: 'ocupada',
+      currentStay: newStay,
+      cleaningStartTime: undefined,
+    };
+
+    // Update state locally
+    setRooms((prev) => prev.map((r) => (r.id === room.id ? updatedRoom : r)));
+
+    // Sync to Cloud Firestore in Realtime
+    syncRoomToFirestore(updatedRoom);
 
     playSuccessChime();
     showToast({
       title: 'Habitación Registrada',
-      message: `${room.name} ocupada por ${durationMinutes / 60}h (${formatBs(basePrice)})`,
+      message: `${room.name} ocupada (${entryData.chosenPlan.toUpperCase()} - ${formatBs(entryData.basePrice)})`,
       type: 'success',
-      durationMs: 4000,
     });
   };
 
   const addConsumptionToRoom = (roomId: string, productId: string, quantity = 1): boolean => {
-    const product = products.find((p) => p.id === productId);
     const room = rooms.find((r) => r.id === roomId);
-    if (!product || !room || !room.currentStay || product.stock < quantity) {
-      if (product && product.stock < quantity) {
-        showToast({
-          title: 'Stock insuficiente',
-          message: `Solo quedan ${product.stock} unidades de ${product.name}`,
-          type: 'error',
-        });
-      }
+    const product = products.find((p) => p.id === productId);
+
+    if (!room || !room.currentStay || !product) {
+      showToast({
+        title: 'Error al agregar consumo',
+        message: 'No se encontró la habitación activa o el producto.',
+        type: 'error',
+      });
+      return false;
+    }
+
+    if (product.stock < quantity) {
+      showToast({
+        title: 'Stock Insuficiente',
+        message: `Solo quedan ${product.stock} unidades de ${product.name}`,
+        type: 'error',
+      });
       return false;
     }
 
     // 1. Discount stock
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === productId
-          ? {
-              ...p,
-              stock: p.stock - quantity,
-            }
-          : p
-      )
-    );
+    const updatedProduct = {
+      ...product,
+      stock: product.stock - quantity,
+    };
+
+    setProducts((prev) => prev.map((p) => (p.id === productId ? updatedProduct : p)));
+    syncProductToFirestore(updatedProduct);
 
     // 2. Add to room stay
     const consumptionId = `cons-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
@@ -428,20 +579,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString(),
     };
 
-    setRooms((prev) =>
-      prev.map((r) => {
-        if (r.id === roomId && r.currentStay) {
-          return {
-            ...r,
-            currentStay: {
-              ...r.currentStay,
-              consumptions: [...r.currentStay.consumptions, consumptionItem],
-            },
-          };
-        }
-        return r;
-      })
-    );
+    const updatedRoom: Room = {
+      ...room,
+      currentStay: {
+        ...room.currentStay,
+        consumptions: [...room.currentStay.consumptions, consumptionItem],
+      },
+    };
+
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
+    syncRoomToFirestore(updatedRoom);
 
     // 3. Play sound & emit interactive toast with UNDO action
     playAddConsumptionSound();
@@ -466,41 +613,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const item = room.currentStay.consumptions.find((c) => c.id === consumptionId);
     if (!item) return;
 
-    // 1. Restore product stock
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === item.productId
-          ? {
-              ...p,
-              stock: p.stock + item.quantity,
-            }
-          : p
-      )
-    );
+    const product = products.find((p) => p.id === item.productId);
+    if (product) {
+      const updatedProduct = {
+        ...product,
+        stock: product.stock + item.quantity,
+      };
+      setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
+      syncProductToFirestore(updatedProduct);
+    }
 
-    // 2. Remove from room stay
-    setRooms((prev) =>
-      prev.map((r) => {
-        if (r.id === roomId && r.currentStay) {
-          return {
-            ...r,
-            currentStay: {
-              ...r.currentStay,
-              consumptions: r.currentStay.consumptions.filter((c) => c.id !== consumptionId),
-            },
-          };
-        }
-        return r;
-      })
-    );
+    const updatedRoom: Room = {
+      ...room,
+      currentStay: {
+        ...room.currentStay,
+        consumptions: room.currentStay.consumptions.filter((c) => c.id !== consumptionId),
+      },
+    };
+
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
+    syncRoomToFirestore(updatedRoom);
 
     if (!silent) {
       playUndoSound();
       showToast({
         title: 'Consumo Revertido',
-        message: `Se canceló ${item.quantity}x ${item.productName} y se repusieron ${item.quantity} unidad(es) al stock.`,
+        message: `Se anuló ${item.quantity}x ${item.productName} y se repuso el stock.`,
         type: 'info',
-        durationMs: 4500,
+        durationMs: 4000,
       });
     }
   };
@@ -520,22 +660,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const stay = room.currentStay;
     const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
-    const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
-    const totalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
-    const effectivePaymentMethod = checkoutData.finalPaymentMethod || stay.paymentMethod;
+    const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
+    const overtimeTotal = timeCalc.overtimeCharge;
+    const totalAmount = stay.baseRoomPrice + consumptionsTotal + overtimeTotal;
 
+    const effectivePaymentMethod = checkoutData.finalPaymentMethod || stay.paymentMethod;
     let finalCash = 0;
     let finalQr = 0;
 
     if (effectivePaymentMethod === 'efectivo') {
       finalCash = totalAmount;
-      finalQr = 0;
     } else if (effectivePaymentMethod === 'qr') {
-      finalCash = 0;
       finalQr = totalAmount;
     } else if (effectivePaymentMethod === 'mixto') {
-      finalCash = checkoutData.cashPaid !== undefined ? checkoutData.cashPaid : (stay.cashPaid || 0);
-      finalQr = checkoutData.qrPaid !== undefined ? checkoutData.qrPaid : (stay.qrPaid || Math.max(0, totalAmount - finalCash));
+      finalCash = checkoutData.cashPaid !== undefined ? checkoutData.cashPaid : stay.cashPaid || 0;
+      finalQr = checkoutData.qrPaid !== undefined ? checkoutData.qrPaid : stay.qrPaid || Math.max(0, totalAmount - finalCash);
     }
 
     const completedStay: Stay = {
@@ -543,21 +682,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'completed',
       endTime: new Date().toISOString(),
       overtimeMinutes: timeCalc.overtimeMinutes,
-      overtimeCharge: timeCalc.overtimeCharge,
+      overtimeCharge: overtimeTotal,
       totalAmount,
       paymentMethod: effectivePaymentMethod,
       cashPaid: finalCash,
       qrPaid: finalQr,
       notes: checkoutData.notes || stay.notes,
-      closedBy: currentUser.name,
     };
 
-    // 1. Save completed stay in history
     setCompletedStays((prev) => [completedStay, ...prev]);
 
-    // 2. Update active shift of the current user (or shift owner)
+    // Update active shift
     const shiftReceptionistId = currentUser.role === 'admin' ? stay.receptionistId : currentUser.id;
-    
     setActiveShifts((prev) => {
       const active = prev[shiftReceptionistId] || {
         id: `shift-${shiftReceptionistId}-${Date.now()}`,
@@ -566,38 +702,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         shiftType: currentUser.role === 'recepcionista_noche' ? 'noche' : 'dia',
         startTime: new Date().toISOString(),
         status: 'open',
+        initialCashFloat: 100,
         expectedCash: 0,
         expectedQr: 0,
+        totalExpensesCash: 0,
+        totalExpensesQr: 0,
+        expenses: [],
         salesCount: 0,
         stayIds: [],
       };
 
+      const updatedShift: Shift = {
+        ...active,
+        expectedCash: active.expectedCash + finalCash,
+        expectedQr: active.expectedQr + finalQr,
+        salesCount: active.salesCount + 1,
+        stayIds: [...active.stayIds, completedStay.id],
+      };
+
+      syncShiftToFirestore(updatedShift);
+
       return {
         ...prev,
-        [shiftReceptionistId]: {
-          ...active,
-          expectedCash: active.expectedCash + finalCash,
-          expectedQr: active.expectedQr + finalQr,
-          salesCount: active.salesCount + 1,
-          stayIds: [...active.stayIds, completedStay.id],
-        },
+        [shiftReceptionistId]: updatedShift,
       };
     });
 
-    // 3. Update room status to 'limpieza' or 'disponible'
     const newStatus: RoomStatus = checkoutData.setCleaning ? 'limpieza' : 'disponible';
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id === roomId
-          ? {
-              ...r,
-              status: newStatus,
-              currentStay: undefined,
-              cleaningStartTime: newStatus === 'limpieza' ? new Date().toISOString() : undefined,
-            }
-          : r
-      )
-    );
+    const updatedRoom: Room = {
+      ...room,
+      status: newStatus,
+      currentStay: undefined,
+      cleaningStartTime: newStatus === 'limpieza' ? new Date().toISOString() : undefined,
+    };
+
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
+    syncRoomToFirestore(updatedRoom);
 
     playSuccessChime();
     showToast({
@@ -615,20 +755,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const changeRoomStatus = (roomId: string, newStatus: RoomStatus) => {
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id === roomId
-          ? {
-              ...r,
-              status: newStatus,
-              cleaningStartTime: newStatus === 'limpieza' ? new Date().toISOString() : undefined,
-              currentStay: newStatus === 'disponible' ? undefined : r.currentStay,
-            }
-          : r
-      )
-    );
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+
+    const updatedRoom: Room = {
+      ...room,
+      status: newStatus,
+      cleaningStartTime: newStatus === 'limpieza' ? new Date().toISOString() : undefined,
+      currentStay: newStatus === 'disponible' ? undefined : room.currentStay,
+    };
+
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
+    syncRoomToFirestore(updatedRoom);
   };
 
+  // EXPENSES / SHIFT PAYMENTS (Hacer Pagos)
+  const addExpenseToShift = (expenseData: {
+    description: string;
+    category: ExpenseCategory;
+    amount: number;
+    paymentMethod: 'efectivo' | 'qr';
+    receiptNumber?: string;
+    notes?: string;
+  }) => {
+    const expenseId = `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newExpense: Expense = {
+      id: expenseId,
+      description: expenseData.description,
+      category: expenseData.category,
+      amount: expenseData.amount,
+      paymentMethod: expenseData.paymentMethod,
+      timestamp: new Date().toISOString(),
+      shiftId: currentShift ? currentShift.id : `shift-${currentUser.id}`,
+      registeredById: currentUser.id,
+      registeredByName: currentUser.name,
+      receiptNumber: expenseData.receiptNumber,
+      notes: expenseData.notes,
+    };
+
+    // 1. Guardar en lista general de gastos
+    setExpenses((prev) => [newExpense, ...prev]);
+
+    // 2. Asociar al turno activo
+    if (currentUser.role !== 'admin') {
+      setActiveShifts((prev) => {
+        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
+        const shiftExpenses = [...(active.expenses || []), newExpense];
+        const totalExpensesCash = shiftExpenses
+          .filter((e) => e.paymentMethod === 'efectivo')
+          .reduce((sum, e) => sum + e.amount, 0);
+        const totalExpensesQr = shiftExpenses
+          .filter((e) => e.paymentMethod === 'qr')
+          .reduce((sum, e) => sum + e.amount, 0);
+
+        const updatedShift: Shift = {
+          ...active,
+          expenses: shiftExpenses,
+          totalExpensesCash,
+          totalExpensesQr,
+        };
+
+        syncShiftToFirestore(updatedShift);
+
+        return {
+          ...prev,
+          [currentUser.id]: updatedShift,
+        };
+      });
+    }
+
+    // 3. Sincronizar gasto a Firestore
+    syncExpenseToFirestore(newExpense);
+
+    playSuccessChime();
+    showToast({
+      title: '💸 Pago / Egreso Registrado',
+      message: `Se registró pago de ${formatBs(newExpense.amount)} por "${newExpense.description}" (${newExpense.paymentMethod === 'efectivo' ? 'Efectivo Gaveta' : 'QR / Banco'}).`,
+      type: 'info',
+      durationMs: 6000,
+    });
+  };
+
+  // SHIFT CLOSING
   const closeCurrentShift = (
     responsiblePersonName: string,
     totalPhysicalCashInDrawer: number,
@@ -639,17 +847,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const shift = currentShift;
     if (!shift) return null;
 
-    // Fondo inicial con el que empezó este turno
     const startingCashFloat = shift.initialCashFloat || 100;
-    // Fondo de caja chica que está DEJANDO físicamente para el siguiente turno (modificable)
-    const floatLeftForNext = handoverCashFloat !== undefined && !isNaN(handoverCashFloat) ? handoverCashFloat : 100;
-    // Las ventas netas declaradas en efectivo son el total físico en gaveta menos lo que se deja de caja chica
-    const declaredSalesCash = Math.max(0, totalPhysicalCashInDrawer - floatLeftForNext);
+    const floatLeftForNext =
+      handoverCashFloat !== undefined && !isNaN(handoverCashFloat) ? handoverCashFloat : 100;
+
+    // Calcular egresos/gastos del turno
+    const shiftExpenses = shift.expenses || [];
+    const totalExpensesCash =
+      shift.totalExpensesCash !== undefined
+        ? shift.totalExpensesCash
+        : shiftExpenses
+            .filter((e) => e.paymentMethod === 'efectivo')
+            .reduce((sum, e) => sum + e.amount, 0);
+    const totalExpensesQr =
+      shift.totalExpensesQr !== undefined
+        ? shift.totalExpensesQr
+        : shiftExpenses
+            .filter((e) => e.paymentMethod === 'qr')
+            .reduce((sum, e) => sum + e.amount, 0);
+
+    // Ventas declaradas en efectivo: Total contado - Fondo dejado + Gastos en efectivo pagados
+    const declaredSalesCash = Math.max(
+      0,
+      totalPhysicalCashInDrawer - floatLeftForNext + totalExpensesCash
+    );
 
     const diffCash = declaredSalesCash - shift.expectedCash;
-    const diffQr = declaredQr - shift.expectedQr;
+    const diffQr = declaredQr - (shift.expectedQr - totalExpensesQr);
     const totalDiff = diffCash + diffQr;
-    // Si hay faltante en ventas, discountAmount es positivo (monto a descontar del sueldo)
     const discountAmount = totalDiff < 0 ? Math.abs(totalDiff) : 0;
 
     const handoverActiveRoomsCount = rooms.filter((r) => r.status === 'ocupada').length;
@@ -661,6 +886,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       responsiblePersonName: responsiblePersonName.trim(),
       initialCashFloat: startingCashFloat,
       handoverCashFloat: floatLeftForNext,
+      totalExpensesCash,
+      totalExpensesQr,
       totalPhysicalCashInDrawer,
       declaredCash: declaredSalesCash,
       declaredQr,
@@ -672,10 +899,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       handoverActiveRoomsCount,
     };
 
-    // 1. Guardar en historial de turnos
+    // 1. Guardar en historial local y Firebase
     setShiftsHistory((prev) => [closedShift, ...prev]);
+    syncShiftToFirestore(closedShift);
 
-    // 2. Determinar el siguiente recepcionista para traspaso automático
+    // 2. Determinar siguiente usuario
     const nextUser =
       currentUser.id === 'user-recep-dia'
         ? SYSTEM_USERS.find((u) => u.id === 'user-recep-noche') || SYSTEM_USERS[2]
@@ -683,7 +911,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? SYSTEM_USERS.find((u) => u.id === 'user-recep-dia') || SYSTEM_USERS[1]
         : currentUser;
 
-    // 3. Crear nuevo turno limpio con el fondo exacto de caja chica que se le dejó
+    // 3. Crear nuevo turno limpio
     const newShiftForNext: Shift = {
       id: `shift-${nextUser.id}-${Date.now()}`,
       receptionistId: nextUser.id,
@@ -691,9 +919,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shiftType: nextUser.role === 'recepcionista_noche' ? 'noche' : 'dia',
       startTime: new Date().toISOString(),
       status: 'open',
-      initialCashFloat: floatLeftForNext, // Recibe exactamente el fondo dejado por el turno anterior
+      initialCashFloat: floatLeftForNext,
       expectedCash: 0,
       expectedQr: 0,
+      totalExpensesCash: 0,
+      totalExpensesQr: 0,
+      expenses: [],
       salesCount: 0,
       stayIds: [],
     };
@@ -708,6 +939,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       initialCashFloat: floatLeftForNext,
       expectedCash: 0,
       expectedQr: 0,
+      totalExpensesCash: 0,
+      totalExpensesQr: 0,
+      expenses: [],
       salesCount: 0,
       stayIds: [],
     };
@@ -718,7 +952,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       [nextUser.id]: newShiftForNext,
     }));
 
-    // 4. Conmutar automáticamente la sesión al siguiente recepcionista
+    syncShiftToFirestore(newShiftForNext);
+
+    // 4. Conmutar usuario
     setCurrentUserId(nextUser.id);
 
     playSuccessChime();
@@ -732,23 +968,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return closedShift;
   };
 
-  // Admin Actions
+  // ADMIN ACTIONS (Synchronized with Firestore in Realtime)
   const saveProduct = (product: Product) => {
     setProducts((prev) => {
       const exists = prev.some((p) => p.id === product.id);
-      if (exists) {
-        return prev.map((p) => (p.id === product.id ? product : p));
-      }
-      return [...prev, product];
+      const next = exists
+        ? prev.map((p) => (p.id === product.id ? product : p))
+        : [...prev, product];
+      return next;
     });
+    // Write to Firebase Firestore in real time!
+    syncProductToFirestore(product);
   };
 
   const deleteProductById = (productId: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== productId));
+    // Delete from Firestore in real time!
+    deleteProductFromFirestore(productId);
   };
 
   const updateTariffCatalog = (newTariffs: TariffCatalog) => {
     setTariffs(newTariffs);
+    // Write to Firestore in real time!
+    syncTariffsToFirestore(newTariffs);
   };
 
   const resetAllDataToDefaults = () => {
@@ -758,25 +1000,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setShiftsHistory([]);
     setActiveShifts({});
     setCompletedStays([]);
+    setExpenses([]);
     localStorage.clear();
+    showToast({
+      title: 'Datos Restablecidos',
+      message: 'Se han reiniciado los valores oficiales de Mon Amour.',
+      type: 'info',
+    });
   };
 
   const exportDatabaseJson = () => {
-    const backupData = {
+    const exportData = {
+      exportDate: new Date().toISOString(),
       rooms,
       tariffs,
       products,
       shiftsHistory,
-      activeShifts,
       completedStays,
-      exportedAt: new Date().toISOString(),
-      version: '1.1.0',
+      expenses,
     };
-
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backupData, null, 2));
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `mon_amour_backup_${new Date().toISOString().split('T')[0]}.json`);
+    downloadAnchor.setAttribute('download', `mon_amour_backup_${new Date().toISOString().slice(0, 10)}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -785,15 +1031,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importDatabaseJson = (jsonString: string): boolean => {
     try {
       const data = JSON.parse(jsonString);
-      if (data.rooms) setRooms(data.rooms);
-      if (data.tariffs) setTariffs(data.tariffs);
-      if (data.products) setProducts(data.products);
-      if (data.shiftsHistory) setShiftsHistory(data.shiftsHistory);
-      if (data.activeShifts) setActiveShifts(data.activeShifts);
-      if (data.completedStays) setCompletedStays(data.completedStays);
-      return true;
-    } catch (e) {
-      console.error('Error importing backup:', e);
+      if (data.rooms && data.tariffs && data.products) {
+        setRooms(data.rooms);
+        setTariffs(data.tariffs);
+        setProducts(data.products);
+        if (data.shiftsHistory) setShiftsHistory(data.shiftsHistory);
+        if (data.completedStays) setCompletedStays(data.completedStays);
+        if (data.expenses) setExpenses(data.expenses);
+        showToast({
+          title: 'Copia de Seguridad Restaurada',
+          message: 'Base de datos importada correctamente.',
+          type: 'success',
+        });
+        return true;
+      }
+      return false;
+    } catch {
+      showToast({
+        title: 'Error al Importar',
+        message: 'El archivo JSON no tiene el formato válido de copia de seguridad.',
+        type: 'error',
+      });
       return false;
     }
   };
@@ -808,18 +1066,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentShift,
         shiftsHistory,
         completedStays,
-        nowTimestamp,
+        expenses,
         soundAlertsEnabled,
         toasts,
-        showToast,
-        dismissToast,
+        nowTimestamp,
+        isFirestoreConnected,
         setCurrentUserById,
         toggleSoundAlerts,
-        registerStay,
+        showToast,
+        dismissToast,
+        registerStay: registerRoomEntry,
+        registerRoomEntry,
         addConsumptionToRoom,
         removeConsumptionFromRoom,
         closeStayAndCheckout,
         changeRoomStatus,
+        addExpenseToShift,
         closeCurrentShift,
         saveProduct,
         deleteProductById,
@@ -837,7 +1099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 export const useApp = () => {
   const context = useContext(AppContext);
   if (!context) {
-    throw new Error('useApp must be used within an AppProvider');
+    throw new Error('useApp debe usarse dentro de un AppProvider');
   }
   return context;
 };

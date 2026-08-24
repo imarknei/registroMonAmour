@@ -7,11 +7,12 @@ import { RegisterModal } from './components/RegisterModal';
 import { RoomDetailModal } from './components/RoomDetailModal';
 import { ShiftCloseModal } from './components/ShiftCloseModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { ExpenseModal } from './components/ExpenseModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { ToastContainer } from './components/Toast';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { Room, Stay } from './types';
-import { Flame, ShieldCheck, Lock } from 'lucide-react';
+import { Flame, ShieldCheck } from 'lucide-react';
 
 export const App: React.FC = () => {
   const { rooms, currentUser, setCurrentUserById, toasts, dismissToast, showToast } = useApp();
@@ -29,6 +30,7 @@ export const App: React.FC = () => {
   const [registerRoom, setRegisterRoom] = useState<Room | null>(null);
   const [detailRoom, setDetailRoom] = useState<Room | null>(null);
   const [isShiftCloseOpen, setIsShiftCloseOpen] = useState(false);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [receiptStay, setReceiptStay] = useState<Stay | null>(null);
 
   // Check URL path /admin or hash #admin on load & popstate
@@ -116,6 +118,7 @@ export const App: React.FC = () => {
         currentView={currentView}
         setCurrentView={setCurrentView}
         onOpenShiftCloseModal={() => setIsShiftCloseOpen(true)}
+        onOpenExpenseModal={() => setIsExpenseModalOpen(true)}
         onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
         onLockAdmin={handleLockAdmin}
         isAdminAuthenticated={isAdminAuthenticated}
@@ -160,6 +163,13 @@ export const App: React.FC = () => {
         <ShiftCloseModal
           isOpen={isShiftCloseOpen}
           onClose={() => setIsShiftCloseOpen(false)}
+        />
+      )}
+
+      {isExpenseModalOpen && (
+        <ExpenseModal
+          isOpen={isExpenseModalOpen}
+          onClose={() => setIsExpenseModalOpen(false)}
         />
       )}
 

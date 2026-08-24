@@ -21,6 +21,8 @@ import {
   Flame,
   Cloud,
   ShieldAlert,
+  Receipt,
+  MinusCircle,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
@@ -30,6 +32,7 @@ interface NavbarProps {
   currentView: AdminViewType;
   setCurrentView: (view: AdminViewType) => void;
   onOpenShiftCloseModal: () => void;
+  onOpenExpenseModal: () => void;
   onOpenAdminLogin: () => void;
   onLockAdmin: () => void;
   isAdminAuthenticated: boolean;
@@ -39,6 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentView,
   setCurrentView,
   onOpenShiftCloseModal,
+  onOpenExpenseModal,
   onOpenAdminLogin,
   onLockAdmin,
   isAdminAuthenticated,
@@ -50,6 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     soundAlertsEnabled,
     toggleSoundAlerts,
     nowTimestamp,
+    isFirestoreConnected,
   } = useApp();
 
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -81,12 +86,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
+  const totalShiftExpenses = (currentShift?.totalExpensesCash || 0) + (currentShift?.totalExpensesQr || 0);
+
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
       {/* Top Main Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
-          {/* Brand Logo */}
+          {/* Brand Logo & Cloud Status */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
@@ -99,9 +106,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Flame className="w-6 h-6 fill-white" />
               </div>
               <div>
-                <span className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-brand-700 via-brand-600 to-rose-600 bg-clip-text text-transparent">
-                  MON AMOUR
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-brand-700 via-brand-600 to-rose-600 bg-clip-text text-transparent">
+                    MON AMOUR
+                  </span>
+                  {isFirestoreConnected && (
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      En vivo (Nube)
+                    </span>
+                  )}
+                </div>
                 <span className="block text-[10px] sm:text-xs font-semibold tracking-widest text-slate-400 uppercase -mt-1">
                   Motel • Sistema de Registro
                 </span>
@@ -110,7 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Center: Live Clock and Active Shift Cash indicator */}
-          <div className="hidden md:flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-4 lg:gap-6">
             {/* Clock */}
             <div className="text-center px-3 py-1 rounded-lg bg-slate-50 border border-slate-200/80">
               <span className="text-xs text-slate-500 font-medium capitalize block">{formattedDate}</span>
@@ -119,7 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Current Shift Cash Overview for Receptionist */}
             {currentUser.role !== 'admin' && currentShift && (
-              <div className="flex items-center gap-3 bg-rose-50/70 border border-rose-200/80 rounded-xl px-3.5 py-1.5 shadow-sm">
+              <div className="flex items-center gap-2.5 bg-rose-50/70 border border-rose-200/80 rounded-xl px-3 py-1.5 shadow-sm">
                 <div className="flex items-center gap-1.5 text-slate-700">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   <div>
@@ -127,6 +142,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className="text-xs font-bold font-mono">{formatBs(currentShift.initialCashFloat || 100)}</span>
                   </div>
                 </div>
+
                 <div className="h-6 w-px bg-rose-200" />
                 <div className="flex items-center gap-1.5 text-emerald-700">
                   <DollarSign className="w-4 h-4" />
@@ -135,6 +151,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className="text-xs font-bold font-mono">{formatBs(currentShift.expectedCash)}</span>
                   </div>
                 </div>
+
                 <div className="h-6 w-px bg-rose-200" />
                 <div className="flex items-center gap-1.5 text-sky-700">
                   <QrCode className="w-4 h-4" />
@@ -143,10 +160,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className="text-xs font-bold font-mono">{formatBs(currentShift.expectedQr)}</span>
                   </div>
                 </div>
+
+                {totalShiftExpenses > 0 && (
+                  <>
+                    <div className="h-6 w-px bg-rose-200" />
+                    <div className="flex items-center gap-1 text-rose-700">
+                      <MinusCircle className="w-3.5 h-3.5" />
+                      <div>
+                        <span className="text-[9px] text-rose-500 uppercase font-semibold block leading-none">Pagos Realizados</span>
+                        <span className="text-xs font-bold font-mono">-{formatBs(totalShiftExpenses)}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="h-6 w-px bg-rose-200" />
+                {/* Hacer Pagos Button */}
+                <button
+                  onClick={onOpenExpenseModal}
+                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
+                  title="Registrar pagos a Coca-Cola, albañil, servicios, etc."
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  Hacer Pagos
+                </button>
+
+                {/* Cerrar Turno Button */}
                 <button
                   onClick={onOpenShiftCloseModal}
-                  className="px-2.5 py-1 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                  className="px-2.5 py-1 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
                   title="Cerrar turno y realizar arqueo de caja"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -171,15 +213,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               {soundAlertsEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
             </button>
 
-            {/* Shift Close button for mobile */}
+            {/* Mobile Actions */}
             {currentUser.role !== 'admin' && (
-              <button
-                onClick={onOpenShiftCloseModal}
-                className="md:hidden px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1 shadow-sm"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                Caja
-              </button>
+              <>
+                <button
+                  onClick={onOpenExpenseModal}
+                  className="md:hidden px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 shadow-sm"
+                  title="Hacer Pagos"
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  Pagos
+                </button>
+
+                <button
+                  onClick={onOpenShiftCloseModal}
+                  className="md:hidden px-2.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 shadow-sm"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Caja
+                </button>
+              </>
             )}
 
             {/* Admin Lock Button (when logged in as admin) */}

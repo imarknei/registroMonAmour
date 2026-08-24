@@ -17,6 +17,8 @@ import {
   Info,
   ShieldAlert,
   Edit3,
+  Receipt,
+  MinusCircle,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
@@ -48,18 +50,30 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
   const expectedSalesCash = currentShift.expectedCash;
   const expectedQr = currentShift.expectedQr;
 
+  // Expenses registered during this shift
+  const shiftExpenses = currentShift.expenses || [];
+  const totalExpensesCash = shiftExpenses
+    .filter((e) => e.paymentMethod === 'efectivo')
+    .reduce((sum, e) => sum + e.amount, 0);
+  const totalExpensesQr = shiftExpenses
+    .filter((e) => e.paymentMethod === 'qr')
+    .reduce((sum, e) => sum + e.amount, 0);
+
   const numHandoverFloat = parseFloat(handoverFloat) || 0; // Lo que se deja para el siguiente turno
   const numTotalPhysicalCash = parseFloat(totalPhysicalCash) || 0; // Total contado en gaveta
   const numDeclaredQr = parseFloat(declaredQr) || 0;
 
-  // Expected total physical cash in drawer = Handover Float + Expected Sales
-  const expectedTotalInDrawer = numHandoverFloat + expectedSalesCash;
+  // Expected total physical cash in drawer = Handover Float + Expected Sales - Cash Expenses
+  const expectedTotalInDrawer = Math.max(0, numHandoverFloat + expectedSalesCash - totalExpensesCash);
 
-  // Declared sales cash is total physical minus the float left for the next shift
-  const declaredSalesCash = Math.max(0, numTotalPhysicalCash - numHandoverFloat);
+  // Expected QR in bank = Expected QR - QR Expenses
+  const expectedNetQr = Math.max(0, expectedQr - totalExpensesQr);
+
+  // Declared sales cash is total physical minus the float left + cash expenses that were paid
+  const declaredSalesCash = Math.max(0, numTotalPhysicalCash - numHandoverFloat + totalExpensesCash);
 
   const diffCash = declaredSalesCash - expectedSalesCash;
-  const diffQr = numDeclaredQr - expectedQr;
+  const diffQr = numDeclaredQr - expectedNetQr;
   const totalDiff = diffCash + diffQr;
 
   const hasFaltante = totalDiff < 0;
@@ -197,21 +211,26 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               </div>
             </div>
 
-            {/* Visual Formula Cards */}
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            {/* Visual Formula Cards with Expenses Consideration */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
               <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-200">
                 <span className="text-[10px] text-slate-500 block font-semibold">Caja Chica Dejada</span>
-                <strong className="font-mono text-sm text-slate-800 font-bold">{formatBs(numHandoverFloat)}</strong>
+                <strong className="font-mono text-xs text-slate-800 font-bold">{formatBs(numHandoverFloat)}</strong>
               </div>
 
               <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-200">
                 <span className="text-[10px] text-slate-500 block font-semibold">+ Ventas Efectivo</span>
-                <strong className="font-mono text-sm text-emerald-700 font-bold">+{formatBs(expectedSalesCash)}</strong>
+                <strong className="font-mono text-xs text-emerald-700 font-bold">+{formatBs(expectedSalesCash)}</strong>
+              </div>
+
+              <div className="bg-white/80 p-2.5 rounded-xl border border-rose-200">
+                <span className="text-[10px] text-rose-600 block font-semibold">- Pagos/Gastos Turno</span>
+                <strong className="font-mono text-xs text-rose-700 font-bold">-{formatBs(totalExpensesCash)}</strong>
               </div>
 
               <div className="bg-emerald-600 text-white p-2.5 rounded-xl shadow-xs">
-                <span className="text-[10px] text-emerald-100 block font-bold">= TOTAL EN GAVETA</span>
-                <strong className="font-mono text-sm font-black">{formatBs(expectedTotalInDrawer)}</strong>
+                <span className="text-[10px] text-emerald-100 block font-bold">= DEBE HABER EN GAVETA</span>
+                <strong className="font-mono text-xs font-black">{formatBs(expectedTotalInDrawer)}</strong>
               </div>
             </div>
 
@@ -233,14 +252,49 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               <span className="text-[11px] text-emerald-800 font-medium mt-1 block">
                 {numTotalPhysicalCash > 0 ? (
                   <>
-                    👉 De los <strong>{formatBs(numTotalPhysicalCash)}</strong> contados: se dejan <strong>{formatBs(numHandoverFloat)}</strong> de fondo de cambio y se declaran <strong>{formatBs(declaredSalesCash)}</strong> como ventas netas en efectivo.
+                    👉 De los <strong>{formatBs(numTotalPhysicalCash)}</strong> contados + <strong>{formatBs(totalExpensesCash)}</strong> pagados en compras/servicios: se dejan <strong>{formatBs(numHandoverFloat)}</strong> de fondo de cambio y se declaran <strong>{formatBs(declaredSalesCash)}</strong> como ventas netas en efectivo.
                   </>
                 ) : (
-                  `Cuenta todo el dinero físico en la gaveta (debe cubrir los ${formatBs(numHandoverFloat)} de caja chica más las ventas).`
+                  `Cuenta todo el dinero físico en gaveta (debe ser ${formatBs(expectedTotalInDrawer)} considerando el fondo y los pagos del turno).`
                 )}
               </span>
             </div>
           </div>
+
+          {/* LISTA DE PAGOS / GASTOS REGISTRADOS EN ESTE TURNO */}
+          {shiftExpenses.length > 0 && (
+            <div className="bg-rose-50/70 rounded-2xl p-4 border border-rose-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-rose-950 font-extrabold text-xs uppercase tracking-wider">
+                  <Receipt className="w-4 h-4 text-rose-600" />
+                  Pagos / Egresos Realizados en este Turno ({shiftExpenses.length})
+                </div>
+                <span className="font-mono font-black text-rose-700 text-xs">
+                  Total: {formatBs(totalExpensesCash + totalExpensesQr)}
+                </span>
+              </div>
+
+              <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                {shiftExpenses.map((exp) => (
+                  <div
+                    key={exp.id}
+                    className="flex items-center justify-between bg-white p-2 rounded-xl border border-rose-100 text-xs"
+                  >
+                    <div>
+                      <strong className="text-slate-800 block">{exp.description}</strong>
+                      <span className="text-[10px] text-slate-400">
+                        {formatTimeOnly(exp.timestamp)} • {exp.paymentMethod === 'efectivo' ? 'Efectivo Gaveta' : 'QR / Banco'}
+                        {exp.receiptNumber && ` • N° ${exp.receiptNumber}`}
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-rose-700">
+                      -{formatBs(exp.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 2. QR / VENDIS VERIFICADO */}
           <div className="bg-sky-50/80 rounded-2xl p-4 border border-sky-200 space-y-2">
@@ -250,7 +304,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 Ventas QR / VENDIS
               </div>
               <span className="text-xs font-mono font-bold text-sky-800 bg-sky-100/80 px-2.5 py-0.5 rounded-full border border-sky-200">
-                Esperado en VENDIS: {formatBs(expectedQr)}
+                Esperado en VENDIS: {formatBs(expectedNetQr)}
               </span>
             </div>
 
@@ -265,7 +319,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 required
                 value={declaredQr}
                 onChange={(e) => setDeclaredQr(e.target.value)}
-                placeholder={`Ej. ${expectedQr}`}
+                placeholder={`Ej. ${expectedNetQr}`}
                 className="w-full px-4 py-2.5 rounded-xl border-2 border-sky-300 font-mono text-base font-black text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/30"
               />
               <span className="text-[11px] text-sky-700 font-medium mt-1 block">
@@ -309,7 +363,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 <div>
                   <span className="text-slate-500 text-[11px] block font-sans">Cierre en VENDIS (QR):</span>
                   <strong className={diffQr < 0 ? 'text-brand-700' : 'text-slate-800'}>
-                    Decl: {formatBs(numDeclaredQr)} (Esp: {formatBs(expectedQr)})
+                    Decl: {formatBs(numDeclaredQr)} (Esp: {formatBs(expectedNetQr)})
                   </strong>
                 </div>
               </div>
@@ -396,7 +450,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej. Se dejó 120 Bs de cambio en gaveta, todo en orden."
+              placeholder="Ej. Se dejó 100 Bs de cambio, se pagó a Coca-Cola 150 Bs, todo en orden."
               className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
             />
           </div>
