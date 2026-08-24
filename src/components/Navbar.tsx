@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
-export type AdminViewType = 'rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
+export type AdminViewType = 'rooms' | 'registered_rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
 
 interface NavbarProps {
   currentView: AdminViewType;
@@ -148,7 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <DollarSign className="w-4 h-4" />
                   <div>
                     <span className="text-[10px] text-slate-500 uppercase font-semibold block leading-none">Ventas Efec.</span>
-                    <span className="text-xs font-bold font-mono">{formatBs(currentShift.expectedCash)}</span>
+                    <span className="text-xs font-bold font-mono">+{formatBs(currentShift.expectedCash)}</span>
                   </div>
                 </div>
 
@@ -156,146 +156,137 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="flex items-center gap-1.5 text-sky-700">
                   <QrCode className="w-4 h-4" />
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-semibold block leading-none">QR (Vendis)</span>
-                    <span className="text-xs font-bold font-mono">{formatBs(currentShift.expectedQr)}</span>
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold block leading-none">Ventas QR</span>
+                    <span className="text-xs font-bold font-mono">+{formatBs(currentShift.expectedQr)}</span>
                   </div>
                 </div>
 
+                {/* Pagos / Salidas de Caja */}
                 {totalShiftExpenses > 0 && (
                   <>
                     <div className="h-6 w-px bg-rose-200" />
-                    <div className="flex items-center gap-1 text-rose-700">
-                      <MinusCircle className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-1.5 text-rose-700">
+                      <MinusCircle className="w-4 h-4" />
                       <div>
-                        <span className="text-[9px] text-rose-500 uppercase font-semibold block leading-none">Pagos Realizados</span>
+                        <span className="text-[10px] text-rose-500 uppercase font-semibold block leading-none">Pagos Turno</span>
                         <span className="text-xs font-bold font-mono">-{formatBs(totalShiftExpenses)}</span>
                       </div>
                     </div>
                   </>
                 )}
-
-                <div className="h-6 w-px bg-rose-200" />
-                {/* Hacer Pagos Button */}
-                <button
-                  onClick={onOpenExpenseModal}
-                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
-                  title="Registrar pagos a Coca-Cola, albañil, servicios, etc."
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  Hacer Pagos
-                </button>
-
-                {/* Cerrar Turno Button */}
-                <button
-                  onClick={onOpenShiftCloseModal}
-                  className="px-2.5 py-1 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
-                  title="Cerrar turno y realizar arqueo de caja"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Cerrar Turno
-                </button>
               </div>
             )}
           </div>
 
-          {/* Right Controls: Sound, Shift Action, User Selector */}
+          {/* Right Action Tools: Expense Modal, Sound Toggle, Shift Close & User Dropdown */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Audio Toggle */}
-            <button
-              onClick={toggleSoundAlerts}
-              title={soundAlertsEnabled ? 'Alertas sonoras activadas' : 'Alertas sonoras silenciadas'}
-              className={`p-2 rounded-xl border transition-all ${
-                soundAlertsEnabled
-                  ? 'bg-rose-50 text-brand-600 border-rose-200 hover:bg-rose-100'
-                  : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
-              }`}
-            >
-              {soundAlertsEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-            </button>
-
-            {/* Mobile Actions */}
+            {/* BOTÓN HACER PAGOS / SALIDA DE CAJA */}
             {currentUser.role !== 'admin' && (
-              <>
-                <button
-                  onClick={onOpenExpenseModal}
-                  className="md:hidden px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 shadow-sm"
-                  title="Hacer Pagos"
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  Pagos
-                </button>
-
-                <button
-                  onClick={onOpenShiftCloseModal}
-                  className="md:hidden px-2.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 shadow-sm"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Caja
-                </button>
-              </>
-            )}
-
-            {/* Admin Lock Button (when logged in as admin) */}
-            {currentUser.role === 'admin' && (
               <button
-                onClick={onLockAdmin}
-                title="Bloquear y Salir de Administrador"
-                className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-brand-700 text-xs font-extrabold flex items-center gap-1.5 transition-colors"
+                onClick={onOpenExpenseModal}
+                className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/20 active:scale-95 transition-all flex items-center gap-1.5 border border-amber-600"
+                title="Registrar pagos de turno (Coca-cola, albañil, insumos, jornales)"
               >
-                <Lock className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Bloquear Admin</span>
+                <Receipt className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline">Hacer Pagos</span>
               </button>
             )}
 
-            {/* User Dropdown Selector */}
+            {/* Sound Toggle */}
+            <button
+              onClick={toggleSoundAlerts}
+              className={`p-2 sm:p-2.5 rounded-xl border transition-colors ${
+                soundAlertsEnabled
+                  ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                  : 'bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100'
+              }`}
+              title={soundAlertsEnabled ? 'Alertas sonoras activadas' : 'Alertas sonoras silenciadas'}
+            >
+              {soundAlertsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+
+            {/* Close Shift Button (Only for Receptionists) */}
+            {currentUser.role !== 'admin' && (
+              <button
+                onClick={onOpenShiftCloseModal}
+                className="px-3 sm:px-4 py-2 rounded-xl text-xs font-black bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20 active:scale-95 transition-all flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden sm:inline">Cerrar Turno</span>
+                <span className="sm:hidden">Cerrar</span>
+              </button>
+            )}
+
+            {/* Admin Lock / Unlock Status Toggle */}
+            {isAdminAuthenticated && (
+              <button
+                onClick={onLockAdmin}
+                className="p-2 sm:px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors flex items-center gap-1"
+                title="Bloquear sesión de Administrador"
+              >
+                <Unlock className="w-4 h-4 text-amber-600" />
+                <span className="hidden lg:inline">Admin Activo</span>
+              </button>
+            )}
+
+            {/* User Selector Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors shadow-sm text-left"
+                className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors text-left"
               >
-                <div className={`w-8 h-8 rounded-lg ${currentUser.avatarColor} text-white flex items-center justify-center font-bold text-xs shadow-sm`}>
-                  {currentUser.role === 'admin' ? <Lock className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                <div
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white ${
+                    currentUser.role === 'admin'
+                      ? 'bg-purple-600'
+                      : currentUser.role === 'recepcionista_dia'
+                      ? 'bg-amber-600'
+                      : 'bg-indigo-600'
+                  }`}
+                >
+                  {currentUser.name.charAt(0)}
                 </div>
                 <div className="hidden sm:block">
-                  <span className="text-xs font-bold text-slate-800 block leading-tight">
+                  <span className="text-xs font-extrabold text-slate-900 block leading-tight">
                     {currentUser.name}
                   </span>
-                  <span className="text-[10px] text-slate-500 block leading-tight">
-                    {currentUser.shiftName}
-                  </span>
+                  <span className="text-[10px] text-slate-500 block leading-none">{currentUser.shiftName}</span>
                 </div>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
               </button>
 
               {/* Dropdown Menu */}
               {showUserDropdown && (
-                <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-scale-in">
-                  <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                      Cambiar de Cuenta / Turno
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      El acceso a Administrador (/admin) requiere contraseña
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-scale-in">
+                  <div className="px-3.5 py-2 border-b border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Cambiar Usuario / Turno
                     </span>
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="py-1">
                     {SYSTEM_USERS.map((user) => (
                       <button
                         key={user.id}
                         onClick={() => handleUserSelect(user)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
-                          currentUser.id === user.id
-                            ? 'bg-rose-50 border border-brand-200 text-brand-900 font-semibold'
-                            : 'hover:bg-slate-50 text-slate-700'
+                        className={`w-full px-3.5 py-2 text-left text-xs flex items-center gap-2.5 transition-colors ${
+                          currentUser.id === user.id ? 'bg-rose-50/80 font-bold text-brand-700' : 'hover:bg-slate-50 text-slate-700'
                         }`}
                       >
-                        <div className={`w-7 h-7 rounded-lg ${user.avatarColor} text-white flex items-center justify-center text-xs font-bold shrink-0`}>
-                          {user.role === 'admin' ? <Lock className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                        <div
+                          className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-[10px] text-white shrink-0 ${
+                            user.role === 'admin'
+                              ? 'bg-purple-600'
+                              : user.role === 'recepcionista_dia'
+                              ? 'bg-amber-600'
+                              : 'bg-indigo-600'
+                          }`}
+                        >
+                          {user.name.charAt(0)}
                         </div>
                         <div className="truncate">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold block truncate">{user.name}</span>
+                            <span className="font-bold">{user.name}</span>
                             {user.role === 'admin' && (
                               <span className="text-[9px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.2 rounded">
                                 /admin
@@ -328,7 +319,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <BedDouble className="w-3.5 h-3.5" />
-              Habitaciones (Panel)
+              Panel de Habitaciones
+            </button>
+
+            <button
+              onClick={() => setCurrentView('registered_rooms')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                currentView === 'registered_rooms'
+                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <BedDouble className="w-3.5 h-3.5 text-rose-500" />
+              Habitaciones & Precios (En Vivo)
             </button>
 
             <button

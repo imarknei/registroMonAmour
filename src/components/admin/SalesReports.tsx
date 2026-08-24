@@ -29,12 +29,16 @@ export const SalesReports: React.FC = () => {
   // Financial aggregates
   const totalStays = completedStays.length;
   const totalRevenue = completedStays.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-  const totalCash = completedStays
-    .filter((s) => s.paymentMethod === 'efectivo')
-    .reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-  const totalQr = completedStays
-    .filter((s) => s.paymentMethod === 'qr')
-    .reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+  const totalCash = completedStays.reduce((sum, s) => {
+    if (s.cashPaid !== undefined) return sum + s.cashPaid;
+    if (s.paymentMethod === 'efectivo') return sum + (s.totalAmount || 0);
+    return sum;
+  }, 0);
+  const totalQr = completedStays.reduce((sum, s) => {
+    if (s.qrPaid !== undefined) return sum + s.qrPaid;
+    if (s.paymentMethod === 'qr') return sum + (s.totalAmount || 0);
+    return sum;
+  }, 0);
   const totalOvertimeRevenue = completedStays.reduce(
     (sum, s) => sum + (s.overtimeCharge || 0),
     0

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Room, TariffCatalog } from '../types';
+import { Room } from '../types';
 import { useApp } from '../context/AppContext';
 import {
   calculateStayTime,
@@ -16,6 +16,7 @@ import {
   ShoppingBag,
   Car,
   CheckCircle,
+  CheckCircle2,
   BedDouble,
   Music,
   Waves,
@@ -167,6 +168,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
   const currentTotalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
+  const isPrepaid = stay.isPrepaid || false;
+  const prepaidAmt = isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
+  const pendingBalance = Math.max(0, currentTotalAmount - prepaidAmt);
 
   return (
     <div
@@ -191,17 +195,30 @@ export const RoomCard: React.FC<RoomCardProps> = ({
             <h3 className="text-xl font-black text-slate-900 tracking-tight">{room.name}</h3>
           </div>
 
-          <span
-            className={`inline-flex items-center gap-1 text-xs font-extrabold px-2.5 py-1 rounded-full border ${
-              timeCalc.isOvertime
-                ? 'bg-brand-600 text-white border-brand-700 animate-pulse'
-                : timeCalc.isWarning
-                ? 'bg-amber-500 text-white border-amber-600'
-                : 'bg-brand-50 text-brand-700 border-brand-200'
-            }`}
-          >
-            {timeCalc.isOvertime ? '¡TIEMPO EXCEDIDO!' : timeCalc.isWarning ? '¡Por vencer!' : 'Ocupada'}
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-extrabold px-2.5 py-1 rounded-full border ${
+                timeCalc.isOvertime
+                  ? 'bg-brand-600 text-white border-brand-700 animate-pulse'
+                  : timeCalc.isWarning
+                  ? 'bg-amber-500 text-white border-amber-600'
+                  : 'bg-brand-50 text-brand-700 border-brand-200'
+              }`}
+            >
+              {timeCalc.isOvertime ? '¡TIEMPO EXCEDIDO!' : timeCalc.isWarning ? '¡Por vencer!' : 'Ocupada'}
+            </span>
+
+            {isPrepaid ? (
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-0.5">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                Pagado: {formatBs(prepaidAmt)}
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                Paga al Salir
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Live Timer Display */}
@@ -257,12 +274,8 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           </div>
           <div className="flex justify-between text-slate-600">
             <span>Plan Elegido:</span>
-            <span className="font-bold text-slate-800 capitalize">
-              {stay.chosenPlan === 'noche12h'
-                ? 'Noche (12 Horas)'
-                : stay.chosenPlan === 'promo190'
-                ? 'Promoción 3h'
-                : `${stay.chosenDurationMinutes / 60} Hora(s)`}
+            <span className="font-bold text-slate-800 uppercase">
+              {stay.chosenPlan} ({formatBs(stay.baseRoomPrice)})
             </span>
           </div>
 
@@ -287,10 +300,26 @@ export const RoomCard: React.FC<RoomCardProps> = ({
             <strong className="font-bold text-slate-800">{formatBs(consumptionsTotal)}</strong>
           </div>
 
-          {/* Total Accumulated so far */}
-          <div className="flex justify-between items-center pt-1 border-t border-slate-200 font-bold text-brand-700 text-sm">
-            <span>Total Actual:</span>
-            <span className="font-mono text-base font-extrabold">{formatBs(currentTotalAmount)}</span>
+          {/* Balance breakdown */}
+          <div className="pt-1 border-t border-slate-200 space-y-0.5">
+            <div className="flex justify-between text-[11px] text-slate-500">
+              <span>Total Estancia:</span>
+              <span className="font-mono font-bold text-slate-800">{formatBs(currentTotalAmount)}</span>
+            </div>
+
+            {isPrepaid && (
+              <div className="flex justify-between text-[11px] text-emerald-700 font-semibold">
+                <span>Pagado al Ingresar:</span>
+                <span className="font-mono">-{formatBs(prepaidAmt)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center font-bold text-brand-700 text-sm pt-0.5">
+              <span>{isPrepaid ? 'Saldo Pendiente:' : 'Total a Cobrar:'}</span>
+              <span className="font-mono text-base font-extrabold text-brand-700">
+                {formatBs(pendingBalance)}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -328,7 +357,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           }`}
         >
           <LogOut className="w-4 h-4" />
-          CERRAR HABITACIÓN ({formatBs(currentTotalAmount)})
+          {pendingBalance === 0 ? 'LIBERAR HABITACIÓN (0 Bs Pendientes)' : `COBRAR SALIDA (${formatBs(pendingBalance)})`}
         </button>
       </div>
     </div>

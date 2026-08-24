@@ -5,7 +5,7 @@
  * Sincronización en vivo ultra-rápida (en milisegundos) entre todos los dispositivos (Recepción, Celulares, etc.)
  */
 
-import { Room, Product, TariffCatalog, Shift, Expense } from '../types';
+import { Room, Product, TariffCatalog, Shift, Expense, Stay } from '../types';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -278,6 +278,81 @@ export const subscribeToExpenses = async (
   }
 };
 
+export const subscribeToShifts = async (
+  onData: (shifts: Shift[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const shiftsRef = ref(db, 'shifts');
+
+    const listener = onValue(
+      shiftsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const shiftsList: Shift[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          // Filtrar turnos cerrados para el historial y ordenar descendente por fecha
+          const closedShifts = shiftsList.filter((s: Shift) => s.status === 'closed');
+          closedShifts.sort((a, b) => (b.startTime > a.startTime ? 1 : -1));
+          onData(closedShifts);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de shifts:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(shiftsRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a shifts:', err);
+    return null;
+  }
+};
+
+export const subscribeToCompletedStays = async (
+  onData: (stays: Stay[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const staysRef = ref(db, 'completed_stays');
+
+    const listener = onValue(
+      staysRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const staysList: Stay[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          // Ordenar por hora de finalización o inicio descendente
+          staysList.sort((a, b) => ((b.endTime || b.startTime) > (a.endTime || a.startTime) ? 1 : -1));
+          onData(staysList);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de completed_stays:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(staysRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a completed_stays:', err);
+    return null;
+  }
+};
+
 // ==========================================
 // 💾 ESCRITURAS A FIREBASE (Mutaciones en Tiempo Real)
 // ==========================================
@@ -338,6 +413,18 @@ export const syncShiftToFirestore = async (shift: Shift): Promise<void> => {
     await set(ref(db, `shifts/${shift.id}`), cleanShift);
   } catch (err) {
     console.error(`Error guardando shift ${shift.id} en Firebase:`, err);
+  }
+};
+
+export const syncCompletedStayToFirebase = async (stay: Stay): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, set } = await import('firebase/database');
+    const cleanStay = sanitizeForFirebase(stay);
+    await set(ref(db, `completed_stays/${stay.id}`), cleanStay);
+  } catch (err) {
+    console.error(`Error guardando completed_stay ${stay.id} en Firebase:`, err);
   }
 };
 

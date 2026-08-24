@@ -4,7 +4,6 @@ import React, {
   useState,
   useEffect,
   useCallback,
-  useRef,
 } from 'react';
 import {
   Room,
@@ -42,13 +41,16 @@ import {
   subscribeToProducts,
   subscribeToTariffs,
   subscribeToExpenses,
+  subscribeToShifts,
+  subscribeToCompletedStays,
   syncRoomToFirestore,
   syncProductToFirestore,
   deleteProductFromFirestore,
   syncTariffsToFirestore,
   syncShiftToFirestore,
   syncExpenseToFirestore,
-  getFirestoreDb,
+  syncCompletedStayToFirebase,
+  getFirebaseDb,
   getStoredFirebaseConfig,
 } from '../services/firebase';
 
@@ -76,11 +78,15 @@ interface AppContextType {
   // Room Operations
   registerStay: (entryData: {
     roomId: string;
-    chosenPlan: '1h' | '2h' | '3h' | 'noche' | 'promo3h' | any;
+    chosenPlan: PlanType;
     durationMinutes?: number;
     chosenDurationMinutes?: number;
     basePrice: number;
     paymentMethod: PaymentMethod;
+    isPrepaid?: boolean;
+    prepaidAmount?: number;
+    prepaidCash?: number;
+    prepaidQr?: number;
     cashPaid?: number;
     qrPaid?: number;
     vehiclePlate?: string;
@@ -88,11 +94,15 @@ interface AppContextType {
   }) => void;
   registerRoomEntry: (entryData: {
     roomId: string;
-    chosenPlan: '1h' | '2h' | '3h' | 'noche' | 'promo3h' | any;
+    chosenPlan: PlanType;
     durationMinutes?: number;
     chosenDurationMinutes?: number;
     basePrice: number;
     paymentMethod: PaymentMethod;
+    isPrepaid?: boolean;
+    prepaidAmount?: number;
+    prepaidCash?: number;
+    prepaidQr?: number;
     cashPaid?: number;
     qrPaid?: number;
     vehiclePlate?: string;
@@ -296,7 +306,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(timer);
   }, []);
 
-  // 4. Firebase Cloud Firestore REALTIME SYNC (onSnapshot)
+  // 4. Firebase Cloud Database REALTIME SYNC (onValue)
   useEffect(() => {
     let unsubs: (() => void)[] = [];
 
@@ -340,6 +350,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       if (unsubExp) unsubs.push(unsubExp);
+
+      // Subscribe to Realtime Shifts History (Historial de turnos y arqueos para el admin)
+      const unsubShifts = await subscribeToShifts((firestoreShifts) => {
+        if (firestoreShifts) {
+          setShiftsHistory(firestoreShifts);
+        }
+      });
+      if (unsubShifts) unsubs.push(unsubShifts);
+
+      // Subscribe to Realtime Completed Stays (Reportes de ventas en vivo para el admin)
+      const unsubStays = await subscribeToCompletedStays((firestoreStays) => {
+        if (firestoreStays) {
+          setCompletedStays(firestoreStays);
+        }
+      });
+      if (unsubStays) unsubs.push(unsubStays);
     };
 
     setupFirebaseSync();
@@ -477,7 +503,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // ROOM OPERATIONS
+  // ROOM OPERATIONS (With Prepaid Support & Instant Realtime Sync)
   const registerRoomEntry = (entryData: {
     roomId: string;
     chosenPlan: PlanType;
@@ -485,6 +511,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     durationMinutes?: number;
     basePrice: number;
     paymentMethod: PaymentMethod;
+    isPrepaid?: boolean;
+    prepaidAmount?: number;
+    prepaidCash?: number;
+    prepaidQr?: number;
     cashPaid?: number;
     qrPaid?: number;
     vehiclePlate?: string;
@@ -495,6 +525,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const duration = entryData.chosenDurationMinutes || entryData.durationMinutes || 60;
     const stayId = `stay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const isPrepaid = entryData.isPrepaid ?? true; // Default to prepaid if paid at entrance
+    const prepaidAmount = isPrepaid ? (entryData.prepaidAmount !== undefined ? entryData.prepaidAmount : entryData.basePrice) : 0;
+    const prepaidCash = isPrepaid ? (entryData.prepaidCash !== undefined ? entryData.prepaidCash : (entryData.cashPaid || 0)) : 0;
+    const prepaidQr = isPrepaid ? (entryData.prepaidQr !== undefined ? entryData.prepaidQr : (entryData.qrPaid || 0)) : 0;
+
     const newStay: Stay = {
       id: stayId,
       roomId: room.id,
@@ -505,8 +540,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       chosenDurationMinutes: duration,
       baseRoomPrice: entryData.basePrice,
       paymentMethod: entryData.paymentMethod,
-      cashPaid: entryData.cashPaid,
-      qrPaid: entryData.qrPaid,
+      isPrepaid,
+      prepaidAmount,
+      prepaidCash,
+      prepaidQr,
+      cashPaid: prepaidCash,
+      qrPaid: prepaidQr,
       vehiclePlate: entryData.vehiclePlate,
       receptionistId: currentUser.id,
       receptionistName: currentUser.name,
@@ -514,6 +553,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: entryData.notes,
       status: 'active',
     };
+
+    // If prepaid, add collected amount to active shift expected totals immediately
+    if (isPrepaid && (prepaidCash > 0 || prepaidQr > 0) && currentUser.role !== 'admin') {
+      setActiveShifts((prev) => {
+        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
+        const updatedShift: Shift = {
+          ...active,
+          expectedCash: active.expectedCash + prepaidCash,
+          expectedQr: active.expectedQr + prepaidQr,
+          salesCount: active.salesCount + 1,
+          stayIds: [...active.stayIds, newStay.id],
+        };
+        syncShiftToFirestore(updatedShift);
+        return {
+          ...prev,
+          [currentUser.id]: updatedShift,
+        };
+      });
+    }
 
     const updatedRoom: Room = {
       ...room,
@@ -525,13 +583,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Update state locally
     setRooms((prev) => prev.map((r) => (r.id === room.id ? updatedRoom : r)));
 
-    // Sync to Cloud Firestore in Realtime
+    // Sync to Cloud Firebase Realtime DB
     syncRoomToFirestore(updatedRoom);
 
     playSuccessChime();
     showToast({
-      title: 'Habitación Registrada',
-      message: `${room.name} ocupada (${entryData.chosenPlan.toUpperCase()} - ${formatBs(entryData.basePrice)})`,
+      title: isPrepaid ? '¡Habitación Registrada y Pagada!' : 'Habitación Registrada (Pago al Salir)',
+      message: `${room.name} ocupada (${entryData.chosenPlan.toUpperCase()} - ${formatBs(entryData.basePrice)} ${isPrepaid ? '• Pagado' : '• Por cobrar'})`,
       type: 'success',
     });
   };
@@ -664,18 +722,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const overtimeTotal = timeCalc.overtimeCharge;
     const totalAmount = stay.baseRoomPrice + consumptionsTotal + overtimeTotal;
 
+    const isPrepaid = stay.isPrepaid || false;
+    const prepaidAmount = isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
+    const prepaidCash = isPrepaid ? (stay.prepaidCash || (stay.paymentMethod === 'efectivo' ? prepaidAmount : 0)) : 0;
+    const prepaidQr = isPrepaid ? (stay.prepaidQr || (stay.paymentMethod === 'qr' ? prepaidAmount : 0)) : 0;
+
+    // Remaining balance to be paid at exit
+    const remainingDue = Math.max(0, totalAmount - prepaidAmount);
+
     const effectivePaymentMethod = checkoutData.finalPaymentMethod || stay.paymentMethod;
     let finalCash = 0;
     let finalQr = 0;
 
-    if (effectivePaymentMethod === 'efectivo') {
-      finalCash = totalAmount;
-    } else if (effectivePaymentMethod === 'qr') {
-      finalQr = totalAmount;
-    } else if (effectivePaymentMethod === 'mixto') {
-      finalCash = checkoutData.cashPaid !== undefined ? checkoutData.cashPaid : stay.cashPaid || 0;
-      finalQr = checkoutData.qrPaid !== undefined ? checkoutData.qrPaid : stay.qrPaid || Math.max(0, totalAmount - finalCash);
+    if (remainingDue > 0) {
+      if (effectivePaymentMethod === 'efectivo') {
+        finalCash = remainingDue;
+      } else if (effectivePaymentMethod === 'qr') {
+        finalQr = remainingDue;
+      } else if (effectivePaymentMethod === 'mixto') {
+        finalCash = checkoutData.cashPaid !== undefined ? checkoutData.cashPaid : 0;
+        finalQr = checkoutData.qrPaid !== undefined ? checkoutData.qrPaid : Math.max(0, remainingDue - finalCash);
+      }
     }
+
+    const totalCashPaid = prepaidCash + finalCash;
+    const totalQrPaid = prepaidQr + finalQr;
 
     const completedStay: Stay = {
       ...stay,
@@ -684,49 +755,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       overtimeMinutes: timeCalc.overtimeMinutes,
       overtimeCharge: overtimeTotal,
       totalAmount,
+      isPrepaid,
+      prepaidAmount,
+      prepaidCash,
+      prepaidQr,
       paymentMethod: effectivePaymentMethod,
-      cashPaid: finalCash,
-      qrPaid: finalQr,
+      cashPaid: totalCashPaid,
+      qrPaid: totalQrPaid,
       notes: checkoutData.notes || stay.notes,
     };
 
     setCompletedStays((prev) => [completedStay, ...prev]);
+    syncCompletedStayToFirebase(completedStay);
 
-    // Update active shift
-    const shiftReceptionistId = currentUser.role === 'admin' ? stay.receptionistId : currentUser.id;
-    setActiveShifts((prev) => {
-      const active = prev[shiftReceptionistId] || {
-        id: `shift-${shiftReceptionistId}-${Date.now()}`,
-        receptionistId: shiftReceptionistId,
-        receptionistName: currentUser.name,
-        shiftType: currentUser.role === 'recepcionista_noche' ? 'noche' : 'dia',
-        startTime: new Date().toISOString(),
-        status: 'open',
-        initialCashFloat: 100,
-        expectedCash: 0,
-        expectedQr: 0,
-        totalExpensesCash: 0,
-        totalExpensesQr: 0,
-        expenses: [],
-        salesCount: 0,
-        stayIds: [],
-      };
+    // Update active shift if money was collected at checkout or if it wasn't prepaid
+    if (finalCash > 0 || finalQr > 0 || !isPrepaid) {
+      const shiftReceptionistId = currentUser.role === 'admin' ? stay.receptionistId : currentUser.id;
+      setActiveShifts((prev) => {
+        const active = prev[shiftReceptionistId] || ensureActiveShift(currentUser);
+        const alreadyCounted = isPrepaid;
+        const updatedShift: Shift = {
+          ...active,
+          expectedCash: active.expectedCash + finalCash,
+          expectedQr: active.expectedQr + finalQr,
+          salesCount: alreadyCounted ? active.salesCount : active.salesCount + 1,
+          stayIds: active.stayIds.includes(completedStay.id) ? active.stayIds : [...active.stayIds, completedStay.id],
+        };
 
-      const updatedShift: Shift = {
-        ...active,
-        expectedCash: active.expectedCash + finalCash,
-        expectedQr: active.expectedQr + finalQr,
-        salesCount: active.salesCount + 1,
-        stayIds: [...active.stayIds, completedStay.id],
-      };
+        syncShiftToFirestore(updatedShift);
 
-      syncShiftToFirestore(updatedShift);
-
-      return {
-        ...prev,
-        [shiftReceptionistId]: updatedShift,
-      };
-    });
+        return {
+          ...prev,
+          [shiftReceptionistId]: updatedShift,
+        };
+      });
+    }
 
     const newStatus: RoomStatus = checkoutData.setCleaning ? 'limpieza' : 'disponible';
     const updatedRoom: Room = {
@@ -742,11 +805,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     playSuccessChime();
     showToast({
       title: 'Habitación Cerrada con Éxito',
-      message: `${room.name} cobrada: Total ${formatBs(totalAmount)} (${
-        effectivePaymentMethod === 'mixto'
-          ? `Efec: ${formatBs(finalCash)} + QR: ${formatBs(finalQr)}`
-          : effectivePaymentMethod.toUpperCase()
-      })`,
+      message: `${room.name} cobrada: Total ${formatBs(totalAmount)} (Saldo salida: ${formatBs(remainingDue)})`,
       type: 'success',
       durationMs: 5000,
     });
@@ -824,7 +883,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    // 3. Sincronizar gasto a Firestore
+    // 3. Sincronizar gasto a Firebase
     syncExpenseToFirestore(newExpense);
 
     playSuccessChime();
@@ -836,7 +895,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // SHIFT CLOSING
+  // SHIFT CLOSING (Synchronized with Firebase in Realtime)
   const closeCurrentShift = (
     responsiblePersonName: string,
     totalPhysicalCashInDrawer: number,
@@ -900,7 +959,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // 1. Guardar en historial local y Firebase
-    setShiftsHistory((prev) => [closedShift, ...prev]);
+    setShiftsHistory((prev) => [closedShift, ...prev.filter((s) => s.id !== closedShift.id)]);
     syncShiftToFirestore(closedShift);
 
     // 2. Determinar siguiente usuario
@@ -968,7 +1027,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return closedShift;
   };
 
-  // ADMIN ACTIONS (Synchronized with Firestore in Realtime)
+  // ADMIN ACTIONS (Synchronized with Firebase in Realtime)
   const saveProduct = (product: Product) => {
     setProducts((prev) => {
       const exists = prev.some((p) => p.id === product.id);
@@ -977,19 +1036,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : [...prev, product];
       return next;
     });
-    // Write to Firebase Firestore in real time!
     syncProductToFirestore(product);
   };
 
   const deleteProductById = (productId: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== productId));
-    // Delete from Firestore in real time!
     deleteProductFromFirestore(productId);
   };
 
   const updateTariffCatalog = (newTariffs: TariffCatalog) => {
     setTariffs(newTariffs);
-    // Write to Firestore in real time!
     syncTariffsToFirestore(newTariffs);
   };
 

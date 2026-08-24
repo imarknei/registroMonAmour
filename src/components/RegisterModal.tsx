@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Room, PlanType, PaymentMethod } from '../types';
 import { useApp } from '../context/AppContext';
+import { Room, PlanType, PaymentMethod } from '../types';
 import { formatBs, getRoomTypeBadge } from '../utils/formatUtils';
 import {
   X,
   Clock,
-  Moon,
-  Sparkles,
   DollarSign,
   QrCode,
+  Sparkles,
   Layers,
   Car,
   FileText,
   BedDouble,
   Check,
+  CheckCircle2,
+  AlertCircle,
+  HelpCircle,
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -42,60 +44,56 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
 
   const planOptions: PlanOption[] = [];
 
-  // 1 Hour
   if (roomTariff?.price1h) {
     planOptions.push({
       key: '1h',
       title: '1 Hora',
-      subtitle: 'Estadía corta',
+      subtitle: 'Estadía Rápida (60 min)',
       durationMinutes: 60,
       price: roomTariff.price1h,
-      icon: <Clock className="w-4 h-4 text-brand-600" />,
+      icon: <Clock className="w-4 h-4 text-emerald-600" />,
     });
   }
 
-  // 2 Hours
   if (roomTariff?.price2h) {
     planOptions.push({
       key: '2h',
       title: '2 Horas',
-      subtitle: 'Estadía estándar',
+      subtitle: 'Estadía Estándar (120 min)',
       durationMinutes: 120,
       price: roomTariff.price2h,
       icon: <Clock className="w-4 h-4 text-brand-600" />,
     });
   }
 
-  // 3 Hours (for Jacuzzi or if configured)
   if (roomTariff?.price3h) {
     planOptions.push({
       key: '3h',
       title: '3 Horas',
-      subtitle: 'Especial Jacuzzi',
+      subtitle: 'Estadía Extendida (180 min)',
       durationMinutes: 180,
       price: roomTariff.price3h,
       icon: <Clock className="w-4 h-4 text-purple-600" />,
     });
   }
 
-  // Noche / 12 Horas
   if (roomTariff?.priceNight) {
     planOptions.push({
-      key: 'noche12h',
-      title: 'Noche (12h)',
-      subtitle: 'Tarifa nocturna',
+      key: 'noche',
+      title: 'Noche Completa',
+      subtitle: 'Estadía Nocturna (12 Horas)',
       durationMinutes: 720,
       price: roomTariff.priceNight,
-      icon: <Moon className="w-4 h-4 text-indigo-600" />,
+      icon: <Sparkles className="w-4 h-4 text-indigo-600" />,
     });
   }
 
-  // Promoción 3 horas por 190 Bs (Applicable to Suite or general)
-  if (tariffs.promo3hPrice) {
+  // Add Promo 3h if configured
+  if (tariffs?.promo3hPrice && room.type !== 'ventilador') {
     planOptions.push({
-      key: 'promo190',
-      title: 'Promoción 3 Horas',
-      subtitle: 'Tarifa promo especial',
+      key: 'promo3h',
+      title: 'Promo 3 Horas',
+      subtitle: 'Tarifa Promo Especial (180 min)',
       durationMinutes: 180,
       price: tariffs.promo3hPrice,
       icon: <Sparkles className="w-4 h-4 text-amber-500" />,
@@ -105,6 +103,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
 
   // State
   const [selectedPlan, setSelectedPlan] = useState<PlanType>(planOptions[0]?.key || '1h');
+  const [isPrepaid, setIsPrepaid] = useState<boolean>(true); // Por defecto se cobra por adelantado
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [cashAmount, setCashAmount] = useState<string>('');
   const [qrAmount, setQrAmount] = useState<string>('');
@@ -152,15 +151,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     let finalCash: number | undefined;
     let finalQr: number | undefined;
 
-    if (paymentMethod === 'efectivo') {
-      finalCash = basePrice;
-      finalQr = 0;
-    } else if (paymentMethod === 'qr') {
+    if (isPrepaid) {
+      if (paymentMethod === 'efectivo') {
+        finalCash = basePrice;
+        finalQr = 0;
+      } else if (paymentMethod === 'qr') {
+        finalCash = 0;
+        finalQr = basePrice;
+      } else if (paymentMethod === 'mixto') {
+        finalCash = parseFloat(cashAmount) || 0;
+        finalQr = parseFloat(qrAmount) || 0;
+      }
+    } else {
       finalCash = 0;
-      finalQr = basePrice;
-    } else if (paymentMethod === 'mixto') {
-      finalCash = parseFloat(cashAmount) || 0;
-      finalQr = parseFloat(qrAmount) || 0;
+      finalQr = 0;
     }
 
     registerStay({
@@ -169,6 +173,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
       durationMinutes,
       basePrice,
       paymentMethod,
+      isPrepaid,
+      prepaidAmount: isPrepaid ? basePrice : 0,
+      prepaidCash: isPrepaid ? finalCash : 0,
+      prepaidQr: isPrepaid ? finalQr : 0,
       cashPaid: finalCash,
       qrPaid: finalQr,
       vehiclePlate,
@@ -204,14 +212,14 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
           </button>
         </div>
 
-        {/* Form Body */}
+        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Plan Selector */}
           <div>
             <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2.5">
-              1. Seleccionar Tarifa / Tiempo
+              1. Seleccionar Plan / Tiempo
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               {planOptions.map((opt) => {
                 const isSelected = selectedPlan === opt.key;
                 return (
@@ -219,22 +227,14 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
                     key={opt.key}
                     type="button"
                     onClick={() => setSelectedPlan(opt.key)}
-                    className={`relative p-3 rounded-2xl border-2 text-left transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-2xl border-2 text-left transition-all relative ${
                       isSelected
                         ? 'border-brand-600 bg-rose-50/70 shadow-sm'
-                        : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
                     }`}
                   >
-                    {opt.isPromo && (
-                      <span className="absolute -top-2.5 right-2 text-[9px] font-black uppercase bg-amber-500 text-white px-2 py-0.5 rounded-full shadow-xs">
-                        Promo
-                      </span>
-                    )}
-
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="p-1.5 rounded-lg bg-white border border-slate-200/80 shadow-2xs">
-                        {opt.icon}
-                      </div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="p-1.5 rounded-lg bg-slate-100">{opt.icon}</div>
                       {isSelected && (
                         <div className="w-5 h-5 rounded-full bg-brand-600 text-white flex items-center justify-center">
                           <Check className="w-3 h-3 stroke-[3]" />
@@ -255,99 +255,147 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
             </div>
           </div>
 
-          {/* Payment Method Selector with Mixed Option */}
+          {/* PREPAID / POSTPAID TIMING SELECTOR */}
           <div>
-            <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2.5">
-              2. Método de Pago Inicial
+            <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2">
+              2. Modalidad de Cobro de la Habitación
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {/* Efectivo */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Cobro por Adelantado */}
               <button
                 type="button"
-                onClick={() => setPaymentMethod('efectivo')}
-                className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                  paymentMethod === 'efectivo'
-                    ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+                onClick={() => setIsPrepaid(true)}
+                className={`py-3 px-3 rounded-2xl border-2 font-bold text-xs flex flex-col items-center text-center gap-1 transition-all ${
+                  isPrepaid
+                    ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <DollarSign className="w-4 h-4 text-emerald-600" />
-                Efectivo
+                <div className="flex items-center gap-1 font-extrabold text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Pago por Adelantado</span>
+                </div>
+                <span className="text-[10px] text-emerald-700 font-semibold leading-tight">
+                  Paga {formatBs(basePrice)} ahora al entrar
+                </span>
               </button>
 
-              {/* QR */}
+              {/* Pagar al Salir */}
               <button
                 type="button"
-                onClick={() => setPaymentMethod('qr')}
-                className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                  paymentMethod === 'qr'
-                    ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+                onClick={() => setIsPrepaid(false)}
+                className={`py-3 px-3 rounded-2xl border-2 font-bold text-xs flex flex-col items-center text-center gap-1 transition-all ${
+                  !isPrepaid
+                    ? 'border-amber-600 bg-amber-50 text-amber-900 shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <QrCode className="w-4 h-4 text-sky-600" />
-                QR (Vendis)
-              </button>
-
-              {/* Mixto */}
-              <button
-                type="button"
-                onClick={() => {
-                  setPaymentMethod('mixto');
-                  const half = Math.round(basePrice / 2);
-                  setCashAmount(half.toString());
-                  setQrAmount((basePrice - half).toString());
-                }}
-                className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                  paymentMethod === 'mixto'
-                    ? 'border-purple-600 bg-purple-50 text-purple-800 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
-                }`}
-              >
-                <Layers className="w-4 h-4 text-purple-600" />
-                Pago Mixto
+                <div className="flex items-center gap-1 font-extrabold text-xs">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <span>Pagar al Salir</span>
+                </div>
+                <span className="text-[10px] text-amber-700 font-semibold leading-tight">
+                  Cancela todo al desocupar
+                </span>
               </button>
             </div>
+          </div>
 
-            {/* If Mixed, show inputs */}
-            {paymentMethod === 'mixto' && (
-              <div className="mt-3 p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2 animate-fade-in">
-                <span className="text-[11px] font-bold text-purple-900 block">
-                  Desglose de Pago Mixto (Total: {formatBs(basePrice)})
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                      Parte en Efectivo (Bs)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      max={basePrice}
-                      value={cashAmount}
-                      onChange={(e) => handleCashChange(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 font-mono font-bold text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                      Parte en QR (Bs)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      max={basePrice}
-                      value={qrAmount}
-                      onChange={(e) => handleQrChange(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 font-mono font-bold text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                    />
+          {/* Payment Method Selector (visible if Prepaid) */}
+          {isPrepaid && (
+            <div className="animate-fade-in space-y-2">
+              <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider">
+                3. Método de Pago del Adelanto ({formatBs(basePrice)})
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {/* Efectivo */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('efectivo')}
+                  className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                    paymentMethod === 'efectivo'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+                  }`}
+                >
+                  <DollarSign className="w-4 h-4 text-emerald-600" />
+                  Efectivo
+                </button>
+
+                {/* QR */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('qr')}
+                  className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                    paymentMethod === 'qr'
+                      ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+                  }`}
+                >
+                  <QrCode className="w-4 h-4 text-sky-600" />
+                  QR (Vendis)
+                </button>
+
+                {/* Mixto */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod('mixto');
+                    const half = Math.round(basePrice / 2);
+                    setCashAmount(half.toString());
+                    setQrAmount((basePrice - half).toString());
+                  }}
+                  className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                    paymentMethod === 'mixto'
+                      ? 'border-purple-600 bg-purple-50 text-purple-800 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+                  }`}
+                >
+                  <Layers className="w-4 h-4 text-purple-600" />
+                  Mixto
+                </button>
+              </div>
+
+              {/* If Mixed, show inputs */}
+              {paymentMethod === 'mixto' && (
+                <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2 animate-fade-in">
+                  <span className="text-[11px] font-bold text-purple-900 block">
+                    Desglose de Pago Mixto (Total: {formatBs(basePrice)})
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                        Efectivo (Bs)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max={basePrice}
+                        value={cashAmount}
+                        onChange={(e) => handleCashChange(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 font-mono font-bold text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                        QR (Bs)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max={basePrice}
+                        value={qrAmount}
+                        onChange={(e) => handleQrChange(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 font-mono font-bold text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Optional Details (Vehicle Plate & Notes) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -380,28 +428,21 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
             </div>
           </div>
 
-          {/* Stay Live Summary Callout */}
-          <div className="bg-slate-900 text-white rounded-2xl p-4 flex items-center justify-between">
+          {/* Summary Banner */}
+          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex items-center justify-between text-xs">
             <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
-                Salida Estimada ({durationMinutes} min)
-              </span>
-              <span className="text-lg font-extrabold font-mono text-emerald-400">
-                {formattedExitTime}
-              </span>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Salida Estimada:</span>
+              <strong className="text-slate-800 font-mono text-sm font-black">{formattedExitTime}</strong>
             </div>
-
             <div className="text-right">
-              <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
-                Total Tarifa Base
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                {isPrepaid ? 'Total a Cobrar Ahora:' : 'Total a Cobrar al Salir:'}
               </span>
-              <span className="text-2xl font-black font-mono text-rose-400">
-                {formatBs(basePrice)}
-              </span>
+              <strong className="text-brand-700 font-mono text-lg font-black">{formatBs(basePrice)}</strong>
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Actions */}
           <div className="flex items-center gap-3 pt-2">
             <button
               type="button"
@@ -413,10 +454,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
 
             <button
               type="submit"
-              className="w-2/3 py-3 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-brand-600/30 transition-all flex items-center justify-center gap-2"
+              className="w-2/3 py-3 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] text-white font-black text-sm rounded-2xl shadow-lg shadow-brand-600/30 transition-all flex items-center justify-center gap-2"
             >
-              <Clock className="w-4 h-4" />
-              Iniciar Registro ({formatBs(basePrice)})
+              <Check className="w-4 h-4 stroke-[3]" />
+              {isPrepaid ? `Registrar y Cobrar (${formatBs(basePrice)})` : 'Registrar Habitación'}
             </button>
           </div>
         </form>

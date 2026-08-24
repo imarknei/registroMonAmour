@@ -51,8 +51,12 @@ export interface Stay {
   chosenPlan: PlanType;
   baseRoomPrice: number;
   paymentMethod: PaymentMethod;
-  cashPaid?: number; // Para pago mixto o desglose
-  qrPaid?: number;   // Para pago mixto o desglose
+  isPrepaid?: boolean; // Verdadero si el cliente pagó por adelantado al ingresar
+  prepaidAmount?: number; // Monto pagado al entrar
+  prepaidCash?: number;
+  prepaidQr?: number;
+  cashPaid?: number; // Total cobrado en efectivo
+  qrPaid?: number;   // Total cobrado en QR
   consumptions: ConsumptionItem[];
   vehiclePlate?: string;
   notes?: string;

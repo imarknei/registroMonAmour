@@ -5,13 +5,18 @@ import { ShiftHistory } from './ShiftHistory';
 import { WeeklyDiscounts } from './WeeklyDiscounts';
 import { SalesReports } from './SalesReports';
 import { FirebaseConfigManager } from './FirebaseConfigManager';
+import { RegisteredRoomsView } from './RegisteredRoomsView';
+
+export type AdminSubView = 'registered_rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
 
 interface AdminDashboardProps {
-  currentView: 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
+  currentView: AdminSubView;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentView }) => {
   switch (currentView) {
+    case 'registered_rooms':
+      return <RegisteredRoomsView />;
     case 'inventory':
       return <InventoryManager />;
     case 'tariffs':
@@ -25,6 +30,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentView }) =
     case 'firebase':
       return <FirebaseConfigManager />;
     default:
-      return null;
+      return <RegisteredRoomsView />;
   }
 };
