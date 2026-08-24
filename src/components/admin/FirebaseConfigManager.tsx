@@ -126,51 +126,25 @@ export const FirebaseConfigManager: React.FC = () => {
   };
 
   const handleUploadAllToCloud = async () => {
-    if (!isConnected) {
-      alert('Primero conecta tu base de datos de Firebase guardando tus credenciales.');
-      return;
-    }
-
     setIsUploading(true);
-    setUploadStatus('Subiendo datos a Firebase Firestore...');
+    setUploadStatus('Subiendo datos a Firebase...');
 
     try {
-      const { getFirestoreDb } = await import('../../services/firebase');
-      const { doc, setDoc, collection } = await import('firebase/firestore');
-      const db = getFirestoreDb();
+      const { uploadAllDataToFirebase } = await import('../../services/firebase');
+      const res = await uploadAllDataToFirebase({
+        rooms,
+        tariffs,
+        products,
+        shiftsHistory,
+      });
 
-      if (!db) {
-        throw new Error('Firestore no está inicializado.');
+      if (res.success) {
+        setUploadStatus('¡Todos los datos se subieron a Firebase exitosamente!');
+        alert('✅ ¡Éxito! Todas las 12 habitaciones, tarifas e inventario están sincronizados en la nube.');
+      } else {
+        setUploadStatus(`Error al sincronizar: ${res.message}`);
+        alert(`Error al sincronizar: ${res.message}`);
       }
-
-      // 1. Subir configuración de motel
-      await setDoc(doc(db, 'motel_config', 'tariffs'), { ...tariffs, updatedAt: new Date().toISOString() });
-      setUploadStatus('Tarifas sincronizadas...');
-
-      // 2. Subir habitaciones
-      for (const r of rooms) {
-        await setDoc(doc(db, 'rooms', r.id), { ...r, updatedAt: new Date().toISOString() });
-      }
-      setUploadStatus('12 habitaciones sincronizadas...');
-
-      // 3. Subir inventario de productos
-      for (const p of products) {
-        await setDoc(doc(db, 'products', p.id), { ...p, updatedAt: new Date().toISOString() });
-      }
-      setUploadStatus('Inventario de productos sincronizado...');
-
-      // 4. Subir turnos
-      for (const s of shiftsHistory) {
-        await setDoc(doc(db, 'shifts', s.id), s);
-      }
-
-      // 5. Subir estadías
-      for (const st of completedStays) {
-        await setDoc(doc(db, 'completed_stays', st.id), st);
-      }
-
-      setUploadStatus('¡Todos los datos se subieron a Firebase exitosamente!');
-      alert('✅ ¡Éxito! Todas las habitaciones, tarifas, inventario y turnos se han sincronizado con tu Firebase Cloud Firestore.');
     } catch (err: any) {
       setUploadStatus(`Error al sincronizar: ${err.message}`);
       alert(`Error al sincronizar con Firebase: ${err.message}`);
