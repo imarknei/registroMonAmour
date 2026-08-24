@@ -19,8 +19,17 @@ export interface FirebaseConfig {
 
 const FIREBASE_STORAGE_KEY = 'mon_amour_firebase_config_v1';
 
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
+  apiKey: "AIzaSyAOH_ZjRkB_NGOfQ2gzzfqJ8APvfF6j3sM",
+  authDomain: "bidmark-race.firebaseapp.com",
+  projectId: "bidmark-race",
+  storageBucket: "bidmark-race.firebasestorage.app",
+  messagingSenderId: "709382571048",
+  appId: "1:709382571048:web:66a1f8bf1bd86da51ee11d",
+};
+
 // Recuperar configuración guardada en LocalStorage o variables de entorno
-export const getStoredFirebaseConfig = (): FirebaseConfig | null => {
+export const getStoredFirebaseConfig = (): FirebaseConfig => {
   try {
     const saved = localStorage.getItem(FIREBASE_STORAGE_KEY);
     if (saved) {
@@ -34,16 +43,16 @@ export const getStoredFirebaseConfig = (): FirebaseConfig | null => {
   const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
   if (metaEnv && metaEnv.VITE_FIREBASE_PROJECT_ID) {
     return {
-      apiKey: metaEnv.VITE_FIREBASE_API_KEY || '',
-      authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || '',
-      projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || '',
-      storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || '',
-      messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-      appId: metaEnv.VITE_FIREBASE_APP_ID || '',
+      apiKey: metaEnv.VITE_FIREBASE_API_KEY || DEFAULT_FIREBASE_CONFIG.apiKey,
+      authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_FIREBASE_CONFIG.authDomain,
+      projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_CONFIG.projectId,
+      storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || DEFAULT_FIREBASE_CONFIG.storageBucket,
+      messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || DEFAULT_FIREBASE_CONFIG.messagingSenderId,
+      appId: metaEnv.VITE_FIREBASE_APP_ID || DEFAULT_FIREBASE_CONFIG.appId,
     };
   }
 
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 };
 
 export const saveStoredFirebaseConfig = (config: FirebaseConfig): void => {
