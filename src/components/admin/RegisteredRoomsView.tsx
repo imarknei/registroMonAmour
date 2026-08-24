@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 export const RegisteredRoomsView: React.FC = () => {
-  const { rooms, completedStays, nowTimestamp } = useApp();
+  const { rooms, tariffs, completedStays, nowTimestamp } = useApp();
 
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,7 +42,8 @@ export const RegisteredRoomsView: React.FC = () => {
 
   occupiedRooms.forEach((r) => {
     const s = r.currentStay!;
-    const timeCalc = calculateStayTime(s.startTime, s.chosenDurationMinutes);
+    const extraRate = tariffs[r.type]?.extraHourPrice || (r.type === 'jacuzzi' || r.type === 'golden_suite' ? 40 : 30);
+    const timeCalc = calculateStayTime(s.startTime, s.chosenDurationMinutes, extraRate);
     const consSum = s.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
     totalActiveBasePrice += s.baseRoomPrice;
     totalActiveConsumptions += consSum;
@@ -251,7 +252,8 @@ export const RegisteredRoomsView: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredActiveRooms.map((room) => {
                 const stay = room.currentStay!;
-                const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
+                const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
+                const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
                 const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
                 const totalDue = stay.baseRoomPrice + consumptionsTotal + timeCalc.overtimeCharge;
                 const prepaidAmt = stay.isPrepaid ? stay.prepaidAmount || stay.baseRoomPrice : 0;
@@ -330,10 +332,17 @@ export const RegisteredRoomsView: React.FC = () => {
                       </div>
                       <div>
                         {timeCalc.isOvertime ? (
-                          <span className="text-rose-700 font-black flex items-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            Excedido +{timeCalc.overtimeMinutes} min (+{formatBs(timeCalc.overtimeCharge)})
-                          </span>
+                          timeCalc.gracePeriodActive ? (
+                            <span className="text-amber-700 font-bold flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              Espera (+{timeCalc.overtimeMinutes} min • 0 Bs)
+                            </span>
+                          ) : (
+                            <span className="text-rose-700 font-black flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              +{timeCalc.extraHoursCount}h Extra (+{formatBs(timeCalc.overtimeCharge)})
+                            </span>
+                          )
                         ) : (
                           <span className="text-slate-700 font-bold">
                             Quedan {formatTimerDisplay(timeCalc.remainingMinutes, timeCalc.remainingSeconds)}

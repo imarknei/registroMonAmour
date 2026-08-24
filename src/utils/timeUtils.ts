@@ -2,22 +2,29 @@ export interface OvertimeCalculation {
   isOvertime: boolean;
   overtimeMinutes: number;
   overtimeSeconds: number;
-  gracePeriodActive: boolean;
-  overtimeCharge: number;
+  gracePeriodActive: boolean; // Primeros 10 minutos de espera -> 0 Bs de recargo
+  extraHoursCount: number; // Cantidad de horas extras cobradas (1, 2, 3...)
+  extraHourRate: number; // Tarifa por hora extra configurada para la habitación (ej. 30 Bs o 40 Bs)
+  overtimeCharge: number; // 0 si está dentro de los 10 min de espera, o extraHoursCount * extraHourRate
   remainingMinutes: number;
   remainingSeconds: number;
-  isWarning: boolean; // Less than 10 minutes remaining
+  isWarning: boolean; // Menos de 10 minutos restantes
   percentElapsed: number;
 }
 
 /**
- * Calculates countdown, overtime, and penalty charge based on the exact rule:
- * - 0 - 5 min overtime: 0 Bs (Grace period)
- * - 6 - 20 min overtime: 10 Bs
- * - 21 - 30 min overtime: 20 Bs
- * - 31 - 40 min overtime: 30 Bs (+10 Bs per each 10 min block)
+ * Regla de Control de Tiempo y Recargos Motel Mon Amour:
+ * - Cuenta regresiva hasta 0.
+ * - Al llegar a 0, arranca el cronómetro de tiempo excedido.
+ * - Durante los primeros 10 minutos de espera (0 a 10 min): 0 Bs (tolerancia gratuita de espera).
+ * - A partir del minuto 11: cobra automáticamente 1 hora extra completa con el precio configurado (30 Bs o 40 Bs según la habitación).
+ * - Cada 60 minutos adicionales (con sus 10 min de tolerancia), se suma otra hora extra.
  */
-export function calculateStayTime(startTimeIso: string, durationMinutes: number): OvertimeCalculation {
+export function calculateStayTime(
+  startTimeIso: string,
+  durationMinutes: number,
+  extraHourPrice: number = 30
+): OvertimeCalculation {
   const start = new Date(startTimeIso).getTime();
   const now = Date.now();
   const elapsedMs = Math.max(0, now - start);
@@ -27,7 +34,7 @@ export function calculateStayTime(startTimeIso: string, durationMinutes: number)
   const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
 
   if (diffMs >= 0) {
-    // Still in normal paid time
+    // Aún dentro del tiempo pagado normal
     const totalRemainingSec = Math.floor(diffMs / 1000);
     const remainingMinutes = Math.floor(totalRemainingSec / 60);
     const remainingSeconds = totalRemainingSec % 60;
@@ -38,6 +45,8 @@ export function calculateStayTime(startTimeIso: string, durationMinutes: number)
       overtimeMinutes: 0,
       overtimeSeconds: 0,
       gracePeriodActive: false,
+      extraHoursCount: 0,
+      extraHourRate: extraHourPrice,
       overtimeCharge: 0,
       remainingMinutes,
       remainingSeconds,
@@ -45,23 +54,28 @@ export function calculateStayTime(startTimeIso: string, durationMinutes: number)
       percentElapsed,
     };
   } else {
-    // Exceeded allocated time
+    // Tiempo excedido (Cronómetro activo)
     const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
     const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
     const overtimeSeconds = totalOvertimeSec % 60;
 
     let overtimeCharge = 0;
     let gracePeriodActive = false;
+    let extraHoursCount = 0;
 
-    if (overtimeMinutes <= 5) {
+    // Regla de 10 minutos de espera:
+    if (overtimeMinutes <= 10) {
+      // De 0 a 10 minutos de espera: NO COBRA NADA (0 Bs)
       gracePeriodActive = true;
+      extraHoursCount = 0;
       overtimeCharge = 0;
-    } else if (overtimeMinutes <= 20) {
-      overtimeCharge = 10;
     } else {
-      // 21 min onwards -> 10 + ceil((min - 20) / 10) * 10
-      const extraBlocks = Math.ceil((overtimeMinutes - 20) / 10);
-      overtimeCharge = 10 + extraBlocks * 10;
+      // Minuto 11 en adelante: Cobra 1 hora extra automáticamente (o más si excede 1h+10m)
+      gracePeriodActive = false;
+      // Minutos 11 a 70: 1 hora extra
+      // Minutos 71 a 130: 2 horas extras
+      extraHoursCount = 1 + Math.floor(Math.max(0, overtimeMinutes - 11) / 60);
+      overtimeCharge = extraHoursCount * extraHourPrice;
     }
 
     return {
@@ -69,6 +83,8 @@ export function calculateStayTime(startTimeIso: string, durationMinutes: number)
       overtimeMinutes,
       overtimeSeconds,
       gracePeriodActive,
+      extraHoursCount,
+      extraHourRate: extraHourPrice,
       overtimeCharge,
       remainingMinutes: 0,
       remainingSeconds: 0,
@@ -79,7 +95,7 @@ export function calculateStayTime(startTimeIso: string, durationMinutes: number)
 }
 
 /**
- * Format minutes and seconds into MM:SS or HH:MM:SS
+ * Formatear minutos y segundos en MM:SS o HH:MM:SS
  */
 export function formatTimerDisplay(minutes: number, seconds: number): string {
   const m = Math.floor(minutes);
@@ -138,7 +154,7 @@ export function formatDateOnly(isoString: string): string {
 }
 
 /**
- * Get the Monday and Sunday for the week of a given date (ISO Week)
+ * Obtener rango de lunes a domingo para reportes semanales (ISO Week)
  */
 export function getWeekRange(dateInput: Date | string): {
   weekKey: string;

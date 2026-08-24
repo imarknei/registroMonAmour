@@ -34,7 +34,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   onClose,
   onOpenReceipt,
 }) => {
-  const { products, addConsumptionToRoom, removeConsumptionFromRoom, closeStayAndCheckout } = useApp();
+  const { tariffs, products, addConsumptionToRoom, removeConsumptionFromRoom, closeStayAndCheckout } = useApp();
 
   const [activeTab, setActiveTab] = useState<'checkout' | 'consumptions'>('checkout');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -48,7 +48,9 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   if (!room || !room.currentStay) return null;
 
   const stay = room.currentStay;
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
+  const roomTariff = tariffs[room.type];
+  const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate);
   const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
   const totalDue = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
 
@@ -230,20 +232,38 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
             <div className="space-y-4">
               {/* Overtime Notice */}
               {timeCalc.isOvertime && (
-                <div className="p-3.5 bg-rose-50 border border-brand-300 rounded-2xl flex items-center justify-between text-xs text-brand-900 animate-pulse">
+                <div
+                  className={`p-3.5 border rounded-2xl flex items-center justify-between text-xs ${
+                    timeCalc.gracePeriodActive
+                      ? 'bg-amber-50 border-amber-300 text-amber-950'
+                      : 'bg-rose-50 border-brand-300 text-brand-950 animate-pulse'
+                  }`}
+                >
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-brand-600 shrink-0" />
+                    <AlertTriangle
+                      className={`w-5 h-5 shrink-0 ${
+                        timeCalc.gracePeriodActive ? 'text-amber-600' : 'text-brand-600'
+                      }`}
+                    />
                     <div>
-                      <strong className="block font-black">¡Tiempo Excedido por {timeCalc.overtimeMinutes} minutos!</strong>
+                      <strong className="block font-black">
+                        {timeCalc.gracePeriodActive
+                          ? `Tiempo Excedido (${timeCalc.overtimeMinutes} min) • Espera / Tolerancia Activa`
+                          : `¡Tiempo Excedido por ${timeCalc.overtimeMinutes} minutos!`}
+                      </strong>
                       <span className="text-[11px] text-slate-600">
                         {timeCalc.gracePeriodActive
-                          ? 'En periodo de gracia (tolerancia 5 min).'
-                          : `Se ha generado un recargo de +${formatBs(timeCalc.overtimeCharge)}.`}
+                          ? 'Durante los 10 minutos de espera no se cobra nada (0 Bs de recargo).'
+                          : `Superó los 10 min de espera. Se aplica recargo automático de ${timeCalc.extraHoursCount} hora(s) extra (${formatBs(timeCalc.extraHourRate)} c/u).`}
                       </span>
                     </div>
                   </div>
-                  <span className="font-mono text-sm font-black text-brand-700">
-                    +{formatBs(timeCalc.overtimeCharge)}
+                  <span
+                    className={`font-mono text-sm font-black ${
+                      timeCalc.gracePeriodActive ? 'text-amber-700' : 'text-brand-700'
+                    }`}
+                  >
+                    {timeCalc.gracePeriodActive ? '0.00 Bs' : `+${formatBs(timeCalc.overtimeCharge)}`}
                   </span>
                 </div>
               )}
@@ -322,7 +342,9 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
                 {timeCalc.overtimeCharge > 0 && (
                   <div className="flex justify-between text-xs text-amber-300">
-                    <span>Recargo Tiempo Extra ({timeCalc.overtimeMinutes} min):</span>
+                    <span>
+                      Recargo Hora Extra ({timeCalc.extraHoursCount}h extra x {formatBs(timeCalc.extraHourRate)}):
+                    </span>
                     <span className="font-mono font-semibold">+{formatBs(timeCalc.overtimeCharge)}</span>
                   </div>
                 )}

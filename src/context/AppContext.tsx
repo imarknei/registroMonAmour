@@ -441,7 +441,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rooms.forEach((room) => {
       if (room.status === 'ocupada' && room.currentStay) {
         const stay = room.currentStay;
-        const calc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
+        const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
+        const calc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
         const stayKey = `${stay.id}`;
         const alertState = playedAlerts[stayKey] || {};
 
@@ -453,7 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           showToast({
             title: `¡Tiempo por Vencer!`,
-            message: `${room.name}: Quedan menos de 5 minutos de estadía.`,
+            message: `${room.name}: Quedan menos de 10 minutos de estadía.`,
             type: 'warning',
           });
         }
@@ -465,14 +466,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             [stayKey]: { ...alertState, overtime: true },
           }));
           showToast({
-            title: `¡Tiempo Excedido!`,
-            message: `${room.name}: Ha excedido el tiempo fijado. Recargo actual: ${formatBs(calc.overtimeCharge)}.`,
-            type: 'error',
+            title: calc.gracePeriodActive ? `¡Tiempo Cumplido!` : `¡Hora Extra Aplicada!`,
+            message: calc.gracePeriodActive
+              ? `${room.name}: Llegó a 00:00. Iniciando 10 minutos de espera sin costo.`
+              : `${room.name}: Excedió los 10 min de espera. Se aplicó recargo de hora extra: +${formatBs(calc.overtimeCharge)}.`,
+            type: calc.gracePeriodActive ? 'warning' : 'error',
           });
         }
       }
     });
-  }, [nowTimestamp, rooms, soundAlertsEnabled, playedAlerts, showToast]);
+  }, [nowTimestamp, rooms, tariffs, soundAlertsEnabled, playedAlerts, showToast]);
 
   // Actions
   const setCurrentUserById = (userId: string) => {
@@ -717,7 +720,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!room || !room.currentStay) return null;
 
     const stay = room.currentStay;
-    const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
+    const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
+    const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
     const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
     const overtimeTotal = timeCalc.overtimeCharge;
     const totalAmount = stay.baseRoomPrice + consumptionsTotal + overtimeTotal;

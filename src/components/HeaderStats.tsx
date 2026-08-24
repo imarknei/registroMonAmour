@@ -5,7 +5,7 @@ import { Bed, CheckCircle2, Sparkles, Clock, AlertTriangle, Wallet } from 'lucid
 import { calculateStayTime } from '../utils/timeUtils';
 
 export const HeaderStats: React.FC = () => {
-  const { rooms, currentShift, currentUser, nowTimestamp } = useApp();
+  const { rooms, tariffs, currentShift, currentUser, nowTimestamp } = useApp();
 
   const totalRooms = rooms.length;
   const availableRooms = rooms.filter((r) => r.status === 'disponible').length;
@@ -15,7 +15,8 @@ export const HeaderStats: React.FC = () => {
   // Overtime count
   const overtimeRooms = rooms.filter((r) => {
     if (r.status === 'ocupada' && r.currentStay) {
-      const calc = calculateStayTime(r.currentStay.startTime, r.currentStay.chosenDurationMinutes);
+      const extraRate = tariffs[r.type]?.extraHourPrice || 30;
+      const calc = calculateStayTime(r.currentStay.startTime, r.currentStay.chosenDurationMinutes, extraRate);
       return calc.isOvertime;
     }
     return false;

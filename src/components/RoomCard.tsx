@@ -165,7 +165,8 @@ export const RoomCard: React.FC<RoomCardProps> = ({
     return null;
   }
 
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes);
+  const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate);
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
   const currentTotalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
   const isPrepaid = stay.isPrepaid || false;
@@ -199,13 +200,21 @@ export const RoomCard: React.FC<RoomCardProps> = ({
             <span
               className={`inline-flex items-center gap-1 text-xs font-extrabold px-2.5 py-1 rounded-full border ${
                 timeCalc.isOvertime
-                  ? 'bg-brand-600 text-white border-brand-700 animate-pulse'
+                  ? timeCalc.gracePeriodActive
+                    ? 'bg-amber-500 text-white border-amber-600'
+                    : 'bg-brand-600 text-white border-brand-700 animate-pulse'
                   : timeCalc.isWarning
                   ? 'bg-amber-500 text-white border-amber-600'
                   : 'bg-brand-50 text-brand-700 border-brand-200'
               }`}
             >
-              {timeCalc.isOvertime ? '¡TIEMPO EXCEDIDO!' : timeCalc.isWarning ? '¡Por vencer!' : 'Ocupada'}
+              {timeCalc.isOvertime
+                ? timeCalc.gracePeriodActive
+                  ? 'En Espera (10 min)'
+                  : '¡HORA EXTRA APLICADA!'
+                : timeCalc.isWarning
+                ? '¡Por vencer!'
+                : 'Ocupada'}
             </span>
 
             {isPrepaid ? (
@@ -225,7 +234,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         <div
           className={`rounded-2xl p-3.5 mb-3 border text-center relative overflow-hidden ${
             timeCalc.isOvertime
-              ? 'bg-brand-600 text-white border-brand-700'
+              ? timeCalc.gracePeriodActive
+                ? 'bg-amber-600 text-white border-amber-700'
+                : 'bg-brand-600 text-white border-brand-700'
               : timeCalc.isWarning
               ? 'bg-amber-500 text-white border-amber-600'
               : 'bg-slate-900 text-white border-slate-950'
@@ -233,7 +244,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         >
           <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-widest opacity-90 mb-0.5">
             <Clock className="w-3.5 h-3.5" />
-            {timeCalc.isOvertime ? 'Cronómetro Excedido' : 'Tiempo Restante'}
+            {timeCalc.isOvertime ? (timeCalc.gracePeriodActive ? 'Cronómetro de Espera' : 'Cronómetro Excedido') : 'Tiempo Restante'}
           </div>
 
           <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-tight my-0.5">
@@ -246,9 +257,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           {timeCalc.isOvertime && (
             <div className="mt-1.5 inline-block bg-white text-brand-700 text-xs font-black px-3 py-1 rounded-full shadow-sm">
               {timeCalc.gracePeriodActive ? (
-                'Periodo de Gracia (0 Bs)'
+                'Espera / Tolerancia (10 min) • 0 Bs'
               ) : (
-                `Recargo Extra: +${formatBs(timeCalc.overtimeCharge)}`
+                `+${timeCalc.extraHoursCount} Hora(s) Extra (+${formatBs(timeCalc.overtimeCharge)})`
               )}
             </div>
           )}
