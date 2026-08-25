@@ -93,3 +93,24 @@ export function getCategoryLabel(category: string): string {
       return category;
   }
 }
+
+export function getPlanLabel(plan: string): string {
+  switch (plan) {
+    case '1h':
+      return '1 Hora';
+    case '2h':
+      return '2 Horas';
+    case '3h':
+      return '3 Horas';
+    case '2h_noche':
+      return '2h Suite Noche';
+    case 'promo3h':
+    case 'promo190':
+      return 'Promo 3 Horas';
+    case 'noche':
+    case 'noche12h':
+      return 'Noche (12h)';
+    default:
+      return plan.toUpperCase();
+  }
+}

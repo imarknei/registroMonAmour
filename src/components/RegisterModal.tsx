@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
+  Moon,
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -40,6 +41,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     price: number;
     icon: React.ReactNode;
     isPromo?: boolean;
+    isNight?: boolean;
   };
 
   const planOptions: PlanOption[] = [];
@@ -63,6 +65,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
       durationMinutes: 120,
       price: roomTariff.price2h,
       icon: <Clock className="w-4 h-4 text-brand-600" />,
+    });
+  }
+
+  // Paquete 2 Horas Suite Noche (100 Bs) para habitaciones Suite
+  if (roomTariff?.price2hNight || room.type === 'suite') {
+    const suiteNight2hPrice = roomTariff?.price2hNight || 100;
+    planOptions.push({
+      key: '2h_noche',
+      title: '2h Suite Noche',
+      subtitle: 'Paquete Nocturno 2 Horas (120 min)',
+      durationMinutes: 120,
+      price: suiteNight2hPrice,
+      icon: <Moon className="w-4 h-4 text-indigo-600" />,
+      isNight: true,
     });
   }
 

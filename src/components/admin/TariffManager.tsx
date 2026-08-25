@@ -12,7 +12,7 @@ export const TariffManager: React.FC = () => {
 
   const handleUpdateField = (
     type: RoomType,
-    field: 'price1h' | 'price2h' | 'price3h' | 'priceNight' | 'extraHourPrice',
+    field: 'price1h' | 'price2h' | 'price3h' | 'price2hNight' | 'priceNight' | 'extraHourPrice',
     value: string
   ) => {
     const numValue = value === '' ? undefined : parseFloat(value);
@@ -189,6 +189,22 @@ export const TariffManager: React.FC = () => {
                       />
                     </div>
                   ) : null}
+
+                  {/* 2 Horas Noche / Paquete */}
+                  <div className="bg-purple-50/70 p-2 rounded-xl border border-purple-100 col-span-1">
+                    <label className="block text-[11px] font-bold text-purple-900 mb-1 flex items-center gap-1">
+                      <Moon className="w-3 h-3 text-purple-600" />
+                      2h Noche (Bs)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={config.price2hNight ?? ''}
+                      onChange={(e) => handleUpdateField(type.key, 'price2hNight', e.target.value)}
+                      placeholder={type.key === 'suite' ? '100' : '-'}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 font-mono font-extrabold text-purple-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
 
                   {/* Noche / 12 Horas */}
                   <div className="bg-indigo-50/70 p-2 rounded-xl border border-indigo-100 col-span-1">

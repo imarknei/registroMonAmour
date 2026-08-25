@@ -6,6 +6,7 @@ export interface RoomTariffConfig {
   price1h?: number;
   price2h?: number;
   price3h?: number;
+  price2hNight?: number; // Paquete 2 Horas Suite Noche (100 Bs)
   priceNight?: number; // 12 horas / Noche
   extraHourPrice: number;
 }
@@ -25,7 +26,7 @@ export interface Room {
   cleaningStartTime?: string;
 }
 
-export type PlanType = '1h' | '2h' | '3h' | 'promo190' | 'promo3h' | 'noche12h' | 'noche' | 'personalizado';
+export type PlanType = '1h' | '2h' | '3h' | '2h_noche' | 'promo190' | 'promo3h' | 'noche12h' | 'noche' | 'personalizado';
 
 export type PaymentMethod = 'efectivo' | 'qr' | 'mixto';
 

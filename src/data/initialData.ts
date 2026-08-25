@@ -16,6 +16,7 @@ export const INITIAL_TARIFFS: TariffCatalog = {
   suite: {
     price1h: 65,
     price2h: 80,
+    price2hNight: 100, // Paquete 2 Horas Suite Noche en 100 Bs
     priceNight: 180,
     extraHourPrice: 30,
   },

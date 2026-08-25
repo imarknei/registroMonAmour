@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { formatBs, getRoomTypeLabel } from '../../utils/formatUtils';
+import { formatBs, getRoomTypeLabel, getPlanLabel } from '../../utils/formatUtils';
 import { formatDateTime, formatTimeOnly } from '../../utils/timeUtils';
 import { Stay, PaymentMethod } from '../../types';
 import {
@@ -783,8 +783,8 @@ export const SalesReports: React.FC = () => {
                       <td className="py-3.5 px-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-1">
-                            <span className="font-extrabold text-slate-900 uppercase">
-                              {stay.chosenPlan}
+                            <span className="font-extrabold text-slate-900">
+                              {getPlanLabel(stay.chosenPlan)}
                             </span>
                             <span className="text-slate-500 font-mono">({formatBs(stay.baseRoomPrice)})</span>
                           </div>
