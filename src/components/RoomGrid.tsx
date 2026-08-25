@@ -9,6 +9,7 @@ interface RoomGridProps {
   onOpenDetail: (room: Room) => void;
   onOpenQuickConsumption: (room: Room) => void;
   onOpenCheckout: (room: Room) => void;
+  onOpenChangeRoom?: (room: Room) => void;
 }
 
 export const RoomGrid: React.FC<RoomGridProps> = ({
@@ -17,6 +18,7 @@ export const RoomGrid: React.FC<RoomGridProps> = ({
   onOpenDetail,
   onOpenQuickConsumption,
   onOpenCheckout,
+  onOpenChangeRoom,
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | RoomStatus>('all');
 
@@ -104,6 +106,7 @@ export const RoomGrid: React.FC<RoomGridProps> = ({
             onOpenDetail={onOpenDetail}
             onOpenQuickConsumption={onOpenQuickConsumption}
             onOpenCheckout={onOpenCheckout}
+            onOpenChangeRoom={onOpenChangeRoom}
           />
         ))}
       </div>

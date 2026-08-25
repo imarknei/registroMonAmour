@@ -24,6 +24,7 @@ import {
   Fan,
   FileText,
   AlertTriangle,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 interface RoomCardProps {
@@ -32,6 +33,7 @@ interface RoomCardProps {
   onOpenDetail: (room: Room) => void;
   onOpenQuickConsumption: (room: Room) => void;
   onOpenCheckout: (room: Room) => void;
+  onOpenChangeRoom?: (room: Room) => void;
 }
 
 export const RoomCard: React.FC<RoomCardProps> = ({
@@ -40,6 +42,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   onOpenDetail,
   onOpenQuickConsumption,
   onOpenCheckout,
+  onOpenChangeRoom,
 }) => {
   const { tariffs, changeRoomStatus, nowTimestamp } = useApp();
 
@@ -337,21 +340,31 @@ export const RoomCard: React.FC<RoomCardProps> = ({
 
       {/* Action Buttons Grid */}
       <div className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {/* Quick Consumo Button */}
           <button
             onClick={() => onOpenQuickConsumption(room)}
-            className="py-2 px-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5"
+            className="py-2 px-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1"
             title="Añadir bebidas, preservativos o snacks"
           >
             <PlusCircle className="w-3.5 h-3.5 text-brand-600" />
             + Consumo
           </button>
 
+          {/* Cambio de Habitación Button */}
+          <button
+            onClick={() => (onOpenChangeRoom ? onOpenChangeRoom(room) : onOpenDetail(room))}
+            className="py-2 px-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1"
+            title="Cambio de habitación por inconveniente o error"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 text-amber-700" />
+            Cambio
+          </button>
+
           {/* Ver Detalle Button */}
           <button
             onClick={() => onOpenDetail(room)}
-            className="py-2 px-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5"
+            className="py-2 px-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1"
           >
             <FileText className="w-3.5 h-3.5 text-slate-500" />
             Detalles

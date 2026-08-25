@@ -21,18 +21,21 @@ import {
   UserCheck,
   CheckCircle2,
   AlertTriangle,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 interface RoomDetailModalProps {
   room: Room | null;
   onClose: () => void;
   onOpenReceipt: (stay: Stay) => void;
+  onOpenChangeRoom?: (room: Room) => void;
 }
 
 export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   room,
   onClose,
   onOpenReceipt,
+  onOpenChangeRoom,
 }) => {
   const { tariffs, products, addConsumptionToRoom, removeConsumptionFromRoom, closeStayAndCheckout } = useApp();
 
@@ -200,28 +203,40 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-2">
-          <button
-            onClick={() => setActiveTab('checkout')}
-            className={`pb-2.5 px-4 text-xs font-extrabold transition-all border-b-2 ${
-              activeTab === 'checkout'
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Cobro & Salida
-          </button>
+        <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-2 items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('checkout')}
+              className={`pb-2.5 px-4 text-xs font-extrabold transition-all border-b-2 ${
+                activeTab === 'checkout'
+                  ? 'border-brand-600 text-brand-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Cobro & Salida
+            </button>
+
+            <button
+              onClick={() => setActiveTab('consumptions')}
+              className={`pb-2.5 px-4 text-xs font-extrabold transition-all border-b-2 flex items-center gap-1.5 ${
+                activeTab === 'consumptions'
+                  ? 'border-brand-600 text-brand-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              + Agregar Consumos ({stay.consumptions.length})
+            </button>
+          </div>
 
           <button
-            onClick={() => setActiveTab('consumptions')}
-            className={`pb-2.5 px-4 text-xs font-extrabold transition-all border-b-2 flex items-center gap-1.5 ${
-              activeTab === 'consumptions'
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            type="button"
+            onClick={() => onOpenChangeRoom?.(room)}
+            className="pb-2.5 px-3.5 text-xs font-black text-amber-900 hover:text-amber-950 flex items-center gap-1.5 bg-amber-100/80 hover:bg-amber-200/90 rounded-t-xl transition-all border-t border-x border-amber-300 shadow-xs"
+            title="Cambiar a otra habitación disponible"
           >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            + Agregar Consumos ({stay.consumptions.length})
+            <ArrowLeftRight className="w-3.5 h-3.5 text-amber-700" />
+            CAMBIO DE HABITACIÓN
           </button>
         </div>
 
@@ -230,6 +245,24 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           {/* TAB 1: COBRO & SALIDA */}
           {activeTab === 'checkout' && (
             <div className="space-y-4">
+              {/* Change Room Banner */}
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <ArrowLeftRight className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span className="text-amber-950 font-medium">
+                    ¿Inconveniente técnico, avería o error al asignar la habitación?
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenChangeRoom?.(room)}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] rounded-xl shadow-xs transition-all flex items-center gap-1 shrink-0"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  Cambio de Habitación
+                </button>
+              </div>
+
               {/* Overtime Notice */}
               {timeCalc.isOvertime && (
                 <div

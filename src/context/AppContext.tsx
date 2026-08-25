@@ -26,7 +26,7 @@ import {
   INITIAL_PRODUCTS,
   SYSTEM_USERS,
 } from '../data/initialData';
-import { calculateStayTime } from '../utils/timeUtils';
+import { calculateStayTime, formatDateTime } from '../utils/timeUtils';
 import {
   playWarningBeep,
   playOvertimeAlert,
@@ -124,6 +124,14 @@ interface AppContextType {
     }
   ) => Stay | null;
   changeRoomStatus: (roomId: string, newStatus: RoomStatus) => void;
+  changeRoom: (
+    currentRoomId: string,
+    targetRoomId: string,
+    reason: string,
+    options?: {
+      oldRoomStatus?: 'limpieza' | 'disponible';
+    }
+  ) => boolean;
 
   // Expenses / Shift Payments
   addExpenseToShift: (expenseData: {
@@ -853,6 +861,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncRoomToFirestore(updatedRoom);
   };
 
+  const changeRoom = (
+    currentRoomId: string,
+    targetRoomId: string,
+    reason: string,
+    options?: {
+      oldRoomStatus?: 'limpieza' | 'disponible';
+    }
+  ): boolean => {
+    const sourceRoom = rooms.find((r) => r.id === currentRoomId);
+    const targetRoom = rooms.find((r) => r.id === targetRoomId);
+
+    if (!sourceRoom || !sourceRoom.currentStay) {
+      showToast({
+        title: 'Error al cambiar habitación',
+        message: 'La habitación de origen no tiene una estadía activa.',
+        type: 'error',
+      });
+      return false;
+    }
+
+    if (!targetRoom || targetRoom.status !== 'disponible') {
+      showToast({
+        title: 'Error al cambiar habitación',
+        message: `La habitación destino (${targetRoom?.name || 'Seleccionada'}) no está disponible.`,
+        type: 'error',
+      });
+      return false;
+    }
+
+    const currentStay = sourceRoom.currentStay;
+    const oldRoomStatus = options?.oldRoomStatus || 'limpieza';
+    const changeTimestamp = new Date().toISOString();
+    const reasonText = reason.trim() || 'Inconveniente o error';
+    const auditNote = `[Cambio ${formatDateTime(changeTimestamp)}]: Traslado de ${sourceRoom.name} a ${targetRoom.name}. Motivo: ${reasonText}`;
+
+    const transferredStay: Stay = {
+      ...currentStay,
+      roomId: targetRoom.id,
+      roomName: targetRoom.name,
+      roomType: targetRoom.type,
+      notes: currentStay.notes ? `${currentStay.notes} | ${auditNote}` : auditNote,
+    };
+
+    // 1. Updated target room (now occupied)
+    const updatedTargetRoom: Room = {
+      ...targetRoom,
+      status: 'ocupada',
+      currentStay: transferredStay,
+      cleaningStartTime: undefined,
+    };
+
+    // 2. Updated source room (freed to cleaning or available)
+    const updatedSourceRoom: Room = {
+      ...sourceRoom,
+      status: oldRoomStatus,
+      currentStay: undefined,
+      cleaningStartTime: oldRoomStatus === 'limpieza' ? new Date().toISOString() : undefined,
+    };
+
+    // 3. Update local state
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id === targetRoom.id) return updatedTargetRoom;
+        if (r.id === sourceRoom.id) return updatedSourceRoom;
+        return r;
+      })
+    );
+
+    // 4. Update completedStays state
+    setCompletedStays((prev) =>
+      prev.map((s) => (s.id === transferredStay.id ? transferredStay : s))
+    );
+
+    // 5. Sync to Firebase
+    syncRoomToFirestore(updatedTargetRoom);
+    syncRoomToFirestore(updatedSourceRoom);
+    syncStayToFirebase(transferredStay);
+
+    playSuccessChime();
+    showToast({
+      title: '¡Cambio de Habitación Realizado!',
+      message: `Trasladado con éxito de ${sourceRoom.name} a ${targetRoom.name}. Motivo: "${reasonText}".`,
+      type: 'success',
+      durationMs: 6000,
+    });
+
+    return true;
+  };
+
   // EXPENSES / SHIFT PAYMENTS (Hacer Pagos)
   const addExpenseToShift = (expenseData: {
     description: string;
@@ -1162,6 +1259,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeConsumptionFromRoom,
         closeStayAndCheckout,
         changeRoomStatus,
+        changeRoom,
         addExpenseToShift,
         closeCurrentShift,
         saveProduct,

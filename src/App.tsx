@@ -5,6 +5,7 @@ import { HeaderStats } from './components/HeaderStats';
 import { RoomGrid } from './components/RoomGrid';
 import { RegisterModal } from './components/RegisterModal';
 import { RoomDetailModal } from './components/RoomDetailModal';
+import { ChangeRoomModal } from './components/ChangeRoomModal';
 import { ShiftCloseModal } from './components/ShiftCloseModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { ExpenseModal } from './components/ExpenseModal';
@@ -29,6 +30,7 @@ export const App: React.FC = () => {
   // Modal states
   const [registerRoom, setRegisterRoom] = useState<Room | null>(null);
   const [detailRoom, setDetailRoom] = useState<Room | null>(null);
+  const [changeRoomTarget, setChangeRoomTarget] = useState<Room | null>(null);
   const [isShiftCloseOpen, setIsShiftCloseOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [receiptStay, setReceiptStay] = useState<Stay | null>(null);
@@ -75,6 +77,10 @@ export const App: React.FC = () => {
 
   const handleOpenCheckout = (room: Room) => {
     setDetailRoom(room);
+  };
+
+  const handleOpenChangeRoom = (room: Room) => {
+    setChangeRoomTarget(room);
   };
 
   const handleOpenReceipt = (stay: Stay) => {
@@ -137,6 +143,7 @@ export const App: React.FC = () => {
             onOpenDetail={handleOpenDetail}
             onOpenQuickConsumption={handleOpenQuickConsumption}
             onOpenCheckout={handleOpenCheckout}
+            onOpenChangeRoom={handleOpenChangeRoom}
           />
         ) : (
           <AdminDashboard currentView={currentView} />
@@ -156,6 +163,18 @@ export const App: React.FC = () => {
           room={detailRoom}
           onClose={() => setDetailRoom(null)}
           onOpenReceipt={handleOpenReceipt}
+          onOpenChangeRoom={handleOpenChangeRoom}
+        />
+      )}
+
+      {changeRoomTarget && (
+        <ChangeRoomModal
+          sourceRoom={changeRoomTarget}
+          onClose={() => setChangeRoomTarget(null)}
+          onSuccess={() => {
+            setDetailRoom(null);
+            setChangeRoomTarget(null);
+          }}
         />
       )}
 
