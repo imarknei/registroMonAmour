@@ -263,6 +263,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Ticking clock for real-time room timers
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
 
+  // Real-time 1-second ticker so all timers, countdowns and overtime updates synchronously in live view
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTimestamp(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Firebase connection state
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
 

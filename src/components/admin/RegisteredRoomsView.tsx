@@ -43,7 +43,7 @@ export const RegisteredRoomsView: React.FC = () => {
   occupiedRooms.forEach((r) => {
     const s = r.currentStay!;
     const extraRate = tariffs[r.type]?.extraHourPrice || (r.type === 'jacuzzi' || r.type === 'golden_suite' ? 40 : 30);
-    const timeCalc = calculateStayTime(s.startTime, s.chosenDurationMinutes, extraRate);
+    const timeCalc = calculateStayTime(s.startTime, s.chosenDurationMinutes, extraRate, nowTimestamp);
     const consSum = s.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
     totalActiveBasePrice += s.baseRoomPrice;
     totalActiveConsumptions += consSum;
@@ -253,7 +253,7 @@ export const RegisteredRoomsView: React.FC = () => {
               {filteredActiveRooms.map((room) => {
                 const stay = room.currentStay!;
                 const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-                const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
+                const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, nowTimestamp);
                 const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
                 const totalDue = stay.baseRoomPrice + consumptionsTotal + timeCalc.overtimeCharge;
                 const prepaidAmt = stay.isPrepaid ? stay.prepaidAmount || stay.baseRoomPrice : 0;

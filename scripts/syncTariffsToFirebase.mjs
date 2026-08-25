@@ -31,6 +31,8 @@ const tariffs = {
     price1h: 65,
     price2h: 80,
     price2hNight: 100, // Paquete 2 Horas Suite Noche en 100 Bs
+    bonflix2hPrice: 150, // Promo 2 Horas Bonflix en 150 Bs
+    bonflix4hPrice: 190, // Promo 4 Horas Bonflix en 190 Bs
     priceNight: 180,
     extraHourPrice: 30,
   },
@@ -47,10 +49,12 @@ const tariffs = {
     extraHourPrice: 40,
   },
   promo3hPrice: 190,
+  bonflix2hPrice: 150,
+  bonflix4hPrice: 190,
 };
 
 async function sync() {
-  console.log('--- SINCRONIZANDO NUEVAS TARIFAS A FIREBASE (SUITE NOCHE 2H = 100 BS) ---');
+  console.log('--- SINCRONIZANDO NUEVAS TARIFAS A FIREBASE (BONFLIX 2H=150BS, 4H=190BS, SUITE NOCHE 2H=100BS) ---');
   await set(ref(db, 'motel_config/tariffs'), tariffs);
   console.log('✅ Tarifas guardadas exitosamente en Firebase RTDB.');
   process.exit(0);

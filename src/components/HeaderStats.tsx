@@ -16,7 +16,7 @@ export const HeaderStats: React.FC = () => {
   const overtimeRooms = rooms.filter((r) => {
     if (r.status === 'ocupada' && r.currentStay) {
       const extraRate = tariffs[r.type]?.extraHourPrice || 30;
-      const calc = calculateStayTime(r.currentStay.startTime, r.currentStay.chosenDurationMinutes, extraRate);
+      const calc = calculateStayTime(r.currentStay.startTime, r.currentStay.chosenDurationMinutes, extraRate, nowTimestamp);
       return calc.isOvertime;
     }
     return false;

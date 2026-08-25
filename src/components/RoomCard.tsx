@@ -169,7 +169,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   }
 
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, nowTimestamp);
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
   const currentTotalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
   const isPrepaid = stay.isPrepaid || false;

@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { TariffCatalog, RoomType } from '../../types';
 import { formatBs, getRoomTypeLabel } from '../../utils/formatUtils';
 import { INITIAL_TARIFFS } from '../../data/initialData';
-import { Sliders, Save, RotateCcw, Lock, CheckCircle2, Moon, Sparkles } from 'lucide-react';
+import { Sliders, Save, RotateCcw, Lock, CheckCircle2, Moon, Sparkles, Tv } from 'lucide-react';
 
 export const TariffManager: React.FC = () => {
   const { tariffs, updateTariffCatalog } = useApp();
@@ -12,7 +12,15 @@ export const TariffManager: React.FC = () => {
 
   const handleUpdateField = (
     type: RoomType,
-    field: 'price1h' | 'price2h' | 'price3h' | 'price2hNight' | 'priceNight' | 'extraHourPrice',
+    field:
+      | 'price1h'
+      | 'price2h'
+      | 'price3h'
+      | 'price2hNight'
+      | 'bonflix2hPrice'
+      | 'bonflix4hPrice'
+      | 'priceNight'
+      | 'extraHourPrice',
     value: string
   ) => {
     const numValue = value === '' ? undefined : parseFloat(value);
@@ -30,6 +38,18 @@ export const TariffManager: React.FC = () => {
     setCurrentTariffs((prev) => ({
       ...prev,
       promo3hPrice: num,
+    }));
+  };
+
+  const handleUpdateBonflix = (field: 'bonflix2hPrice' | 'bonflix4hPrice', value: string) => {
+    const num = value === '' ? undefined : parseFloat(value);
+    setCurrentTariffs((prev) => ({
+      ...prev,
+      [field]: num,
+      suite: {
+        ...prev.suite,
+        [field]: num,
+      },
     }));
   };
 
@@ -238,9 +258,97 @@ export const TariffManager: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {/* Si es Suite: Mostrar inputs de Promociones Bonflix */}
+                {type.key === 'suite' && (
+                  <div className="mt-3 pt-3 border-t border-rose-100 bg-rose-50/50 p-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 text-rose-900 font-extrabold">
+                      <Tv className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Promociones Bonflix (Suites):</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold text-slate-600 text-[11px]">2h:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={config.bonflix2hPrice ?? ''}
+                          onChange={(e) => handleUpdateField(type.key, 'bonflix2hPrice', e.target.value)}
+                          placeholder="150"
+                          className="w-16 px-2 py-1 rounded-lg border border-rose-200 font-mono font-bold text-rose-700 bg-white text-xs"
+                        />
+                        <span className="text-[10px] text-slate-400">Bs</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold text-slate-600 text-[11px]">4h:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={config.bonflix4hPrice ?? ''}
+                          onChange={(e) => handleUpdateField(type.key, 'bonflix4hPrice', e.target.value)}
+                          placeholder="190"
+                          className="w-16 px-2 py-1 rounded-lg border border-rose-200 font-mono font-bold text-rose-700 bg-white text-xs"
+                        />
+                        <span className="text-[10px] text-slate-400">Bs</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+
+        {/* Bonflix Promotions Banner Card */}
+        <div className="bg-gradient-to-r from-rose-50 via-pink-50 to-purple-50 p-5 rounded-2xl border border-rose-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold shadow-md shadow-rose-600/30">
+              <Tv className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Promociones Bonflix (Exclusivas para Suites de 65 Bs/hora)
+                </h3>
+                <span className="bg-rose-100 text-rose-800 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border border-rose-200">
+                  2h / 150 Bs • 4h / 190 Bs
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Tarifas de streaming y estadía para suites estándar (Habitaciones 1, 5, 6, 11, 13, 15 y 16).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-rose-200 shadow-xs">
+              <span className="text-xs font-bold text-slate-700">2h Bonflix:</span>
+              <div className="w-20">
+                <input
+                  type="number"
+                  min="0"
+                  value={currentTariffs.suite?.bonflix2hPrice ?? currentTariffs.bonflix2hPrice ?? 150}
+                  onChange={(e) => handleUpdateBonflix('bonflix2hPrice', e.target.value)}
+                  className="w-full px-2 py-1 rounded-lg border border-rose-300 font-mono font-extrabold text-rose-700 text-xs bg-rose-50/50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-400">Bs</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-rose-200 shadow-xs">
+              <span className="text-xs font-bold text-slate-700">4h Bonflix:</span>
+              <div className="w-20">
+                <input
+                  type="number"
+                  min="0"
+                  value={currentTariffs.suite?.bonflix4hPrice ?? currentTariffs.bonflix4hPrice ?? 190}
+                  onChange={(e) => handleUpdateBonflix('bonflix4hPrice', e.target.value)}
+                  className="w-full px-2 py-1 rounded-lg border border-rose-300 font-mono font-extrabold text-rose-700 text-xs bg-rose-50/50 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-400">Bs</span>
+            </div>
+          </div>
         </div>
 
         {/* Global Promotions Card */}

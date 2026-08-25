@@ -17,6 +17,7 @@ import {
   AlertCircle,
   HelpCircle,
   Moon,
+  Tv,
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -82,6 +83,32 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     });
   }
 
+  // PROMOCIONES BONFLIX: Exclusivas en Suites de 65 Bs la hora (2h por 150 Bs y 4h por 190 Bs)
+  if (room.type === 'suite') {
+    const bonflix2h = roomTariff?.bonflix2hPrice || tariffs?.bonflix2hPrice || 150;
+    const bonflix4h = roomTariff?.bonflix4hPrice || tariffs?.bonflix4hPrice || 190;
+
+    planOptions.push({
+      key: 'bonflix_2h',
+      title: '2h Bonflix (150 Bs)',
+      subtitle: '2 Horas + Promo Bonflix (120 min)',
+      durationMinutes: 120,
+      price: bonflix2h,
+      icon: <Tv className="w-4 h-4 text-rose-600" />,
+      isPromo: true,
+    });
+
+    planOptions.push({
+      key: 'bonflix_4h',
+      title: '4h Bonflix (190 Bs)',
+      subtitle: '4 Horas + Promo Bonflix (240 min)',
+      durationMinutes: 240,
+      price: bonflix4h,
+      icon: <Tv className="w-4 h-4 text-rose-600" />,
+      isPromo: true,
+    });
+  }
+
   if (roomTariff?.price3h) {
     planOptions.push({
       key: '3h',
@@ -104,8 +131,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     });
   }
 
-  // Add Promo 3h if configured
-  if (tariffs?.promo3hPrice && room.type !== 'ventilador') {
+  // Add Promo 3h if configured (para habitaciones distintas de ventilador y suite)
+  if (tariffs?.promo3hPrice && room.type !== 'ventilador' && room.type !== 'suite') {
     planOptions.push({
       key: 'promo3h',
       title: 'Promo 3 Horas',

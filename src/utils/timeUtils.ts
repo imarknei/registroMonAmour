@@ -23,10 +23,11 @@ export interface OvertimeCalculation {
 export function calculateStayTime(
   startTimeIso: string,
   durationMinutes: number,
-  extraHourPrice: number = 30
+  extraHourPrice: number = 30,
+  nowMs?: number
 ): OvertimeCalculation {
   const start = new Date(startTimeIso).getTime();
-  const now = Date.now();
+  const now = nowMs || Date.now();
   const elapsedMs = Math.max(0, now - start);
   const totalAllocatedMs = durationMinutes * 60 * 1000;
   

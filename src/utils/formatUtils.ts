@@ -104,6 +104,12 @@ export function getPlanLabel(plan: string): string {
       return '3 Horas';
     case '2h_noche':
       return '2h Suite Noche';
+    case 'bonflix_2h':
+    case 'bonflix_150':
+      return '2h Bonflix (150 Bs)';
+    case 'bonflix_4h':
+    case 'bonflix_190':
+      return '4h Bonflix (190 Bs)';
     case 'promo3h':
     case 'promo190':
       return 'Promo 3 Horas';
