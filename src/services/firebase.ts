@@ -298,8 +298,8 @@ export const subscribeToAllShifts = async (
           const shiftsList: Shift[] = Array.isArray(val)
             ? val.filter(Boolean)
             : Object.values(val);
-          // Ordenar por hora de inicio descendente
-          shiftsList.sort((a, b) => (b.startTime > a.startTime ? 1 : -1));
+          // Ordenar por hora de inicio descendente (el más reciente primero)
+          shiftsList.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
           onData(shiftsList);
         } else {
           onData([]);

@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useMemo,
 } from 'react';
 import {
   Room,
@@ -404,9 +405,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 5. Ensure current user has an active shift
   const ensureActiveShift = useCallback((user: User): Shift => {
-    if (activeShifts[user.id]) {
+    // 1. Buscar en estado local activeShifts si ya hay un turno abierto
+    if (activeShifts[user.id] && activeShifts[user.id].status === 'open') {
       return activeShifts[user.id];
     }
+
+    // 2. Buscar en historial de turnos sincronizados de Firebase
+    const existingOpenShift = shiftsHistory.find(
+      (s) => s.receptionistId === user.id && s.status === 'open'
+    );
+    if (existingOpenShift) {
+      setActiveShifts((prev) => ({
+        ...prev,
+        [user.id]: existingOpenShift,
+      }));
+      return existingOpenShift;
+    }
+
+    // 3. Obtener caja chica del último turno cerrado o valor por defecto
+    const lastClosedShift = shiftsHistory.find((s) => s.status === 'closed');
+    const initialFloat = lastClosedShift?.handoverCashFloat || 100;
 
     const shiftType = user.role === 'recepcionista_noche' ? 'noche' : 'dia';
     const newShift: Shift = {
@@ -416,7 +434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shiftType,
       startTime: new Date().toISOString(),
       status: 'open',
-      initialCashFloat: 100,
+      initialCashFloat: initialFloat,
       expectedCash: 0,
       expectedQr: 0,
       totalExpensesCash: 0,
@@ -433,9 +451,90 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     syncShiftToFirestore(newShift);
     return newShift;
-  }, [activeShifts]);
+  }, [activeShifts, shiftsHistory]);
 
-  const currentShift = currentUser.role !== 'admin' ? ensureActiveShift(currentUser) : null;
+  // Turno base sin recalcular
+  const rawTargetShift = useMemo<Shift | null>(() => {
+    if (currentUser.role !== 'admin') {
+      return ensureActiveShift(currentUser);
+    }
+    // Si es Administrador: obtener el turno abierto más reciente de cualquier recepcionista
+    const openShifts = Object.values(activeShifts).filter((s) => s.status === 'open');
+    if (openShifts.length > 0) {
+      openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+      return openShifts[0];
+    }
+    const historyOpen = shiftsHistory.find((s) => s.status === 'open');
+    return historyOpen || null;
+  }, [currentUser, activeShifts, shiftsHistory, ensureActiveShift]);
+
+  // Cálculo en vivo y exacto del total en caja del turno (Caja Chica, Ventas Efectivo, QR y Gastos)
+  const currentShift = useMemo<Shift | null>(() => {
+    if (!rawTargetShift) return null;
+
+    const shiftStartTime = new Date(rawTargetShift.startTime).getTime();
+    const shiftEndTime = rawTargetShift.endTime ? new Date(rawTargetShift.endTime).getTime() : Infinity;
+
+    let liveCashSales = 0;
+    let liveQrSales = 0;
+    let liveSalesCount = 0;
+    const trackedStayIds = new Set<string>(rawTargetShift.stayIds || []);
+
+    // 1. Sumar cobros adelantados de habitaciones actualmente ocupadas
+    rooms.forEach((r) => {
+      if (r.status === 'ocupada' && r.currentStay) {
+        const s = r.currentStay;
+        const stayTime = new Date(s.startTime).getTime();
+        const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
+        const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
+
+        if ((matchesReceptionist && inTimeWindow) || trackedStayIds.has(s.id)) {
+          trackedStayIds.add(s.id);
+          if (s.isPrepaid) {
+            liveCashSales += s.prepaidCash || 0;
+            liveQrSales += s.prepaidQr || 0;
+            liveSalesCount++;
+          }
+        }
+      }
+    });
+
+    // 2. Sumar habitaciones cerradas y cobradas durante el turno
+    completedStays.forEach((s) => {
+      const stayTime = new Date(s.startTime).getTime();
+      const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
+      const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
+
+      if ((matchesReceptionist && inTimeWindow) || trackedStayIds.has(s.id)) {
+        trackedStayIds.add(s.id);
+        liveCashSales += s.cashPaid || (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0);
+        liveQrSales += s.qrPaid || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0);
+        liveSalesCount++;
+      }
+    });
+
+    const expectedCash = Math.max(rawTargetShift.expectedCash || 0, liveCashSales);
+    const expectedQr = Math.max(rawTargetShift.expectedQr || 0, liveQrSales);
+    const salesCount = Math.max(rawTargetShift.salesCount || 0, liveSalesCount);
+
+    const shiftExpenses = rawTargetShift.expenses || [];
+    const totalExpensesCash = shiftExpenses
+      .filter((e: Expense) => e.paymentMethod === 'efectivo')
+      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+    const totalExpensesQr = shiftExpenses
+      .filter((e: Expense) => e.paymentMethod === 'qr')
+      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+
+    return {
+      ...rawTargetShift,
+      expectedCash,
+      expectedQr,
+      salesCount,
+      totalExpensesCash,
+      totalExpensesQr,
+      stayIds: Array.from(trackedStayIds),
+    };
+  }, [rawTargetShift, rooms, completedStays]);
 
   // Toast Helpers
   const dismissToast = useCallback((id: string) => {
@@ -1046,14 +1145,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shift.totalExpensesCash !== undefined
         ? shift.totalExpensesCash
         : shiftExpenses
-            .filter((e) => e.paymentMethod === 'efectivo')
-            .reduce((sum, e) => sum + e.amount, 0);
+            .filter((e: Expense) => e.paymentMethod === 'efectivo')
+            .reduce((sum: number, e: Expense) => sum + e.amount, 0);
     const totalExpensesQr =
       shift.totalExpensesQr !== undefined
         ? shift.totalExpensesQr
         : shiftExpenses
-            .filter((e) => e.paymentMethod === 'qr')
-            .reduce((sum, e) => sum + e.amount, 0);
+            .filter((e: Expense) => e.paymentMethod === 'qr')
+            .reduce((sum: number, e: Expense) => sum + e.amount, 0);
 
     // Ventas declaradas en efectivo: Total contado - Fondo dejado + Gastos en efectivo pagados
     const declaredSalesCash = Math.max(

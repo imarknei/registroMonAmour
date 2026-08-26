@@ -37,7 +37,13 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   onOpenReceipt,
   onOpenChangeRoom,
 }) => {
-  const { tariffs, products, addConsumptionToRoom, removeConsumptionFromRoom, closeStayAndCheckout, nowTimestamp } = useApp();
+  const { tariffs, products, addConsumptionToRoom, removeConsumptionFromRoom, closeStayAndCheckout } = useApp();
+
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const [activeTab, setActiveTab] = useState<'checkout' | 'consumptions'>('checkout');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -53,7 +59,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   const stay = room.currentStay;
   const roomTariff = tariffs[room.type];
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, nowTimestamp);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now());
   const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
   const totalDue = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
 

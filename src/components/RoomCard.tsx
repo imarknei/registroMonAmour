@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Room } from '../types';
 import { useApp } from '../context/AppContext';
 import {
@@ -44,7 +44,16 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   onOpenCheckout,
   onOpenChangeRoom,
 }) => {
-  const { tariffs, changeRoomStatus, nowTimestamp } = useApp();
+  const { tariffs, changeRoomStatus } = useApp();
+
+  // Reloj local de 1 segundo para asegurar actualización continua y fluida del temporizador
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTick((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const badge = getRoomTypeBadge(room.type);
   const roomTariff = tariffs[room.type];
@@ -145,9 +154,23 @@ export const RoomCard: React.FC<RoomCardProps> = ({
             </span>
           </div>
 
-          <div className="bg-white/80 rounded-xl p-4 mb-4 border border-amber-200/70 text-center text-amber-900">
-            <Sparkles className="w-8 h-8 mx-auto text-amber-500 mb-2 animate-bounce" />
-            <p className="text-xs font-semibold">Habitación en proceso de desinfección y cambio de sábanas.</p>
+          <div className="bg-white/90 rounded-xl p-4 mb-4 border border-amber-200 text-center text-amber-950 shadow-xs">
+            <Sparkles className="w-7 h-7 mx-auto text-amber-500 mb-1.5 animate-bounce" />
+            <p className="text-xs font-semibold mb-1">Habitación en desinfección y cambio de sábanas.</p>
+            {room.cleaningStartTime && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100/80 rounded-lg text-xs font-mono font-bold text-amber-900 border border-amber-300">
+                <Clock className="w-3.5 h-3.5 text-amber-700 animate-spin" />
+                <span>
+                  {(() => {
+                    const elapsedMs = Math.max(0, Date.now() - new Date(room.cleaningStartTime).getTime());
+                    const sec = Math.floor(elapsedMs / 1000);
+                    const min = Math.floor(sec / 60);
+                    const remSec = sec % 60;
+                    return `${min.toString().padStart(2, '0')}:${remSec.toString().padStart(2, '0')}`;
+                  })()} en limpieza
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -169,7 +192,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   }
 
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, nowTimestamp);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now());
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
   const currentTotalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
   const isPrepaid = stay.isPrepaid || false;

@@ -286,8 +286,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
                     </div>
 
                     <div>
-                      <span className="font-bold text-xs text-slate-900 block">{opt.title}</span>
-                      <span className="text-[10px] text-slate-400 block mb-1">{opt.subtitle}</span>
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className="font-extrabold text-xs text-slate-900 block">{opt.title}</span>
+                        {opt.isNight && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                            NOCHE
+                          </span>
+                        )}
+                        {opt.isPromo && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
+                            PROMO
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 block mb-1">{opt.subtitle}</span>
                       <span className="font-extrabold text-sm text-brand-700 font-mono block">
                         {formatBs(opt.price)}
                       </span>

@@ -59,21 +59,23 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
     .filter((e) => e.paymentMethod === 'qr')
     .reduce((sum, e) => sum + e.amount, 0);
 
+  const initialCashFloat = currentShift.initialCashFloat || 100;
   const numHandoverFloat = parseFloat(handoverFloat) || 0; // Lo que se deja para el siguiente turno
   const numTotalPhysicalCash = parseFloat(totalPhysicalCash) || 0; // Total contado en gaveta
   const numDeclaredQr = parseFloat(declaredQr) || 0;
 
-  // Expected total physical cash in drawer = Handover Float + Expected Sales - Cash Expenses
-  const expectedTotalInDrawer = Math.max(0, numHandoverFloat + expectedSalesCash - totalExpensesCash);
+  // Expected total physical cash in drawer = Caja Chica Inicial + Ventas Efectivo - Gastos Efectivo
+  const expectedTotalInDrawer = Math.max(0, initialCashFloat + expectedSalesCash - totalExpensesCash);
 
   // Expected QR in bank = Expected QR - QR Expenses
   const expectedNetQr = Math.max(0, expectedQr - totalExpensesQr);
 
-  // Declared sales cash is total physical minus the float left + cash expenses that were paid
+  // Ventas declaradas en efectivo sumando gastos y restando caja chica que se deja
   const declaredSalesCash = Math.max(0, numTotalPhysicalCash - numHandoverFloat + totalExpensesCash);
 
-  const diffCash = declaredSalesCash - expectedSalesCash;
-  const diffQr = numDeclaredQr - expectedNetQr;
+  // Diferencia de efectivo respecto a lo que debe haber físicamente en gaveta
+  const diffCash = numTotalPhysicalCash > 0 ? numTotalPhysicalCash - expectedTotalInDrawer : 0;
+  const diffQr = numDeclaredQr > 0 ? numDeclaredQr - expectedNetQr : 0;
   const totalDiff = diffCash + diffQr;
 
   const hasFaltante = totalDiff < 0;
