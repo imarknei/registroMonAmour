@@ -43,7 +43,7 @@ export type PlanType =
   | 'noche'
   | 'personalizado';
 
-export type PaymentMethod = 'efectivo' | 'qr' | 'mixto';
+export type PaymentMethod = 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr' | 'mixto';
 
 export interface ConsumptionItem {
   id: string;
@@ -70,8 +70,12 @@ export interface Stay {
   isPrepaid?: boolean; // Verdadero si el cliente pagó por adelantado al ingresar
   prepaidAmount?: number; // Monto pagado al entrar
   prepaidCash?: number;
-  prepaidQr?: number;
+  prepaidQrVendis?: number;
+  prepaidQrUnion?: number;
+  prepaidQr?: number; // Suma QR
   cashPaid?: number; // Total cobrado en efectivo
+  qrVendisPaid?: number; // Total cobrado en QR Vendis
+  qrUnionPaid?: number; // Total cobrado en QR Banco Unión
   qrPaid?: number;   // Total cobrado en QR
   consumptions: ConsumptionItem[];
   vehiclePlate?: string;
@@ -141,7 +145,7 @@ export interface Expense {
   description: string; // Ej: "Coca-Cola (packs de mini sodas)", "Albañil reparación hab 3"
   category: ExpenseCategory;
   amount: number;
-  paymentMethod: 'efectivo' | 'qr';
+  paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
   timestamp: string;
   shiftId: string;
   registeredById: string;
@@ -162,17 +166,26 @@ export interface Shift {
   initialCashFloat: number; // Fondo de caja chica recibido al iniciar
   handoverCashFloat?: number; // Fondo de caja chica dejado al siguiente turno
   expectedCash: number; // Ventas esperadas en efectivo
-  expectedQr: number;   // Ventas esperadas en QR
+  expectedQrVendis?: number; // Ventas esperadas en QR Vendis
+  expectedQrUnion?: number; // Ventas esperadas en QR Banco Unión
+  expectedQr: number;   // Ventas esperadas en QR total
   expenses?: Expense[]; // Lista de pagos/egresos registrados durante el turno
   totalExpensesCash?: number; // Total egresos pagados en efectivo
-  totalExpensesQr?: number;   // Total egresos pagados en QR
-  totalPhysicalCashInDrawer?: number; // Total físico contado en gaveta
+  totalExpensesQrVendis?: number; // Total egresos pagados en QR Vendis
+  totalExpensesQrUnion?: number; // Total egresos pagados en QR Banco Unión
+  totalExpensesQr?: number;   // Total egresos pagados en QR total
+  totalPhysicalCashInDrawer?: number; // Total físico contado en gaveta por el recepcionista
   declaredCash?: number; // Ventas netas declaradas en efectivo (Total contado - Fondo + Egresos)
-  declaredQr?: number;   // Ventas declaradas en QR
+  declaredQrVendis?: number; // Ventas declaradas en QR Vendis
+  declaredQrUnion?: number; // Ventas declaradas en QR Banco Unión
+  declaredQr?: number;   // Ventas declaradas en QR total
   differenceCash?: number;
+  differenceQrVendis?: number;
+  differenceQrUnion?: number;
   differenceQr?: number;
-  totalDifference?: number; // differenceCash + differenceQr (negative = deficit/discount)
-  discountAmount?: number; // Positive number representing the penalty/discount to be deducted
+  totalDifference?: number; // differenceCash + differenceQr (negative = deficit/discount, positive = surplus)
+  discountAmount?: number; // Faltante a descontar (positivo)
+  surplusAmount?: number; // Demasía / Sobrante (positivo)
   notes?: string;
   salesCount: number;
   stayIds: string[];

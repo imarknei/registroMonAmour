@@ -16,6 +16,7 @@ import {
   User,
   HelpCircle,
   Coins,
+  Landmark,
 } from 'lucide-react';
 
 interface ExpenseModalProps {
@@ -40,7 +41,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({ isOpen, onClose }) =
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('proveedores');
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'qr'>('efectivo');
+  const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'qr_vendis' | 'qr_union'>('efectivo');
   const [receiptNumber, setReceiptNumber] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -170,31 +171,44 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({ isOpen, onClose }) =
               <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1">
                 Pagado Desde *
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('efectivo')}
-                  className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                  className={`py-2 px-1.5 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all ${
                     paymentMethod === 'efectivo'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm font-black'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                  Efectivo Gaveta
+                  Efectivo
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('qr')}
-                  className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    paymentMethod === 'qr'
-                      ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm'
+                  onClick={() => setPaymentMethod('qr_vendis')}
+                  className={`py-2 px-1.5 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all ${
+                    paymentMethod === 'qr_vendis'
+                      ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm font-black'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <QrCode className="w-3.5 h-3.5 text-sky-600" />
-                  QR / Banco
+                  QR Vendis
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('qr_union')}
+                  className={`py-2 px-1.5 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all ${
+                    paymentMethod === 'qr_union'
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-sm font-black'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Landmark className="w-3.5 h-3.5 text-indigo-600" />
+                  B. Unión
                 </button>
               </div>
             </div>

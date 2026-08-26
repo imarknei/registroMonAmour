@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Moon,
   Tv,
+  Landmark,
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -148,6 +149,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
   const [selectedPlan, setSelectedPlan] = useState<PlanType>(planOptions[0]?.key || '1h');
   const [isPrepaid, setIsPrepaid] = useState<boolean>(true); // Por defecto se cobra por adelantado
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
+  const [mixedQrChannel, setMixedQrChannel] = useState<'qr_vendis' | 'qr_union'>('qr_vendis');
   const [cashAmount, setCashAmount] = useState<string>('');
   const [qrAmount, setQrAmount] = useState<string>('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -191,23 +193,30 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    let finalCash: number | undefined;
-    let finalQr: number | undefined;
+    let finalCash = 0;
+    let finalQrVendis = 0;
+    let finalQrUnion = 0;
+    let finalQr = 0;
 
     if (isPrepaid) {
       if (paymentMethod === 'efectivo') {
         finalCash = basePrice;
-        finalQr = 0;
-      } else if (paymentMethod === 'qr') {
-        finalCash = 0;
+      } else if (paymentMethod === 'qr_vendis' || paymentMethod === 'qr') {
+        finalQrVendis = basePrice;
+        finalQr = basePrice;
+      } else if (paymentMethod === 'qr_union') {
+        finalQrUnion = basePrice;
         finalQr = basePrice;
       } else if (paymentMethod === 'mixto') {
         finalCash = parseFloat(cashAmount) || 0;
-        finalQr = parseFloat(qrAmount) || 0;
+        const qVal = parseFloat(qrAmount) || 0;
+        finalQr = qVal;
+        if (mixedQrChannel === 'qr_union') {
+          finalQrUnion = qVal;
+        } else {
+          finalQrVendis = qVal;
+        }
       }
-    } else {
-      finalCash = 0;
-      finalQr = 0;
     }
 
     registerStay({
@@ -219,8 +228,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
       isPrepaid,
       prepaidAmount: isPrepaid ? basePrice : 0,
       prepaidCash: isPrepaid ? finalCash : 0,
+      prepaidQrVendis: isPrepaid ? finalQrVendis : 0,
+      prepaidQrUnion: isPrepaid ? finalQrUnion : 0,
       prepaidQr: isPrepaid ? finalQr : 0,
       cashPaid: finalCash,
+      qrVendisPaid: finalQrVendis,
+      qrUnionPaid: finalQrUnion,
       qrPaid: finalQr,
       vehiclePlate,
       notes,
@@ -362,14 +375,14 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
               <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider">
                 3. Método de Pago del Adelanto ({formatBs(basePrice)})
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {/* Efectivo */}
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('efectivo')}
                   className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
                     paymentMethod === 'efectivo'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm font-black'
                       : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
                   }`}
                 >
@@ -377,18 +390,32 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
                   Efectivo
                 </button>
 
-                {/* QR */}
+                {/* QR Vendis */}
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('qr')}
+                  onClick={() => setPaymentMethod('qr_vendis')}
                   className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    paymentMethod === 'qr'
-                      ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm'
+                    paymentMethod === 'qr_vendis' || paymentMethod === 'qr'
+                      ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm font-black'
                       : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
                   }`}
                 >
                   <QrCode className="w-4 h-4 text-sky-600" />
-                  QR (Vendis)
+                  QR Vendis
+                </button>
+
+                {/* QR Banco Unión */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('qr_union')}
+                  className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                    paymentMethod === 'qr_union'
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-sm font-black'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+                  }`}
+                >
+                  <Landmark className="w-4 h-4 text-indigo-600" />
+                  QR B. Unión
                 </button>
 
                 {/* Mixto */}
@@ -402,7 +429,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
                   }}
                   className={`py-2.5 px-2 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
                     paymentMethod === 'mixto'
-                      ? 'border-purple-600 bg-purple-50 text-purple-800 shadow-sm'
+                      ? 'border-purple-600 bg-purple-50 text-purple-800 shadow-sm font-black'
                       : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
                   }`}
                 >
@@ -411,12 +438,38 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
                 </button>
               </div>
 
-              {/* If Mixed, show inputs */}
+              {/* If Mixed, show inputs & channel picker */}
               {paymentMethod === 'mixto' && (
-                <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2 animate-fade-in">
-                  <span className="text-[11px] font-bold text-purple-900 block">
-                    Desglose de Pago Mixto (Total: {formatBs(basePrice)})
-                  </span>
+                <div className="p-3.5 bg-purple-50/70 rounded-2xl border border-purple-200 space-y-2.5 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-purple-900 block">
+                      Desglose de Pago Mixto (Total: {formatBs(basePrice)})
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setMixedQrChannel('qr_vendis')}
+                        className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                          mixedQrChannel === 'qr_vendis'
+                            ? 'bg-sky-600 text-white'
+                            : 'bg-white text-slate-600 border border-slate-200'
+                        }`}
+                      >
+                        Vendis
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMixedQrChannel('qr_union')}
+                        className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                          mixedQrChannel === 'qr_union'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white text-slate-600 border border-slate-200'
+                        }`}
+                      >
+                        B. Unión
+                      </button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
@@ -434,7 +487,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                        QR (Bs)
+                        {mixedQrChannel === 'qr_union' ? 'QR Banco Unión (Bs)' : 'QR Vendis (Bs)'}
                       </label>
                       <input
                         type="number"

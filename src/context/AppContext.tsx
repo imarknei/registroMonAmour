@@ -90,8 +90,12 @@ interface AppContextType {
     isPrepaid?: boolean;
     prepaidAmount?: number;
     prepaidCash?: number;
+    prepaidQrVendis?: number;
+    prepaidQrUnion?: number;
     prepaidQr?: number;
     cashPaid?: number;
+    qrVendisPaid?: number;
+    qrUnionPaid?: number;
     qrPaid?: number;
     vehiclePlate?: string;
     notes?: string;
@@ -106,8 +110,12 @@ interface AppContextType {
     isPrepaid?: boolean;
     prepaidAmount?: number;
     prepaidCash?: number;
+    prepaidQrVendis?: number;
+    prepaidQrUnion?: number;
     prepaidQr?: number;
     cashPaid?: number;
+    qrVendisPaid?: number;
+    qrUnionPaid?: number;
     qrPaid?: number;
     vehiclePlate?: string;
     notes?: string;
@@ -119,6 +127,8 @@ interface AppContextType {
     checkoutData: {
       finalPaymentMethod?: PaymentMethod;
       cashPaid?: number;
+      qrVendisPaid?: number;
+      qrUnionPaid?: number;
       qrPaid?: number;
       notes?: string;
       setCleaning?: boolean;
@@ -139,7 +149,7 @@ interface AppContextType {
     description: string;
     category: ExpenseCategory;
     amount: number;
-    paymentMethod: 'efectivo' | 'qr';
+    paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
     receiptNumber?: string;
     notes?: string;
   }) => void;
@@ -148,7 +158,8 @@ interface AppContextType {
   closeCurrentShift: (
     responsiblePersonName: string,
     totalPhysicalCashInDrawer: number,
-    declaredQr: number,
+    declaredQrVendis: number,
+    declaredQrUnion: number,
     handoverCashFloat: number,
     notes?: string
   ) => Shift | null;
@@ -477,6 +488,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const shiftEndTime = rawTargetShift.endTime ? new Date(rawTargetShift.endTime).getTime() : Infinity;
 
     let liveCashSales = 0;
+    let liveQrVendisSales = 0;
+    let liveQrUnionSales = 0;
     let liveQrSales = 0;
     let liveSalesCount = 0;
     const trackedStayIds = new Set<string>(rawTargetShift.stayIds || []);
@@ -485,6 +498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rooms.forEach((r) => {
       if (r.status === 'ocupada' && r.currentStay) {
         const s = r.currentStay;
+        if (s.status === 'cancelled') return;
         const stayTime = new Date(s.startTime).getTime();
         const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
         const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
@@ -492,8 +506,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if ((matchesReceptionist && inTimeWindow) || trackedStayIds.has(s.id)) {
           trackedStayIds.add(s.id);
           if (s.isPrepaid) {
-            liveCashSales += s.prepaidCash || 0;
-            liveQrSales += s.prepaidQr || 0;
+            const prepCash = s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
+            const prepVendis = s.prepaidQrVendis || (s.paymentMethod === 'qr_vendis' ? s.prepaidAmount || s.baseRoomPrice : 0);
+            const prepUnion = s.prepaidQrUnion || (s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
+            const prepQr = s.prepaidQr || (prepVendis + prepUnion) || (s.paymentMethod === 'qr' ? s.prepaidAmount || s.baseRoomPrice : 0);
+
+            liveCashSales += prepCash;
+            liveQrVendisSales += prepVendis;
+            liveQrUnionSales += prepUnion;
+            liveQrSales += prepQr;
             liveSalesCount++;
           }
         }
@@ -502,36 +523,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 2. Sumar habitaciones cerradas y cobradas durante el turno
     completedStays.forEach((s) => {
+      if (s.status === 'cancelled') return;
       const stayTime = new Date(s.startTime).getTime();
       const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
       const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
 
       if ((matchesReceptionist && inTimeWindow) || trackedStayIds.has(s.id)) {
         trackedStayIds.add(s.id);
-        liveCashSales += s.cashPaid || (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0);
-        liveQrSales += s.qrPaid || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0);
+        const cash = s.cashPaid !== undefined ? s.cashPaid : (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0);
+        const vendis = s.qrVendisPaid !== undefined ? s.qrVendisPaid : (s.paymentMethod === 'qr_vendis' ? s.totalAmount || 0 : 0);
+        const union = s.qrUnionPaid !== undefined ? s.qrUnionPaid : (s.paymentMethod === 'qr_union' ? s.totalAmount || 0 : 0);
+        const qr = s.qrPaid !== undefined ? s.qrPaid : (vendis + union) || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0);
+
+        liveCashSales += cash;
+        liveQrVendisSales += vendis;
+        liveQrUnionSales += union;
+        liveQrSales += qr;
         liveSalesCount++;
       }
     });
 
     const expectedCash = Math.max(rawTargetShift.expectedCash || 0, liveCashSales);
-    const expectedQr = Math.max(rawTargetShift.expectedQr || 0, liveQrSales);
+    const expectedQrVendis = Math.max(rawTargetShift.expectedQrVendis || 0, liveQrVendisSales);
+    const expectedQrUnion = Math.max(rawTargetShift.expectedQrUnion || 0, liveQrUnionSales);
+    const expectedQr = Math.max(rawTargetShift.expectedQr || 0, liveQrSales, expectedQrVendis + expectedQrUnion);
     const salesCount = Math.max(rawTargetShift.salesCount || 0, liveSalesCount);
 
     const shiftExpenses = rawTargetShift.expenses || [];
     const totalExpensesCash = shiftExpenses
       .filter((e: Expense) => e.paymentMethod === 'efectivo')
       .reduce((sum: number, e: Expense) => sum + e.amount, 0);
-    const totalExpensesQr = shiftExpenses
+    const totalExpensesQrVendis = shiftExpenses
+      .filter((e: Expense) => e.paymentMethod === 'qr_vendis')
+      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+    const totalExpensesQrUnion = shiftExpenses
+      .filter((e: Expense) => e.paymentMethod === 'qr_union')
+      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+    const totalExpensesQr = totalExpensesQrVendis + totalExpensesQrUnion + shiftExpenses
       .filter((e: Expense) => e.paymentMethod === 'qr')
       .reduce((sum: number, e: Expense) => sum + e.amount, 0);
 
     return {
       ...rawTargetShift,
       expectedCash,
+      expectedQrVendis,
+      expectedQrUnion,
       expectedQr,
       salesCount,
       totalExpensesCash,
+      totalExpensesQrVendis,
+      totalExpensesQrUnion,
       totalExpensesQr,
       stayIds: Array.from(trackedStayIds),
     };
@@ -644,8 +685,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isPrepaid?: boolean;
     prepaidAmount?: number;
     prepaidCash?: number;
+    prepaidQrVendis?: number;
+    prepaidQrUnion?: number;
     prepaidQr?: number;
     cashPaid?: number;
+    qrVendisPaid?: number;
+    qrUnionPaid?: number;
     qrPaid?: number;
     vehiclePlate?: string;
     notes?: string;
@@ -657,8 +702,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const stayId = `stay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const isPrepaid = entryData.isPrepaid ?? true; // Default to prepaid if paid at entrance
     const prepaidAmount = isPrepaid ? (entryData.prepaidAmount !== undefined ? entryData.prepaidAmount : entryData.basePrice) : 0;
-    const prepaidCash = isPrepaid ? (entryData.prepaidCash !== undefined ? entryData.prepaidCash : (entryData.cashPaid || 0)) : 0;
-    const prepaidQr = isPrepaid ? (entryData.prepaidQr !== undefined ? entryData.prepaidQr : (entryData.qrPaid || 0)) : 0;
+    const prepaidCash = isPrepaid ? (entryData.prepaidCash !== undefined ? entryData.prepaidCash : (entryData.cashPaid || (entryData.paymentMethod === 'efectivo' ? prepaidAmount : 0))) : 0;
+    const prepaidQrVendis = isPrepaid ? (entryData.prepaidQrVendis !== undefined ? entryData.prepaidQrVendis : (entryData.qrVendisPaid || (entryData.paymentMethod === 'qr_vendis' ? prepaidAmount : 0))) : 0;
+    const prepaidQrUnion = isPrepaid ? (entryData.prepaidQrUnion !== undefined ? entryData.prepaidQrUnion : (entryData.qrUnionPaid || (entryData.paymentMethod === 'qr_union' ? prepaidAmount : 0))) : 0;
+    const prepaidQr = isPrepaid ? (entryData.prepaidQr !== undefined ? entryData.prepaidQr : (prepaidQrVendis + prepaidQrUnion || (entryData.qrPaid || (entryData.paymentMethod === 'qr' ? prepaidAmount : 0)))) : 0;
 
     const newStay: Stay = {
       id: stayId,
@@ -673,8 +720,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isPrepaid,
       prepaidAmount,
       prepaidCash,
+      prepaidQrVendis,
+      prepaidQrUnion,
       prepaidQr,
       cashPaid: prepaidCash,
+      qrVendisPaid: prepaidQrVendis,
+      qrUnionPaid: prepaidQrUnion,
       qrPaid: prepaidQr,
       vehiclePlate: entryData.vehiclePlate,
       receptionistId: currentUser.id,
@@ -691,6 +742,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const updatedShift: Shift = {
           ...active,
           expectedCash: active.expectedCash + prepaidCash,
+          expectedQrVendis: (active.expectedQrVendis || 0) + prepaidQrVendis,
+          expectedQrUnion: (active.expectedQrUnion || 0) + prepaidQrUnion,
           expectedQr: active.expectedQr + prepaidQr,
           salesCount: active.salesCount + 1,
           stayIds: [...active.stayIds, newStay.id],
@@ -848,6 +901,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     checkoutData: {
       finalPaymentMethod?: PaymentMethod;
       cashPaid?: number;
+      qrVendisPaid?: number;
+      qrUnionPaid?: number;
       qrPaid?: number;
       notes?: string;
       setCleaning?: boolean;
@@ -866,27 +921,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isPrepaid = stay.isPrepaid || false;
     const prepaidAmount = isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
     const prepaidCash = isPrepaid ? (stay.prepaidCash || (stay.paymentMethod === 'efectivo' ? prepaidAmount : 0)) : 0;
-    const prepaidQr = isPrepaid ? (stay.prepaidQr || (stay.paymentMethod === 'qr' ? prepaidAmount : 0)) : 0;
+    const prepaidQrVendis = isPrepaid ? (stay.prepaidQrVendis || (stay.paymentMethod === 'qr_vendis' ? prepaidAmount : 0)) : 0;
+    const prepaidQrUnion = isPrepaid ? (stay.prepaidQrUnion || (stay.paymentMethod === 'qr_union' ? prepaidAmount : 0)) : 0;
+    const prepaidQr = isPrepaid ? (stay.prepaidQr || (prepaidQrVendis + prepaidQrUnion) || (stay.paymentMethod === 'qr' ? prepaidAmount : 0)) : 0;
 
     // Remaining balance to be paid at exit
     const remainingDue = Math.max(0, totalAmount - prepaidAmount);
 
     const effectivePaymentMethod = checkoutData.finalPaymentMethod || stay.paymentMethod;
     let finalCash = 0;
+    let finalQrVendis = 0;
+    let finalQrUnion = 0;
     let finalQr = 0;
 
     if (remainingDue > 0) {
       if (effectivePaymentMethod === 'efectivo') {
         finalCash = remainingDue;
+      } else if (effectivePaymentMethod === 'qr_vendis') {
+        finalQrVendis = remainingDue;
+        finalQr = remainingDue;
+      } else if (effectivePaymentMethod === 'qr_union') {
+        finalQrUnion = remainingDue;
+        finalQr = remainingDue;
       } else if (effectivePaymentMethod === 'qr') {
+        finalQrVendis = remainingDue;
         finalQr = remainingDue;
       } else if (effectivePaymentMethod === 'mixto') {
         finalCash = checkoutData.cashPaid !== undefined ? checkoutData.cashPaid : 0;
-        finalQr = checkoutData.qrPaid !== undefined ? checkoutData.qrPaid : Math.max(0, remainingDue - finalCash);
+        finalQrVendis = checkoutData.qrVendisPaid !== undefined ? checkoutData.qrVendisPaid : 0;
+        finalQrUnion = checkoutData.qrUnionPaid !== undefined ? checkoutData.qrUnionPaid : 0;
+        finalQr = checkoutData.qrPaid !== undefined ? checkoutData.qrPaid : (finalQrVendis + finalQrUnion || Math.max(0, remainingDue - finalCash));
       }
     }
 
     const totalCashPaid = prepaidCash + finalCash;
+    const totalQrVendisPaid = prepaidQrVendis + finalQrVendis;
+    const totalQrUnionPaid = prepaidQrUnion + finalQrUnion;
     const totalQrPaid = prepaidQr + finalQr;
 
     const completedStay: Stay = {
@@ -899,9 +969,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isPrepaid,
       prepaidAmount,
       prepaidCash,
+      prepaidQrVendis,
+      prepaidQrUnion,
       prepaidQr,
       paymentMethod: effectivePaymentMethod,
       cashPaid: totalCashPaid,
+      qrVendisPaid: totalQrVendisPaid,
+      qrUnionPaid: totalQrUnionPaid,
       qrPaid: totalQrPaid,
       notes: checkoutData.notes || stay.notes,
     };
@@ -918,6 +992,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const updatedShift: Shift = {
           ...active,
           expectedCash: active.expectedCash + finalCash,
+          expectedQrVendis: (active.expectedQrVendis || 0) + finalQrVendis,
+          expectedQrUnion: (active.expectedQrUnion || 0) + finalQrUnion,
           expectedQr: active.expectedQr + finalQr,
           salesCount: alreadyCounted ? active.salesCount : active.salesCount + 1,
           stayIds: active.stayIds.includes(completedStay.id) ? active.stayIds : [...active.stayIds, completedStay.id],
@@ -1063,7 +1139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     description: string;
     category: ExpenseCategory;
     amount: number;
-    paymentMethod: 'efectivo' | 'qr';
+    paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
     receiptNumber?: string;
     notes?: string;
   }) => {
@@ -1093,7 +1169,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const totalExpensesCash = shiftExpenses
           .filter((e) => e.paymentMethod === 'efectivo')
           .reduce((sum, e) => sum + e.amount, 0);
-        const totalExpensesQr = shiftExpenses
+        const totalExpensesQrVendis = shiftExpenses
+          .filter((e) => e.paymentMethod === 'qr_vendis')
+          .reduce((sum, e) => sum + e.amount, 0);
+        const totalExpensesQrUnion = shiftExpenses
+          .filter((e) => e.paymentMethod === 'qr_union')
+          .reduce((sum, e) => sum + e.amount, 0);
+        const totalExpensesQr = totalExpensesQrVendis + totalExpensesQrUnion + shiftExpenses
           .filter((e) => e.paymentMethod === 'qr')
           .reduce((sum, e) => sum + e.amount, 0);
 
@@ -1101,6 +1183,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...active,
           expenses: shiftExpenses,
           totalExpensesCash,
+          totalExpensesQrVendis,
+          totalExpensesQrUnion,
           totalExpensesQr,
         };
 
@@ -1119,7 +1203,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     playSuccessChime();
     showToast({
       title: '💸 Pago / Egreso Registrado',
-      message: `Se registró pago de ${formatBs(newExpense.amount)} por "${newExpense.description}" (${newExpense.paymentMethod === 'efectivo' ? 'Efectivo Gaveta' : 'QR / Banco'}).`,
+      message: `Se registró pago de ${formatBs(newExpense.amount)} por "${newExpense.description}" (${newExpense.paymentMethod === 'efectivo' ? 'Efectivo Gaveta' : newExpense.paymentMethod === 'qr_vendis' ? 'QR Vendis' : newExpense.paymentMethod === 'qr_union' ? 'QR Banco Unión' : 'QR'}).`,
       type: 'info',
       durationMs: 6000,
     });
@@ -1129,7 +1213,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const closeCurrentShift = (
     responsiblePersonName: string,
     totalPhysicalCashInDrawer: number,
-    declaredQr: number,
+    declaredQrVendis: number,
+    declaredQrUnion: number,
     handoverCashFloat: number,
     notes?: string
   ): Shift | null => {
@@ -1148,12 +1233,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : shiftExpenses
             .filter((e: Expense) => e.paymentMethod === 'efectivo')
             .reduce((sum: number, e: Expense) => sum + e.amount, 0);
-    const totalExpensesQr =
-      shift.totalExpensesQr !== undefined
-        ? shift.totalExpensesQr
+    const totalExpensesQrVendis =
+      shift.totalExpensesQrVendis !== undefined
+        ? shift.totalExpensesQrVendis
         : shiftExpenses
-            .filter((e: Expense) => e.paymentMethod === 'qr')
+            .filter((e: Expense) => e.paymentMethod === 'qr_vendis')
             .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+    const totalExpensesQrUnion =
+      shift.totalExpensesQrUnion !== undefined
+        ? shift.totalExpensesQrUnion
+        : shiftExpenses
+            .filter((e: Expense) => e.paymentMethod === 'qr_union')
+            .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+    const totalExpensesQr = totalExpensesQrVendis + totalExpensesQrUnion + (shift.totalExpensesQr || 0);
+
+    const declaredQrTotal = declaredQrVendis + declaredQrUnion;
 
     // Ventas declaradas en efectivo: Total contado - Fondo dejado + Gastos en efectivo pagados
     const declaredSalesCash = Math.max(
@@ -1161,10 +1255,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalPhysicalCashInDrawer - floatLeftForNext + totalExpensesCash
     );
 
-    const diffCash = declaredSalesCash - shift.expectedCash;
-    const diffQr = declaredQr - (shift.expectedQr - totalExpensesQr);
-    const totalDiff = diffCash + diffQr;
+    const expectedCashInDrawer = Math.max(0, startingCashFloat + shift.expectedCash - totalExpensesCash);
+    const expectedNetQrVendis = Math.max(0, (shift.expectedQrVendis || 0) - totalExpensesQrVendis);
+    const expectedNetQrUnion = Math.max(0, (shift.expectedQrUnion || 0) - totalExpensesQrUnion);
+    const expectedNetQrTotal = Math.max(0, shift.expectedQr - totalExpensesQr);
+
+    const diffCash = totalPhysicalCashInDrawer - expectedCashInDrawer;
+    const diffQrVendis = declaredQrVendis - expectedNetQrVendis;
+    const diffQrUnion = declaredQrUnion - expectedNetQrUnion;
+    const diffQr = declaredQrTotal - expectedNetQrTotal;
+    const totalDiff = diffCash + (diffQrVendis !== 0 || diffQrUnion !== 0 ? (diffQrVendis + diffQrUnion) : diffQr);
+
     const discountAmount = totalDiff < 0 ? Math.abs(totalDiff) : 0;
+    const surplusAmount = totalDiff > 0 ? totalDiff : 0;
 
     const handoverActiveRoomsCount = rooms.filter((r) => r.status === 'ocupada').length;
 
@@ -1176,14 +1279,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       initialCashFloat: startingCashFloat,
       handoverCashFloat: floatLeftForNext,
       totalExpensesCash,
+      totalExpensesQrVendis,
+      totalExpensesQrUnion,
       totalExpensesQr,
       totalPhysicalCashInDrawer,
       declaredCash: declaredSalesCash,
-      declaredQr,
+      declaredQrVendis,
+      declaredQrUnion,
+      declaredQr: declaredQrTotal,
       differenceCash: diffCash,
+      differenceQrVendis: diffQrVendis,
+      differenceQrUnion: diffQrUnion,
       differenceQr: diffQr,
       totalDifference: totalDiff,
       discountAmount,
+      surplusAmount,
       notes,
       handoverActiveRoomsCount,
     };

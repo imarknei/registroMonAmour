@@ -102,7 +102,7 @@ export const HeaderStats: React.FC = () => {
         {overtimeRooms > 0 && <div className="absolute top-0 right-0 h-full w-1.5 bg-brand-600 rounded-r" />}
       </div>
 
-      {/* 5. Total en Caja Turno (Efectivo + QR) */}
+      {/* 5. Total en Caja Turno (Solo Admin) vs Estado de Turno (Recepcionistas) */}
       <div className="col-span-2 sm:col-span-2 bg-gradient-to-br from-brand-700 to-rose-800 rounded-2xl p-4 text-white shadow-md shadow-brand-900/10 flex items-center justify-between relative overflow-hidden">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center shrink-0">
@@ -110,34 +110,46 @@ export const HeaderStats: React.FC = () => {
           </div>
           <div>
             <span className="text-[11px] font-bold text-rose-200 uppercase tracking-wider block">
-              {currentUser.role === 'admin' ? 'Caja Turno Activo' : `Total Caja (${currentUser.name})`}
+              {currentUser.role === 'admin' ? 'Caja Turno Activo (Admin)' : 'Turno de Recepción'}
             </span>
             <span className="text-xl sm:text-2xl font-extrabold font-mono tracking-tight">
-              {formatBs(totalShiftSales)}
+              {currentUser.role === 'admin' ? formatBs(totalShiftSales) : currentUser.shiftName}
             </span>
           </div>
         </div>
 
-        {currentShift && (
-          <div className="text-right text-xs space-y-0.5 pr-1 hidden xs:block">
-            <div className="text-rose-100">
-              <span className="opacity-75">Gaveta (c/Caja Chica y Pagos):</span>{' '}
-              <strong className="font-mono font-bold text-white">
-                {formatBs(
-                  (currentShift.initialCashFloat || 100) +
-                    currentShift.expectedCash -
-                    (currentShift.totalExpensesCash || 0)
+        {currentUser.role === 'admin' ? (
+          currentShift && (
+            <div className="text-right text-xs space-y-0.5 pr-1 hidden xs:block">
+              <div className="text-rose-100">
+                <span className="opacity-75">Gaveta Esperada:</span>{' '}
+                <strong className="font-mono font-bold text-white">
+                  {formatBs(
+                    (currentShift.initialCashFloat || 100) +
+                      currentShift.expectedCash -
+                      (currentShift.totalExpensesCash || 0)
+                  )}
+                </strong>
+              </div>
+              <div className="text-rose-200 text-[10px]">
+                <span className="opacity-75">Ventas:</span> Ef: {formatBs(currentShift.expectedCash)} | Vendis: {formatBs(currentShift.expectedQrVendis || 0)} | Unión: {formatBs(currentShift.expectedQrUnion || 0)}
+                {(currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0) > 0 && (
+                  <span className="text-amber-200 font-semibold ml-1 block">
+                    Pagos/Gastos: -{formatBs((currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0))}
+                  </span>
                 )}
-              </strong>
+              </div>
             </div>
-            <div className="text-rose-200 text-[11px]">
-              <span className="opacity-75">Ventas:</span> Efec: {formatBs(currentShift.expectedCash)} | QR: {formatBs(currentShift.expectedQr)}
-              {(currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0) > 0 && (
-                <span className="text-amber-200 font-semibold ml-1.5">
-                  | Pagos: -{formatBs((currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0))}
-                </span>
-              )}
+          )
+        ) : (
+          <div className="text-right text-xs space-y-0.5 pr-1">
+            <div className="text-emerald-300 font-bold flex items-center justify-end gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Turno Activo</span>
             </div>
+            <span className="text-[10px] text-rose-200 block">
+              Arqueo Ciego al Cerrar
+            </span>
           </div>
         )}
       </div>

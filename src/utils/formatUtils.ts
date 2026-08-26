@@ -120,3 +120,21 @@ export function getPlanLabel(plan: string): string {
       return plan.toUpperCase();
   }
 }
+
+export function getPaymentMethodLabel(method: string): string {
+  switch (method) {
+    case 'efectivo':
+      return '💵 Efectivo';
+    case 'qr_vendis':
+      return '📱 QR Vendis';
+    case 'qr_union':
+      return '🏦 QR Banco Unión';
+    case 'qr':
+      return '📱 QR';
+    case 'mixto':
+      return '💳 Mixto';
+    default:
+      return method;
+  }
+}
+

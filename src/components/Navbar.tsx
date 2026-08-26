@@ -132,43 +132,55 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="text-sm font-bold font-mono text-slate-800 tracking-wide">{formattedTime}</span>
             </div>
 
-            {/* Current Shift Cash Overview for Receptionist */}
+            {/* Current Shift Info for Receptionist (Arqueo ciego) */}
             {currentUser.role !== 'admin' && currentShift && (
-              <div className="flex items-center gap-2.5 bg-rose-50/70 border border-rose-200/80 rounded-xl px-3 py-1.5 shadow-sm">
+              <div className="flex items-center gap-2.5 bg-rose-50/80 border border-rose-200/80 rounded-xl px-3 py-1.5 shadow-xs">
                 <div className="flex items-center gap-1.5 text-slate-700">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase font-bold block leading-none">Sesión</span>
+                    <span className="text-xs font-black text-brand-800">{currentUser.shiftName}</span>
+                  </div>
+                </div>
+
+                <div className="h-6 w-px bg-rose-200" />
+                <div className="flex items-center gap-1.5 text-slate-700">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block leading-none">Caja Chica</span>
                     <span className="text-xs font-bold font-mono">{formatBs(currentShift.initialCashFloat || 100)}</span>
                   </div>
                 </div>
+              </div>
+            )}
 
-                <div className="h-6 w-px bg-rose-200" />
-                <div className="flex items-center gap-1.5 text-emerald-700">
-                  <DollarSign className="w-4 h-4" />
+            {/* Admin Live Shift Overview */}
+            {currentUser.role === 'admin' && currentShift && (
+              <div className="flex items-center gap-2.5 bg-slate-900 text-white rounded-xl px-3 py-1.5 shadow-sm">
+                <div className="flex items-center gap-1.5 text-emerald-400">
+                  <DollarSign className="w-3.5 h-3.5" />
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-semibold block leading-none">Ventas Efec.</span>
+                    <span className="text-[9px] text-slate-400 uppercase font-semibold block leading-none">Efec.</span>
                     <span className="text-xs font-bold font-mono">+{formatBs(currentShift.expectedCash)}</span>
                   </div>
                 </div>
 
-                <div className="h-6 w-px bg-rose-200" />
-                <div className="flex items-center gap-1.5 text-sky-700">
-                  <QrCode className="w-4 h-4" />
+                <div className="h-5 w-px bg-slate-700" />
+                <div className="flex items-center gap-1.5 text-sky-300">
+                  <QrCode className="w-3.5 h-3.5" />
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-semibold block leading-none">Ventas QR</span>
+                    <span className="text-[9px] text-slate-400 uppercase font-semibold block leading-none">QR Total</span>
                     <span className="text-xs font-bold font-mono">+{formatBs(currentShift.expectedQr)}</span>
                   </div>
                 </div>
 
-                {/* Pagos / Salidas de Caja */}
                 {totalShiftExpenses > 0 && (
                   <>
-                    <div className="h-6 w-px bg-rose-200" />
-                    <div className="flex items-center gap-1.5 text-rose-700">
-                      <MinusCircle className="w-4 h-4" />
+                    <div className="h-5 w-px bg-slate-700" />
+                    <div className="flex items-center gap-1.5 text-rose-400">
+                      <MinusCircle className="w-3.5 h-3.5" />
                       <div>
-                        <span className="text-[10px] text-rose-500 uppercase font-semibold block leading-none">Pagos Turno</span>
+                        <span className="text-[9px] text-rose-300 uppercase font-semibold block leading-none">Pagos</span>
                         <span className="text-xs font-bold font-mono">-{formatBs(totalShiftExpenses)}</span>
                       </div>
                     </div>

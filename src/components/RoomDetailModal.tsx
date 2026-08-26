@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowLeftRight,
+  Landmark,
 } from 'lucide-react';
 
 interface RoomDetailModalProps {
@@ -49,6 +50,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchProduct, setSearchProduct] = useState<string>('');
   const [finalPaymentMethod, setFinalPaymentMethod] = useState<PaymentMethod>('efectivo');
+  const [mixedQrChannel, setMixedQrChannel] = useState<'qr_vendis' | 'qr_union'>('qr_vendis');
   const [cashAmount, setCashAmount] = useState<string>('');
   const [qrAmount, setQrAmount] = useState<string>('');
   const [checkoutNotes, setCheckoutNotes] = useState<string>('');
@@ -100,24 +102,36 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
   const handleCheckout = () => {
     let finalCash = 0;
+    let finalQrVendis = 0;
+    let finalQrUnion = 0;
     let finalQr = 0;
 
     if (remainingBalance > 0) {
       if (finalPaymentMethod === 'efectivo') {
         finalCash = remainingBalance;
-        finalQr = 0;
-      } else if (finalPaymentMethod === 'qr') {
-        finalCash = 0;
+      } else if (finalPaymentMethod === 'qr_vendis' || finalPaymentMethod === 'qr') {
+        finalQrVendis = remainingBalance;
+        finalQr = remainingBalance;
+      } else if (finalPaymentMethod === 'qr_union') {
+        finalQrUnion = remainingBalance;
         finalQr = remainingBalance;
       } else if (finalPaymentMethod === 'mixto') {
         finalCash = parseFloat(cashAmount) || 0;
-        finalQr = parseFloat(qrAmount) || 0;
+        const qVal = parseFloat(qrAmount) || 0;
+        finalQr = qVal;
+        if (mixedQrChannel === 'qr_union') {
+          finalQrUnion = qVal;
+        } else {
+          finalQrVendis = qVal;
+        }
       }
     }
 
     const completed = closeStayAndCheckout(room.id, {
       finalPaymentMethod: remainingBalance > 0 ? finalPaymentMethod : stay.paymentMethod,
       cashPaid: finalCash,
+      qrVendisPaid: finalQrVendis,
+      qrUnionPaid: finalQrUnion,
       qrPaid: finalQr,
       notes: checkoutNotes || stay.notes,
       setCleaning: sendToCleaning,
@@ -130,16 +144,28 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
   const handleOpenReceiptPreview = () => {
     let finalCash = 0;
+    let finalQrVendis = 0;
+    let finalQrUnion = 0;
     let finalQr = 0;
 
     if (remainingBalance > 0) {
       if (finalPaymentMethod === 'efectivo') {
         finalCash = remainingBalance;
-      } else if (finalPaymentMethod === 'qr') {
+      } else if (finalPaymentMethod === 'qr_vendis' || finalPaymentMethod === 'qr') {
+        finalQrVendis = remainingBalance;
+        finalQr = remainingBalance;
+      } else if (finalPaymentMethod === 'qr_union') {
+        finalQrUnion = remainingBalance;
         finalQr = remainingBalance;
       } else if (finalPaymentMethod === 'mixto') {
         finalCash = parseFloat(cashAmount) || 0;
-        finalQr = parseFloat(qrAmount) || 0;
+        const qVal = parseFloat(qrAmount) || 0;
+        finalQr = qVal;
+        if (mixedQrChannel === 'qr_union') {
+          finalQrUnion = qVal;
+        } else {
+          finalQrVendis = qVal;
+        }
       }
     }
 
@@ -151,6 +177,8 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
       totalAmount: totalDue,
       paymentMethod: finalPaymentMethod,
       cashPaid: (stay.prepaidCash || 0) + finalCash,
+      qrVendisPaid: (stay.prepaidQrVendis || 0) + finalQrVendis,
+      qrUnionPaid: (stay.prepaidQrUnion || 0) + finalQrUnion,
       qrPaid: (stay.prepaidQr || 0) + finalQr,
     };
     onOpenReceipt(tempStay);
@@ -419,14 +447,14 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                     <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2">
                       Método de Pago para el Saldo Pendiente ({formatBs(remainingBalance)})
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
                         type="button"
                         onClick={() => setFinalPaymentMethod('efectivo')}
                         className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
                           finalPaymentMethod === 'efectivo'
-                            ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm'
-                            : 'border-slate-200 bg-white text-slate-600'
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm font-black'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                         }`}
                       >
                         <DollarSign className="w-4 h-4 text-emerald-600" />
@@ -435,15 +463,28 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => setFinalPaymentMethod('qr')}
+                        onClick={() => setFinalPaymentMethod('qr_vendis')}
                         className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                          finalPaymentMethod === 'qr'
-                            ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm'
-                            : 'border-slate-200 bg-white text-slate-600'
+                          finalPaymentMethod === 'qr_vendis' || finalPaymentMethod === 'qr'
+                            ? 'border-sky-600 bg-sky-50 text-sky-800 shadow-sm font-black'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                         }`}
                       >
                         <QrCode className="w-4 h-4 text-sky-600" />
-                        QR (Vendis)
+                        QR Vendis
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFinalPaymentMethod('qr_union')}
+                        className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                          finalPaymentMethod === 'qr_union'
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-sm font-black'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        <Landmark className="w-4 h-4 text-indigo-600" />
+                        QR B. Unión
                       </button>
 
                       <button
@@ -456,8 +497,8 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                         }}
                         className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
                           finalPaymentMethod === 'mixto'
-                            ? 'border-purple-600 bg-purple-50 text-purple-800 shadow-sm'
-                            : 'border-slate-200 bg-white text-slate-600'
+                            ? 'border-purple-600 bg-purple-50 text-purple-800 shadow-sm font-black'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                         }`}
                       >
                         <Layers className="w-4 h-4 text-purple-600" />
@@ -467,10 +508,36 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
                     {/* Mixed Payment Details in Checkout */}
                     {finalPaymentMethod === 'mixto' && (
-                      <div className="mt-3 p-3 bg-purple-50/70 rounded-2xl border border-purple-200 space-y-2 animate-fade-in">
-                        <span className="text-[11px] font-bold text-purple-900 block">
-                          Desglose de Pago Mixto (Total: {formatBs(remainingBalance)})
-                        </span>
+                      <div className="mt-3 p-3.5 bg-purple-50/70 rounded-2xl border border-purple-200 space-y-2.5 animate-fade-in">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-purple-900 block">
+                            Desglose de Pago Mixto (Total: {formatBs(remainingBalance)})
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setMixedQrChannel('qr_vendis')}
+                              className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                mixedQrChannel === 'qr_vendis'
+                                  ? 'bg-sky-600 text-white'
+                                  : 'bg-white text-slate-600 border border-slate-200'
+                              }`}
+                            >
+                              Vendis
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMixedQrChannel('qr_union')}
+                              className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                mixedQrChannel === 'qr_union'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-white text-slate-600 border border-slate-200'
+                              }`}
+                            >
+                              B. Unión
+                            </button>
+                          </div>
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
@@ -488,7 +555,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
-                              Cobrado en QR (Bs)
+                              {mixedQrChannel === 'qr_union' ? 'Cobrado en QR B. Unión (Bs)' : 'Cobrado en QR Vendis (Bs)'}
                             </label>
                             <input
                               type="number"
