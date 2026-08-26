@@ -237,7 +237,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               {timeCalc.isOvertime
                 ? timeCalc.gracePeriodActive
                   ? 'En Espera (10 min)'
-                  : '¡HORA EXTRA APLICADA!'
+                  : `¡Tiempo Extra (+${formatBs(timeCalc.overtimeCharge)})!`
                 : timeCalc.isWarning
                 ? '¡Por vencer!'
                 : 'Ocupada'}
@@ -285,7 +285,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               {timeCalc.gracePeriodActive ? (
                 'Espera / Tolerancia (10 min) • 0 Bs'
               ) : (
-                `+${timeCalc.extraHoursCount} Hora(s) Extra (+${formatBs(timeCalc.overtimeCharge)})`
+                `+${formatBs(timeCalc.overtimeCharge)} Extra (${timeCalc.extraBlocksCount} x 20 min)`
               )}
             </div>
           )}

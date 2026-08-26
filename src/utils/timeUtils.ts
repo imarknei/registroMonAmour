@@ -3,9 +3,11 @@ export interface OvertimeCalculation {
   overtimeMinutes: number;
   overtimeSeconds: number;
   gracePeriodActive: boolean; // Primeros 10 minutos de espera -> 0 Bs de recargo
-  extraHoursCount: number; // Cantidad de horas extras cobradas (1, 2, 3...)
-  extraHourRate: number; // Tarifa por hora extra configurada para la habitación (ej. 30 Bs o 40 Bs)
-  overtimeCharge: number; // 0 si está dentro de los 10 min de espera, o extraHoursCount * extraHourRate
+  extraBlocksCount: number; // Cantidad de fracciones de 20 min cobradas (1, 2, 3...)
+  extraBlockRate: number; // Tarifa por fracción de 20 min (10 Bs)
+  extraHoursCount: number; // Para compatibilidad (fracciones de 20 min)
+  extraHourRate: number; // Tarifa por fracción (10 Bs)
+  overtimeCharge: number; // 0 si está dentro de los 10 min de espera, o extraBlocksCount * 10 Bs
   remainingMinutes: number;
   remainingSeconds: number;
   isWarning: boolean; // Menos de 10 minutos restantes
@@ -17,8 +19,12 @@ export interface OvertimeCalculation {
  * - Cuenta regresiva hasta 0.
  * - Al llegar a 0, arranca el cronómetro de tiempo excedido.
  * - Durante los primeros 10 minutos de espera (0 a 10 min): 0 Bs (tolerancia gratuita de espera).
- * - A partir del minuto 11: cobra automáticamente 1 hora extra completa con el precio configurado (30 Bs o 40 Bs según la habitación).
- * - Cada 60 minutos adicionales (con sus 10 min de tolerancia), se suma otra hora extra.
+ * - A partir del minuto 11: cobra 10 Bs por cada 20 minutos de tiempo excedido:
+ *   - Minutos 11 a 20: 10 Bs (1er bloque de 20 min)
+ *   - Minutos 21 a 40: 20 Bs (2do bloque de 20 min)
+ *   - Minutos 41 a 60: 30 Bs (3er bloque de 20 min)
+ *   - Minutos 61 a 80: 40 Bs (4to bloque de 20 min)
+ *   - etc., sucesivamente a 10 Bs por cada 20 minutos hasta la salida.
  */
 export function calculateStayTime(
   startTimeIso: string,
@@ -46,8 +52,10 @@ export function calculateStayTime(
       overtimeMinutes: 0,
       overtimeSeconds: 0,
       gracePeriodActive: false,
+      extraBlocksCount: 0,
+      extraBlockRate: 10,
       extraHoursCount: 0,
-      extraHourRate: extraHourPrice,
+      extraHourRate: 10,
       overtimeCharge: 0,
       remainingMinutes,
       remainingSeconds,
@@ -62,21 +70,23 @@ export function calculateStayTime(
 
     let overtimeCharge = 0;
     let gracePeriodActive = false;
-    let extraHoursCount = 0;
+    let extraBlocksCount = 0;
 
-    // Regla de 10 minutos de espera:
+    // Regla de 10 minutos de espera gratuita:
     if (overtimeMinutes <= 10) {
       // De 0 a 10 minutos de espera: NO COBRA NADA (0 Bs)
       gracePeriodActive = true;
-      extraHoursCount = 0;
+      extraBlocksCount = 0;
       overtimeCharge = 0;
     } else {
-      // Minuto 11 en adelante: Cobra 1 hora extra automáticamente (o más si excede 1h+10m)
+      // Minuto 11 en adelante: Cobra 10 Bs por cada 20 minutos de cronómetro
+      // Minutos 11 a 20: 1 bloque -> 10 Bs
+      // Minutos 21 a 40: 2 bloques -> 20 Bs
+      // Minutos 41 a 60: 3 bloques -> 30 Bs
+      // Minutos 61 a 80: 4 bloques -> 40 Bs
       gracePeriodActive = false;
-      // Minutos 11 a 70: 1 hora extra
-      // Minutos 71 a 130: 2 horas extras
-      extraHoursCount = 1 + Math.floor(Math.max(0, overtimeMinutes - 11) / 60);
-      overtimeCharge = extraHoursCount * extraHourPrice;
+      extraBlocksCount = Math.ceil(overtimeMinutes / 20);
+      overtimeCharge = extraBlocksCount * 10;
     }
 
     return {
@@ -84,8 +94,10 @@ export function calculateStayTime(
       overtimeMinutes,
       overtimeSeconds,
       gracePeriodActive,
-      extraHoursCount,
-      extraHourRate: extraHourPrice,
+      extraBlocksCount,
+      extraBlockRate: 10,
+      extraHoursCount: extraBlocksCount,
+      extraHourRate: 10,
       overtimeCharge,
       remainingMinutes: 0,
       remainingSeconds: 0,

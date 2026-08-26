@@ -346,7 +346,7 @@ export const RegisteredRoomsView: React.FC = () => {
                           ) : (
                             <span className="text-rose-700 font-black flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
                               <AlertTriangle className="w-3.5 h-3.5" />
-                              +{timeCalc.extraHoursCount}h Extra (+{formatBs(timeCalc.overtimeCharge)})
+                              +{formatBs(timeCalc.overtimeCharge)} Extra ({timeCalc.extraBlocksCount} x 20 min)
                             </span>
                           )
                         ) : (

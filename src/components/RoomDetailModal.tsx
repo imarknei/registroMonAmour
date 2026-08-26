@@ -382,7 +382,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 {timeCalc.overtimeCharge > 0 && (
                   <div className="flex justify-between text-xs text-amber-300">
                     <span>
-                      Recargo Hora Extra ({timeCalc.extraHoursCount}h extra x {formatBs(timeCalc.extraHourRate)}):
+                      Recargo Tiempo Extra (+{timeCalc.overtimeMinutes} min • {timeCalc.extraBlocksCount} x 20 min):
                     </span>
                     <span className="font-mono font-semibold">+{formatBs(timeCalc.overtimeCharge)}</span>
                   </div>
