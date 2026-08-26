@@ -73,10 +73,18 @@ export interface Stay {
   prepaidQrVendis?: number;
   prepaidQrUnion?: number;
   prepaidQr?: number; // Suma QR
-  cashPaid?: number; // Total cobrado en efectivo
-  qrVendisPaid?: number; // Total cobrado en QR Vendis
-  qrUnionPaid?: number; // Total cobrado en QR Banco Unión
-  qrPaid?: number;   // Total cobrado en QR
+  cashPaid?: number; // Total acumulado cobrado en efectivo
+  qrVendisPaid?: number; // Total acumulado cobrado en QR Vendis
+  qrUnionPaid?: number; // Total acumulado cobrado en QR Banco Unión
+  qrPaid?: number;   // Total acumulado cobrado en QR
+  finalCashPaid?: number; // Cobrado en efectivo exclusivamente al checkout
+  finalQrVendisPaid?: number; // Cobrado en QR Vendis exclusivamente al checkout
+  finalQrUnionPaid?: number; // Cobrado en QR Banco Unión exclusivamente al checkout
+  finalQrPaid?: number; // Cobrado en QR total exclusivamente al checkout
+  entryShiftId?: string; // ID del turno donde se registró el ingreso / adelanto
+  checkoutShiftId?: string; // ID del turno donde se realizó el cobro de salida / checkout
+  checkoutReceptionistId?: string; // ID del recepcionista que cobró la salida
+  checkoutReceptionistName?: string; // Nombre del recepcionista que cobró la salida
   consumptions: ConsumptionItem[];
   vehiclePlate?: string;
   notes?: string;

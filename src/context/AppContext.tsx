@@ -492,9 +492,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let liveQrUnionSales = 0;
     let liveQrSales = 0;
     let liveSalesCount = 0;
+    const countedSalesStayIds = new Set<string>();
     const trackedStayIds = new Set<string>(rawTargetShift.stayIds || []);
 
-    // 1. Sumar cobros adelantados de habitaciones actualmente ocupadas
+    // 1. Sumar cobros adelantados de habitaciones actualmente ocupadas en este turno
     rooms.forEach((r) => {
       if (r.status === 'ocupada' && r.currentStay) {
         const s = r.currentStay;
@@ -502,19 +503,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const stayTime = new Date(s.startTime).getTime();
         const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
         const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
+        const isThisShiftEntry = s.entryShiftId === rawTargetShift.id || (!s.entryShiftId && matchesReceptionist && inTimeWindow);
 
-        if ((matchesReceptionist && inTimeWindow) || trackedStayIds.has(s.id)) {
+        if (isThisShiftEntry && s.isPrepaid) {
           trackedStayIds.add(s.id);
-          if (s.isPrepaid) {
-            const prepCash = s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
-            const prepVendis = s.prepaidQrVendis || (s.paymentMethod === 'qr_vendis' ? s.prepaidAmount || s.baseRoomPrice : 0);
-            const prepUnion = s.prepaidQrUnion || (s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
-            const prepQr = s.prepaidQr || (prepVendis + prepUnion) || (s.paymentMethod === 'qr' ? s.prepaidAmount || s.baseRoomPrice : 0);
+          const prepCash = s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
+          const prepVendis = s.prepaidQrVendis || (s.paymentMethod === 'qr_vendis' ? s.prepaidAmount || s.baseRoomPrice : 0);
+          const prepUnion = s.prepaidQrUnion || (s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
+          const prepQr = s.prepaidQr || (prepVendis + prepUnion) || (s.paymentMethod === 'qr' ? s.prepaidAmount || s.baseRoomPrice : 0);
 
-            liveCashSales += prepCash;
-            liveQrVendisSales += prepVendis;
-            liveQrUnionSales += prepUnion;
-            liveQrSales += prepQr;
+          liveCashSales += prepCash;
+          liveQrVendisSales += prepVendis;
+          liveQrUnionSales += prepUnion;
+          liveQrSales += prepQr;
+          if (!countedSalesStayIds.has(s.id)) {
+            countedSalesStayIds.add(s.id);
             liveSalesCount++;
           }
         }
@@ -524,22 +527,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Sumar habitaciones cerradas y cobradas durante el turno
     completedStays.forEach((s) => {
       if (s.status === 'cancelled') return;
-      const stayTime = new Date(s.startTime).getTime();
+      const stayStartTime = new Date(s.startTime).getTime();
+      const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
       const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
-      const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
+      const isEntryInThisShift = s.entryShiftId === rawTargetShift.id || (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
+      const isCheckoutInThisShift = s.checkoutShiftId === rawTargetShift.id || (s.checkoutReceptionistId === rawTargetShift.receptionistId) || (!s.checkoutShiftId && matchesReceptionist && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime);
 
-      if ((matchesReceptionist && inTimeWindow) || trackedStayIds.has(s.id)) {
+      // 2a. Cobro de adelanto / prepago en este turno
+      if (isEntryInThisShift && s.isPrepaid) {
         trackedStayIds.add(s.id);
-        const cash = s.cashPaid !== undefined ? s.cashPaid : (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0);
-        const vendis = s.qrVendisPaid !== undefined ? s.qrVendisPaid : (s.paymentMethod === 'qr_vendis' ? s.totalAmount || 0 : 0);
-        const union = s.qrUnionPaid !== undefined ? s.qrUnionPaid : (s.paymentMethod === 'qr_union' ? s.totalAmount || 0 : 0);
-        const qr = s.qrPaid !== undefined ? s.qrPaid : (vendis + union) || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0);
+        const prepCash = s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
+        const prepVendis = s.prepaidQrVendis || (s.paymentMethod === 'qr_vendis' ? s.prepaidAmount || s.baseRoomPrice : 0);
+        const prepUnion = s.prepaidQrUnion || (s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
+        const prepQr = s.prepaidQr || (prepVendis + prepUnion) || (s.paymentMethod === 'qr' ? s.prepaidAmount || s.baseRoomPrice : 0);
 
-        liveCashSales += cash;
-        liveQrVendisSales += vendis;
-        liveQrUnionSales += union;
-        liveQrSales += qr;
-        liveSalesCount++;
+        liveCashSales += prepCash;
+        liveQrVendisSales += prepVendis;
+        liveQrUnionSales += prepUnion;
+        liveQrSales += prepQr;
+        if (!countedSalesStayIds.has(s.id)) {
+          countedSalesStayIds.add(s.id);
+          liveSalesCount++;
+        }
+      }
+
+      // 2b. Cobro de saldo de salida / checkout en este turno
+      if (isCheckoutInThisShift) {
+        trackedStayIds.add(s.id);
+        const finalCash = s.finalCashPaid !== undefined
+          ? s.finalCashPaid
+          : (s.isPrepaid ? Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0)) : (s.cashPaid || (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0)));
+        const finalVendis = s.finalQrVendisPaid !== undefined
+          ? s.finalQrVendisPaid
+          : (s.isPrepaid ? Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0)) : (s.qrVendisPaid || (s.paymentMethod === 'qr_vendis' ? s.totalAmount || 0 : 0)));
+        const finalUnion = s.finalQrUnionPaid !== undefined
+          ? s.finalQrUnionPaid
+          : (s.isPrepaid ? Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0)) : (s.qrUnionPaid || (s.paymentMethod === 'qr_union' ? s.totalAmount || 0 : 0)));
+        const finalQr = s.finalQrPaid !== undefined
+          ? s.finalQrPaid
+          : (finalVendis + finalUnion || (s.isPrepaid ? Math.max(0, (s.qrPaid || 0) - (s.prepaidQr || 0)) : (s.qrPaid || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0))));
+
+        if (finalCash > 0 || finalQr > 0 || !s.isPrepaid) {
+          liveCashSales += finalCash;
+          liveQrVendisSales += finalVendis;
+          liveQrUnionSales += finalUnion;
+          liveQrSales += finalQr;
+          if (!countedSalesStayIds.has(s.id)) {
+            countedSalesStayIds.add(s.id);
+            liveSalesCount++;
+          }
+        }
       }
     });
 
@@ -727,6 +764,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       qrVendisPaid: prepaidQrVendis,
       qrUnionPaid: prepaidQrUnion,
       qrPaid: prepaidQr,
+      entryShiftId: currentShift ? currentShift.id : undefined,
       vehiclePlate: entryData.vehiclePlate,
       receptionistId: currentUser.id,
       receptionistName: currentUser.name,
@@ -977,6 +1015,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       qrVendisPaid: totalQrVendisPaid,
       qrUnionPaid: totalQrUnionPaid,
       qrPaid: totalQrPaid,
+      finalCashPaid: finalCash,
+      finalQrVendisPaid: finalQrVendis,
+      finalQrUnionPaid: finalQrUnion,
+      finalQrPaid: finalQr,
+      checkoutShiftId: currentShift ? currentShift.id : undefined,
+      checkoutReceptionistId: currentUser.id,
+      checkoutReceptionistName: currentUser.name,
+      closedBy: currentUser.name,
       notes: checkoutData.notes || stay.notes,
     };
 

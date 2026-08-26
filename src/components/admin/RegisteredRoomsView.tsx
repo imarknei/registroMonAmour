@@ -601,14 +601,28 @@ export const RegisteredRoomsView: React.FC = () => {
                       {formatBs(totalDue)}
                     </span>
                     {stay.isPrepaid ? (
-                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Pagado al entrar
-                      </span>
+                      <div className="space-y-0.5 text-right">
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Adelanto: {formatBs(prepaidAmt)}
+                        </span>
+                        {isActive && pendingBalance > 0 && (
+                          <span className="text-[9px] font-black text-rose-600 block">
+                            Saldo x cobrar: {formatBs(pendingBalance)}
+                          </span>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 inline-block">
-                        Paga al salir
-                      </span>
+                      <div className="space-y-0.5 text-right">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 inline-block">
+                          Paga al salir
+                        </span>
+                        {isActive && (
+                          <span className="text-[9px] font-black text-amber-700 block">
+                            Por cobrar: {formatBs(totalDue)} (pasa al sgte. turno)
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
