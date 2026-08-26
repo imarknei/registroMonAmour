@@ -35,7 +35,7 @@ import {
   playAddConsumptionSound,
   playUndoSound,
 } from '../utils/soundUtils';
-import { formatBs } from '../utils/formatUtils';
+import { formatBs, getPaymentMethodLabel } from '../utils/formatUtils';
 import {
   initializeFirebaseClient,
   subscribeToRooms,
@@ -79,7 +79,6 @@ interface AppContextType {
   showToast: (toast: Omit<ToastMessage, 'id'>) => string;
   dismissToast: (id: string) => void;
 
-  // Room Operations
   registerStay: (entryData: {
     roomId: string;
     chosenPlan: PlanType;
@@ -120,7 +119,15 @@ interface AppContextType {
     vehiclePlate?: string;
     notes?: string;
   }) => void;
-  addConsumptionToRoom: (roomId: string, productId: string, quantity?: number) => boolean;
+  addConsumptionToRoom: (
+    roomId: string,
+    productId: string,
+    quantity?: number,
+    paymentOptions?: {
+      isPaid: boolean;
+      paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+    }
+  ) => boolean;
   removeConsumptionFromRoom: (roomId: string, consumptionId: string, silent?: boolean) => void;
   closeStayAndCheckout: (
     roomId: string,
@@ -495,7 +502,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const countedSalesStayIds = new Set<string>();
     const trackedStayIds = new Set<string>(rawTargetShift.stayIds || []);
 
-    // 1. Sumar cobros adelantados de habitaciones actualmente ocupadas en este turno
+    // 1. Sumar cobros adelantados y consumos cobrados al momento de habitaciones actualmente ocupadas en este turno
     rooms.forEach((r) => {
       if (r.status === 'ocupada' && r.currentStay) {
         const s = r.currentStay;
@@ -521,6 +528,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             liveSalesCount++;
           }
         }
+
+        // Consumos pagados al momento en este turno
+        (s.consumptions || []).forEach((c) => {
+          if (c.isPaid) {
+            const cTime = c.paidAt ? new Date(c.paidAt).getTime() : stayTime;
+            const isThisShiftCons =
+              c.paidShiftId === rawTargetShift.id ||
+              (!c.paidShiftId && c.paidReceptionistId === rawTargetShift.receptionistId) ||
+              (!c.paidShiftId && matchesReceptionist && cTime >= shiftStartTime && cTime <= shiftEndTime);
+
+            if (isThisShiftCons) {
+              if (c.paymentMethod === 'efectivo') liveCashSales += c.subtotal;
+              else if (c.paymentMethod === 'qr_vendis') {
+                liveQrVendisSales += c.subtotal;
+                liveQrSales += c.subtotal;
+              } else if (c.paymentMethod === 'qr_union') {
+                liveQrUnionSales += c.subtotal;
+                liveQrSales += c.subtotal;
+              } else if (c.paymentMethod === 'qr') {
+                liveQrVendisSales += c.subtotal;
+                liveQrSales += c.subtotal;
+              }
+            }
+          }
+        });
       }
     });
 
@@ -551,7 +583,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // 2b. Cobro de saldo de salida / checkout en este turno
+      // 2b. Consumos cobrados al momento en este turno
+      (s.consumptions || []).forEach((c) => {
+        if (c.isPaid) {
+          const cTime = c.paidAt ? new Date(c.paidAt).getTime() : stayStartTime;
+          const isThisShiftCons =
+            c.paidShiftId === rawTargetShift.id ||
+            (!c.paidShiftId && c.paidReceptionistId === rawTargetShift.receptionistId) ||
+            (!c.paidShiftId && matchesReceptionist && cTime >= shiftStartTime && cTime <= shiftEndTime);
+
+          if (isThisShiftCons) {
+            if (c.paymentMethod === 'efectivo') liveCashSales += c.subtotal;
+            else if (c.paymentMethod === 'qr_vendis') {
+              liveQrVendisSales += c.subtotal;
+              liveQrSales += c.subtotal;
+            } else if (c.paymentMethod === 'qr_union') {
+              liveQrUnionSales += c.subtotal;
+              liveQrSales += c.subtotal;
+            } else if (c.paymentMethod === 'qr') {
+              liveQrVendisSales += c.subtotal;
+              liveQrSales += c.subtotal;
+            }
+          }
+        }
+      });
+
+      // 2c. Cobro de saldo de salida / checkout en este turno
       if (isCheckoutInThisShift) {
         trackedStayIds.add(s.id);
         const finalCash = s.finalCashPaid !== undefined
@@ -817,7 +874,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const addConsumptionToRoom = (roomId: string, productId: string, quantity = 1): boolean => {
+  const addConsumptionToRoom = (
+    roomId: string,
+    productId: string,
+    quantity = 1,
+    paymentOptions?: {
+      isPaid: boolean;
+      paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+    }
+  ): boolean => {
     const room = rooms.find((r) => r.id === roomId);
     const product = products.find((p) => p.id === productId);
 
@@ -850,14 +915,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 2. Add to room stay
     const consumptionId = `cons-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+    const subtotal = product.price * quantity;
+    const isPaid = paymentOptions?.isPaid ?? false;
+    const paymentMethod = isPaid ? (paymentOptions?.paymentMethod || 'efectivo') : undefined;
+
     const consumptionItem: ConsumptionItem = {
       id: consumptionId,
       productId: product.id,
       productName: product.name,
       unitPrice: product.price,
       quantity,
-      subtotal: product.price * quantity,
+      subtotal,
       timestamp: new Date().toISOString(),
+      isPaid,
+      paymentMethod,
+      paidAt: isPaid ? new Date().toISOString() : undefined,
+      paidShiftId: isPaid && currentShift ? currentShift.id : undefined,
+      paidReceptionistId: isPaid ? currentUser.id : undefined,
+      paidReceptionistName: isPaid ? currentUser.name : undefined,
     };
 
     const updatedStay: Stay = {
@@ -875,11 +950,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncStayToFirebase(updatedStay);
     setCompletedStays((prev) => prev.map((s) => (s.id === updatedStay.id ? updatedStay : s)));
 
+    // Si se pagó al contado en el momento, sumar a la caja del turno activo inmediatamente
+    if (isPaid && currentUser.role !== 'admin') {
+      setActiveShifts((prev) => {
+        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
+        const addCash = paymentMethod === 'efectivo' ? subtotal : 0;
+        const addVendis = paymentMethod === 'qr_vendis' ? subtotal : 0;
+        const addUnion = paymentMethod === 'qr_union' ? subtotal : 0;
+        const addQr = paymentMethod === 'qr' ? subtotal : (addVendis + addUnion);
+        const updatedShift: Shift = {
+          ...active,
+          expectedCash: active.expectedCash + addCash,
+          expectedQrVendis: (active.expectedQrVendis || 0) + addVendis,
+          expectedQrUnion: (active.expectedQrUnion || 0) + addUnion,
+          expectedQr: active.expectedQr + addQr,
+        };
+        syncShiftToFirestore(updatedShift);
+        return {
+          ...prev,
+          [currentUser.id]: updatedShift,
+        };
+      });
+    }
+
     // 3. Play sound & emit interactive toast with UNDO action
     playAddConsumptionSound();
     showToast({
-      title: '¡Consumo Agregado!',
-      message: `Se añadió ${quantity}x ${product.name} (+${formatBs(product.price * quantity)}) a ${room.name}. Stock restante: ${product.stock - quantity}.`,
+      title: isPaid ? '¡Consumo Cobrado y Agregado!' : '¡Consumo Cargado a la Cuenta!',
+      message: isPaid
+        ? `Se cobró ${formatBs(subtotal)} en ${getPaymentMethodLabel(paymentMethod || 'efectivo')} por ${quantity}x ${product.name}.`
+        : `Se añadió ${quantity}x ${product.name} (+${formatBs(subtotal)}) a la cuenta de ${room.name} (Paga al desocupar).`,
       type: 'success',
       undoLabel: 'Deshacer (reponer stock)',
       undoAction: () => {
@@ -906,6 +1006,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
       syncProductToFirestore(updatedProduct);
+    }
+
+    // Si fue pagado en el momento, descontar de la caja activa
+    if (item.isPaid && currentUser.role !== 'admin') {
+      setActiveShifts((prev) => {
+        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
+        const remCash = item.paymentMethod === 'efectivo' ? item.subtotal : 0;
+        const remVendis = item.paymentMethod === 'qr_vendis' ? item.subtotal : 0;
+        const remUnion = item.paymentMethod === 'qr_union' ? item.subtotal : 0;
+        const remQr = item.paymentMethod === 'qr' ? item.subtotal : (remVendis + remUnion);
+        const updatedShift: Shift = {
+          ...active,
+          expectedCash: Math.max(0, active.expectedCash - remCash),
+          expectedQrVendis: Math.max(0, (active.expectedQrVendis || 0) - remVendis),
+          expectedQrUnion: Math.max(0, (active.expectedQrUnion || 0) - remUnion),
+          expectedQr: Math.max(0, active.expectedQr - remQr),
+        };
+        syncShiftToFirestore(updatedShift);
+        return {
+          ...prev,
+          [currentUser.id]: updatedShift,
+        };
+      });
     }
 
     const updatedStay: Stay = {
@@ -953,6 +1076,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
     const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
     const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
+    const paidConsumptionsCash = stay.consumptions
+      .filter((item) => item.isPaid && item.paymentMethod === 'efectivo')
+      .reduce((sum, item) => sum + item.subtotal, 0);
+    const paidConsumptionsQrVendis = stay.consumptions
+      .filter((item) => item.isPaid && item.paymentMethod === 'qr_vendis')
+      .reduce((sum, item) => sum + item.subtotal, 0);
+    const paidConsumptionsQrUnion = stay.consumptions
+      .filter((item) => item.isPaid && item.paymentMethod === 'qr_union')
+      .reduce((sum, item) => sum + item.subtotal, 0);
+    const paidConsumptionsQr = stay.consumptions
+      .filter((item) => item.isPaid && (item.paymentMethod === 'qr' || item.paymentMethod === 'qr_vendis' || item.paymentMethod === 'qr_union'))
+      .reduce((sum, item) => sum + item.subtotal, 0);
+    const paidConsumptionsTotal = stay.consumptions
+      .filter((item) => item.isPaid)
+      .reduce((sum, item) => sum + item.subtotal, 0);
+
     const overtimeTotal = timeCalc.overtimeCharge;
     const totalAmount = stay.baseRoomPrice + consumptionsTotal + overtimeTotal;
 
@@ -963,8 +1102,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prepaidQrUnion = isPrepaid ? (stay.prepaidQrUnion || (stay.paymentMethod === 'qr_union' ? prepaidAmount : 0)) : 0;
     const prepaidQr = isPrepaid ? (stay.prepaidQr || (prepaidQrVendis + prepaidQrUnion) || (stay.paymentMethod === 'qr' ? prepaidAmount : 0)) : 0;
 
-    // Remaining balance to be paid at exit
-    const remainingDue = Math.max(0, totalAmount - prepaidAmount);
+    // Remaining balance to be paid at exit (deducting room prepay AND on-the-spot paid consumptions)
+    const totalAlreadyPaid = prepaidAmount + paidConsumptionsTotal;
+    const remainingDue = Math.max(0, totalAmount - totalAlreadyPaid);
 
     const effectivePaymentMethod = checkoutData.finalPaymentMethod || stay.paymentMethod;
     let finalCash = 0;
@@ -992,10 +1132,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const totalCashPaid = prepaidCash + finalCash;
-    const totalQrVendisPaid = prepaidQrVendis + finalQrVendis;
-    const totalQrUnionPaid = prepaidQrUnion + finalQrUnion;
-    const totalQrPaid = prepaidQr + finalQr;
+    const totalCashPaid = prepaidCash + paidConsumptionsCash + finalCash;
+    const totalQrVendisPaid = prepaidQrVendis + paidConsumptionsQrVendis + finalQrVendis;
+    const totalQrUnionPaid = prepaidQrUnion + paidConsumptionsQrUnion + finalQrUnion;
+    const totalQrPaid = prepaidQr + paidConsumptionsQr + finalQr;
 
     const completedStay: Stay = {
       ...stay,

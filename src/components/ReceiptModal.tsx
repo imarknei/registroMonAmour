@@ -1,6 +1,6 @@
 import React from 'react';
 import { Stay } from '../types';
-import { formatBs, getRoomTypeLabel } from '../utils/formatUtils';
+import { formatBs, getRoomTypeLabel, getPaymentMethodLabel } from '../utils/formatUtils';
 import { formatDateTime, formatTimeOnly } from '../utils/timeUtils';
 import { X, Printer, Flame } from 'lucide-react';
 
@@ -115,11 +115,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ stay, onClose }) => 
               <div className="flex justify-between text-[10px] text-slate-500 font-sans mt-0.5">
                 <span>Método de pago:</span>
                 <span className="uppercase font-bold text-slate-800">
-                  {stay.paymentMethod === 'efectivo'
-                    ? 'Efectivo'
-                    : stay.paymentMethod === 'qr'
-                    ? 'Pago QR (Vendis)'
-                    : `Mixto (Efec: ${formatBs(stay.cashPaid || 0)} | Vendis QR: ${formatBs(stay.qrPaid || 0)})`}
+                  {getPaymentMethodLabel(stay.paymentMethod)}
+                  {stay.paymentMethod === 'mixto' && (
+                    <span className="block text-[9px] text-slate-400">
+                      (Efec: {formatBs(stay.cashPaid || 0)} | QR: {formatBs(stay.qrPaid || 0)})
+                    </span>
+                  )}
                 </span>
               </div>
             </div>

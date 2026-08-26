@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Room, Product, PaymentMethod, Stay } from '../types';
+import { Room, Product, PaymentMethod, Stay, ConsumptionItem } from '../types';
 import { useApp } from '../context/AppContext';
 import { calculateStayTime, formatDateTime, formatTimeOnly } from '../utils/timeUtils';
-import { formatBs, getRoomTypeBadge } from '../utils/formatUtils';
+import { formatBs, getRoomTypeBadge, getPaymentMethodLabel } from '../utils/formatUtils';
 import {
   X,
   PlusCircle,
@@ -23,6 +23,10 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   Landmark,
+  Receipt,
+  Check,
+  AlertCircle,
+  Coins,
 } from 'lucide-react';
 
 interface RoomDetailModalProps {
@@ -56,19 +60,34 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   const [checkoutNotes, setCheckoutNotes] = useState<string>('');
   const [sendToCleaning, setSendToCleaning] = useState<boolean>(true);
 
+  // Modo de pago para consumos agregados: 'later' (Cargar a la cuenta) o al contado ('efectivo', 'qr_vendis', 'qr_union')
+  const [consumptionPayMode, setConsumptionPayMode] = useState<'later' | 'efectivo' | 'qr_vendis' | 'qr_union'>('later');
+
   if (!room || !room.currentStay) return null;
 
   const stay = room.currentStay;
   const roomTariff = tariffs[room.type];
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
   const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now());
+
+  // Consumos desglosados (pagados en el momento vs pendientes)
   const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
+  const paidConsumptionsTotal = stay.consumptions
+    .filter((item) => item.isPaid)
+    .reduce((sum, item) => sum + item.subtotal, 0);
+  const unpaidConsumptionsTotal = stay.consumptions
+    .filter((item) => !item.isPaid)
+    .reduce((sum, item) => sum + item.subtotal, 0);
+
   const totalDue = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
 
-  // Prepaid calculations
+  // Prepago de la habitación
   const isPrepaid = stay.isPrepaid || false;
   const prepaidAmt = isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
-  const remainingBalance = Math.max(0, totalDue - prepaidAmt);
+
+  // Saldo pendiente por cobrar al desocupar = Total - (Prepago de habitación + Consumos ya pagados al momento)
+  const totalAlreadyPaid = prepaidAmt + paidConsumptionsTotal;
+  const remainingBalance = Math.max(0, totalDue - totalAlreadyPaid);
 
   // Sync mixed payment amounts when remaining balance changes
   useEffect(() => {
@@ -100,7 +119,33 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
     return matchCategory && matchSearch;
   });
 
+  const handleAddProduct = (productId: string) => {
+    const isPaid = consumptionPayMode !== 'later';
+    const paymentMethod = isPaid ? consumptionPayMode : undefined;
+    addConsumptionToRoom(room.id, productId, 1, {
+      isPaid,
+      paymentMethod,
+    });
+  };
+
   const handleCheckout = () => {
+    // Si hay saldo pendiente, validar obligatoriamente que se haya elegido método de pago válido
+    if (remainingBalance > 0) {
+      if (!finalPaymentMethod) {
+        alert(`⚠️ Hay un saldo pendiente por cobrar de ${formatBs(remainingBalance)}. Por favor seleccione el método de pago utilizado por el huésped.`);
+        return;
+      }
+
+      if (finalPaymentMethod === 'mixto') {
+        const cashNum = parseFloat(cashAmount) || 0;
+        const qrNum = parseFloat(qrAmount) || 0;
+        if (Math.abs((cashNum + qrNum) - remainingBalance) > 0.01) {
+          alert(`⚠️ La suma del pago mixto (${formatBs(cashNum + qrNum)}) debe ser exactamente igual al saldo pendiente (${formatBs(remainingBalance)}).`);
+          return;
+        }
+      }
+    }
+
     let finalCash = 0;
     let finalQrVendis = 0;
     let finalQrUnion = 0;
@@ -206,28 +251,16 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 {isPrepaid && (
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
-                    Pago Adelantado
+                    Adelanto Pagado
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-3 text-xs text-slate-300 mt-0.5">
-                <span className="flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5" />
-                  Reg: {stay.receptionistName}
-                </span>
-                <span>•</span>
-                <span>Entrada: {formatTimeOnly(stay.startTime)}</span>
-                {stay.vehiclePlate && (
-                  <>
-                    <span>•</span>
-                    <span className="font-mono bg-white/10 px-1.5 py-0.2 rounded font-bold text-white">
-                      Placa: {stay.vehiclePlate}
-                    </span>
-                  </>
-                )}
-              </div>
+              <p className="text-xs text-slate-300 font-medium">
+                {stay.chosenPlan.toUpperCase()} • Ingreso: {formatTimeOnly(stay.startTime)} • Atendido por: {stay.receptionistName}
+              </p>
             </div>
           </div>
+
           <button
             onClick={onClose}
             className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
@@ -237,16 +270,17 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-2 items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 pt-3 bg-slate-50">
+          <div className="flex gap-4">
             <button
               onClick={() => setActiveTab('checkout')}
-              className={`pb-2.5 px-4 text-xs font-extrabold transition-all border-b-2 ${
+              className={`pb-2.5 px-2 text-xs font-extrabold transition-all border-b-2 flex items-center gap-1.5 ${
                 activeTab === 'checkout'
                   ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
+              <Receipt className="w-3.5 h-3.5" />
               Cobro & Salida
             </button>
 
@@ -279,24 +313,6 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           {/* TAB 1: COBRO & SALIDA */}
           {activeTab === 'checkout' && (
             <div className="space-y-4">
-              {/* Change Room Banner */}
-              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <ArrowLeftRight className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span className="text-amber-950 font-medium">
-                    ¿Inconveniente técnico, avería o error al asignar la habitación?
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenChangeRoom?.(room)}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] rounded-xl shadow-xs transition-all flex items-center gap-1 shrink-0"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                  Cambio de Habitación
-                </button>
-              </div>
-
               {/* Overtime Notice */}
               {timeCalc.isOvertime && (
                 <div
@@ -321,7 +337,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                       <span className="text-[11px] text-slate-600">
                         {timeCalc.gracePeriodActive
                           ? 'Durante los 10 minutos de espera no se cobra nada (0 Bs de recargo).'
-                          : `Superó los 10 min de espera. Se aplica recargo automático de ${timeCalc.extraHoursCount} hora(s) extra (${formatBs(timeCalc.extraHourRate)} c/u).`}
+                          : `Superó los 10 min de espera. Se aplica recargo automático de 10 Bs por cada 20 min (+${formatBs(timeCalc.overtimeCharge)}).`}
                       </span>
                     </div>
                   </div>
@@ -355,7 +371,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                     No se han registrado consumos en esta habitación aún.
                   </p>
                 ) : (
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                     {stay.consumptions.map((item) => (
                       <div
                         key={item.id}
@@ -366,9 +382,20 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                             {item.quantity}x
                           </span>
                           <div>
-                            <span className="font-semibold text-slate-800 block">{item.productName}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-slate-800 block">{item.productName}</span>
+                              {item.isPaid ? (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  ✓ PAGADO EN EL ACTO ({getPaymentMethodLabel(item.paymentMethod || 'efectivo')})
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                  ⏳ PAGA AL SALIR
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-400">
-                              {formatBs(item.unitPrice)} c/u
+                              {formatBs(item.unitPrice)} c/u • {formatTimeOnly(item.timestamp)}
                             </span>
                           </div>
                         </div>
@@ -416,20 +443,27 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                   </div>
                 )}
 
-                {consumptionsTotal > 0 && (
-                  <div className="flex justify-between text-xs text-slate-300">
-                    <span>Subtotal Consumos Extra:</span>
-                    <span className="font-mono font-semibold">+{formatBs(consumptionsTotal)}</span>
+                {paidConsumptionsTotal > 0 && (
+                  <div className="flex justify-between text-xs text-emerald-300">
+                    <span>Consumos Pagados en el Acto:</span>
+                    <span className="font-mono font-semibold">+{formatBs(paidConsumptionsTotal)} (Ya cancelado)</span>
                   </div>
                 )}
 
-                <div className="pt-2 border-t border-slate-700 flex justify-between items-center">
+                {unpaidConsumptionsTotal > 0 && (
+                  <div className="flex justify-between text-xs text-amber-300 font-semibold">
+                    <span>Consumos Pendientes de Cobro:</span>
+                    <span className="font-mono font-semibold">+{formatBs(unpaidConsumptionsTotal)}</span>
+                  </div>
+                )}
+
+                <div className="pt-2.5 border-t border-slate-700 flex justify-between items-center">
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-rose-300 block">
-                      {remainingBalance === 0 ? 'ESTADÍA CANCELADA' : 'SALDO A COBRAR AL SALIR'}
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-300 block">
+                      {remainingBalance === 0 ? 'CUENTA TOTALMENTE LIQUIDADA' : 'SALDO PENDIENTE POR COBRAR AL SALIR'}
                     </span>
                     <span className="text-[10px] text-slate-400">
-                      Total estancia: {formatBs(totalDue)}
+                      Total estancia: {formatBs(totalDue)} • Ya abonado: {formatBs(totalAlreadyPaid)}
                     </span>
                   </div>
                   <span className={`text-3xl font-black font-mono tracking-tight ${
@@ -443,9 +477,21 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
               {/* Payment Method Selector if remaining balance > 0 */}
               {remainingBalance > 0 ? (
                 <div className="space-y-3 pt-1">
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-black text-amber-950 text-xs">
+                        Deuda pendiente de {formatBs(remainingBalance)}
+                      </strong>
+                      <span>
+                        El huésped debe cancelar el saldo pendiente. Selecciona el método de pago utilizado para poder liberar la habitación.
+                      </span>
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2">
-                      Método de Pago para el Saldo Pendiente ({formatBs(remainingBalance)})
+                    <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">
+                      Método de Pago para el Saldo Pendiente ({formatBs(remainingBalance)}) <span className="text-rose-500">*</span>
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
@@ -573,11 +619,12 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-xs text-emerald-900">
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-900">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span>
-                    El cliente canceló la tarifa completa al ingresar. No hay saldo pendiente por cobrar.
-                  </span>
+                  <div>
+                    <strong className="block font-black text-emerald-950">Cuenta Liquidada al 100%</strong>
+                    <span>La tarifa y consumos ya fueron cancelados. Puedes liberar la habitación directamente.</span>
+                  </div>
                 </div>
               )}
 
@@ -607,12 +654,16 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
               <div className="pt-2">
                 <button
                   onClick={handleCheckout}
-                  className="w-full py-3.5 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] text-white font-black text-sm rounded-2xl shadow-lg shadow-brand-600/30 transition-all flex items-center justify-center gap-2"
+                  className={`w-full py-3.5 text-white font-black text-sm rounded-2xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+                    remainingBalance === 0
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30'
+                      : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/30'
+                  }`}
                 >
                   <LogOut className="w-4 h-4" />
                   {remainingBalance === 0
-                    ? 'LIBERAR HABITACIÓN (0 Bs Pendientes)'
-                    : `COBRAR SALIDA Y LIBERAR (${formatBs(remainingBalance)})`}
+                    ? 'LIBERAR HABITACIÓN (Cuenta Liquidada • 0 Bs)'
+                    : `CONFIRMAR PAGO Y LIBERAR (${formatBs(remainingBalance)} EN ${getPaymentMethodLabel(finalPaymentMethod).toUpperCase()})`}
                 </button>
               </div>
             </div>
@@ -621,8 +672,78 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           {/* TAB 2: AGREGAR CONSUMOS */}
           {activeTab === 'consumptions' && (
             <div className="space-y-4">
+              {/* SELECTOR DE MODO DE PAGO DEL CONSUMO (Pagar ahora vs Pagar al desocupar) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 space-y-2.5">
+                <label className="block text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-brand-600" />
+                  ¿Cómo pagará el huésped los productos que vas a agregar?
+                </label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* Opción 1: Cargar a la cuenta (Paga al salir) */}
+                  <button
+                    type="button"
+                    onClick={() => setConsumptionPayMode('later')}
+                    className={`p-2.5 rounded-xl border-2 font-bold text-xs flex flex-col items-center text-center gap-1 transition-all ${
+                      consumptionPayMode === 'later'
+                        ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-sm font-black'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-amber-600" />
+                    <span>Cargar a Cuenta</span>
+                    <span className="text-[9px] font-normal text-slate-400">Paga al desocupar</span>
+                  </button>
+
+                  {/* Opción 2: Pagó ahora en Efectivo */}
+                  <button
+                    type="button"
+                    onClick={() => setConsumptionPayMode('efectivo')}
+                    className={`p-2.5 rounded-xl border-2 font-bold text-xs flex flex-col items-center text-center gap-1 transition-all ${
+                      consumptionPayMode === 'efectivo'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm font-black'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    <span>Pagó Efectivo</span>
+                    <span className="text-[9px] font-normal text-slate-400">Cobrado ahora</span>
+                  </button>
+
+                  {/* Opción 3: Pagó ahora en QR Vendis */}
+                  <button
+                    type="button"
+                    onClick={() => setConsumptionPayMode('qr_vendis')}
+                    className={`p-2.5 rounded-xl border-2 font-bold text-xs flex flex-col items-center text-center gap-1 transition-all ${
+                      consumptionPayMode === 'qr_vendis'
+                        ? 'border-sky-600 bg-sky-50 text-sky-900 shadow-sm font-black'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <QrCode className="w-4 h-4 text-sky-600" />
+                    <span>Pagó QR Vendis</span>
+                    <span className="text-[9px] font-normal text-slate-400">Cobrado ahora</span>
+                  </button>
+
+                  {/* Opción 4: Pagó ahora en QR Banco Unión */}
+                  <button
+                    type="button"
+                    onClick={() => setConsumptionPayMode('qr_union')}
+                    className={`p-2.5 rounded-xl border-2 font-bold text-xs flex flex-col items-center text-center gap-1 transition-all ${
+                      consumptionPayMode === 'qr_union'
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm font-black'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <Landmark className="w-4 h-4 text-indigo-600" />
+                    <span>Pagó QR Unión</span>
+                    <span className="text-[9px] font-normal text-slate-400">Cobrado ahora</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Barra de Filtros y Búsqueda */}
               <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between">
-                {/* Search */}
                 <input
                   type="text"
                   placeholder="Buscar producto..."
@@ -631,7 +752,6 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                   className="w-full sm:w-56 px-3 py-1.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
 
-                {/* Category filters */}
                 <div className="flex gap-1 overflow-x-auto w-full sm:w-auto no-scrollbar">
                   {[
                     { key: 'all', label: 'Todos' },
@@ -661,7 +781,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                   <button
                     key={p.id}
                     disabled={p.stock <= 0}
-                    onClick={() => addConsumptionToRoom(room.id, p.id, 1)}
+                    onClick={() => handleAddProduct(p.id)}
                     className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                       p.stock <= 0
                         ? 'opacity-40 bg-slate-100 border-slate-200 cursor-not-allowed'
@@ -691,7 +811,9 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
               <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
                 <span className="text-xs text-slate-500 font-medium">
-                  Los consumos se sincronizan automáticamente en tiempo real en todos los dispositivos.
+                  {consumptionPayMode === 'later'
+                    ? 'Los productos añadidos se sumarán a la cuenta para cobrar al desocupar.'
+                    : `Los productos añadidos ingresarán inmediatamente a la caja del turno en ${getPaymentMethodLabel(consumptionPayMode)}.`}
                 </span>
                 <button
                   onClick={() => setActiveTab('checkout')}

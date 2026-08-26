@@ -652,8 +652,17 @@ export const RegisteredRoomsView: React.FC = () => {
                     </span>
                     <div className="flex flex-wrap gap-1.5">
                       {stay.consumptions.map((c) => (
-                        <span key={c.id} className="text-[10px] bg-white px-2 py-1 rounded-lg border border-rose-200 font-semibold text-slate-800">
-                          {c.quantity}x {c.productName} (+{formatBs(c.subtotal)})
+                        <span key={c.id} className="text-[10px] bg-white px-2 py-1 rounded-lg border border-rose-200 font-semibold text-slate-800 flex items-center gap-1">
+                          <span>{c.quantity}x {c.productName} (+{formatBs(c.subtotal)})</span>
+                          {c.isPaid ? (
+                            <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-black">
+                              ✓ Pagado
+                            </span>
+                          ) : (
+                            <span className="text-[8px] px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-black">
+                              ⏳ Por cobrar
+                            </span>
+                          )}
                         </span>
                       ))}
                     </div>

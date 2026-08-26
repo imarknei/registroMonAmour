@@ -53,6 +53,12 @@ export interface ConsumptionItem {
   quantity: number;
   subtotal: number;
   timestamp: string;
+  isPaid?: boolean; // True si se pagó en el momento (al contado), False si se carga a la cuenta
+  paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+  paidAt?: string;
+  paidShiftId?: string;
+  paidReceptionistId?: string;
+  paidReceptionistName?: string;
 }
 
 export interface Stay {
