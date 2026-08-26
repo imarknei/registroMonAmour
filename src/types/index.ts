@@ -82,6 +82,10 @@ export interface Stay {
   status: 'active' | 'completed' | 'cancelled';
   endTime?: string;
   closedBy?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
+  restoreInventoryOnCancel?: boolean;
 }
 
 export interface ToastMessage {

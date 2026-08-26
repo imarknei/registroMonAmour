@@ -154,6 +154,7 @@ interface AppContextType {
   ) => Shift | null;
 
   // Admin functions
+  cancelStay: (stayId: string, reason: string, restoreInventory?: boolean) => boolean;
   saveProduct: (product: Product) => void;
   deleteProductById: (productId: string) => void;
   updateTariffCatalog: (tariffs: TariffCatalog) => void;
@@ -1257,6 +1258,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ADMIN ACTIONS (Synchronized with Firebase in Realtime)
+  const cancelStay = (stayId: string, reason: string, restoreInventory = true): boolean => {
+    if (currentUser.role !== 'admin') {
+      showToast({
+        title: 'Acción No Permitida',
+        message: 'Solamente el Administrador tiene autorización para anular habitaciones.',
+        type: 'error',
+      });
+      return false;
+    }
+
+    // 1. Buscar la estadía en habitaciones activas o en historial
+    let targetStay: Stay | undefined;
+    let targetRoom: Room | undefined;
+
+    const roomWithActiveStay = rooms.find((r) => r.currentStay?.id === stayId);
+    if (roomWithActiveStay && roomWithActiveStay.currentStay) {
+      targetStay = roomWithActiveStay.currentStay;
+      targetRoom = roomWithActiveStay;
+    } else {
+      targetStay = completedStays.find((s) => s.id === stayId);
+    }
+
+    if (!targetStay) {
+      showToast({
+        title: 'Error al Anular',
+        message: 'No se encontró el registro de la habitación.',
+        type: 'error',
+      });
+      return false;
+    }
+
+    // 2. Si la habitación está ocupada con esta estadía, liberarla
+    if (targetRoom) {
+      const updatedRoom: Room = {
+        ...targetRoom,
+        status: 'disponible',
+        currentStay: undefined,
+        cleaningStartTime: undefined,
+      };
+      setRooms((prev) => prev.map((r) => (r.id === targetRoom!.id ? updatedRoom : r)));
+      syncRoomToFirestore(updatedRoom);
+    }
+
+    // 3. Reponer stock de consumos si aplica
+    if (restoreInventory && targetStay.consumptions && targetStay.consumptions.length > 0) {
+      targetStay.consumptions.forEach((item) => {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod) {
+          const updatedProd = {
+            ...prod,
+            stock: prod.stock + item.quantity,
+          };
+          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProd : p)));
+          syncProductToFirestore(updatedProd);
+        }
+      });
+    }
+
+    // 4. Marcar la estadía como anulada
+    const cancelledStay: Stay = {
+      ...targetStay,
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: currentUser.name,
+      cancellationReason: reason || 'Anulado por Administrador (Prueba o Error)',
+      restoreInventoryOnCancel: restoreInventory,
+    };
+
+    // Actualizar completedStays
+    setCompletedStays((prev) => {
+      const exists = prev.some((s) => s.id === stayId);
+      return exists
+        ? prev.map((s) => (s.id === stayId ? cancelledStay : s))
+        : [cancelledStay, ...prev];
+    });
+
+    syncStayToFirebase(cancelledStay);
+
+    showToast({
+      title: '🚫 Habitación Anulada con Éxito',
+      message: `${cancelledStay.roomName}: Registro cancelado por ${currentUser.name}. Motivo: ${reason || 'Error / Prueba'}.`,
+      type: 'warning',
+      durationMs: 7000,
+    });
+
+    return true;
+  };
+
   const saveProduct = (product: Product) => {
     setProducts((prev) => {
       const exists = prev.some((p) => p.id === product.id);
@@ -1369,6 +1458,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         changeRoom,
         addExpenseToShift,
         closeCurrentShift,
+        cancelStay,
         saveProduct,
         deleteProductById,
         updateTariffCatalog,

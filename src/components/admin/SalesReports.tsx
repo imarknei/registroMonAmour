@@ -23,11 +23,12 @@ import {
   FileSpreadsheet,
   Layers,
   Sparkles,
+  Ban,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../../data/initialData';
 
 type DateFilterRange = 'today' | 'yesterday' | 'week' | 'month' | 'all';
-type StatusFilter = 'all' | 'active' | 'completed';
+type StatusFilter = 'all' | 'active' | 'completed' | 'cancelled';
 
 export const SalesReports: React.FC = () => {
   const {
@@ -100,6 +101,7 @@ export const SalesReports: React.FC = () => {
       // Status filter
       if (statusFilter === 'active' && s.status !== 'active') return false;
       if (statusFilter === 'completed' && s.status !== 'completed') return false;
+      if (statusFilter === 'cancelled' && s.status !== 'cancelled') return false;
 
       // Search query (Room name, receptionist, vehicle plate, notes)
       if (searchQuery.trim() !== '') {
@@ -115,20 +117,24 @@ export const SalesReports: React.FC = () => {
     });
   }, [allUnifiedStays, dateRange, selectedReceptionist, statusFilter, searchQuery]);
 
+  // Valid non-cancelled stays for financial totals
+  const validStays = filteredStays.filter((s) => s.status !== 'cancelled');
+
   // Financial aggregates calculated from filteredStays
-  const totalStaysCount = filteredStays.length;
+  const totalStaysCount = validStays.length;
   const activeStaysCount = filteredStays.filter((s) => s.status === 'active').length;
   const completedStaysCount = filteredStays.filter((s) => s.status === 'completed').length;
+  const cancelledStaysCount = filteredStays.filter((s) => s.status === 'cancelled').length;
 
-  const totalBaseRoomRevenue = filteredStays.reduce((sum, s) => sum + (s.baseRoomPrice || 0), 0);
-  const totalOvertimeRevenue = filteredStays.reduce((sum, s) => sum + (s.overtimeCharge || 0), 0);
+  const totalBaseRoomRevenue = validStays.reduce((sum, s) => sum + (s.baseRoomPrice || 0), 0);
+  const totalOvertimeRevenue = validStays.reduce((sum, s) => sum + (s.overtimeCharge || 0), 0);
 
   // Minibar consumptions calculation
   const productConsumptionMap: Record<string, { name: string; quantity: number; totalBs: number }> = {};
   let totalMinibarRevenue = 0;
   let totalMinibarUnits = 0;
 
-  filteredStays.forEach((stay) => {
+  validStays.forEach((stay) => {
     (stay.consumptions || []).forEach((c) => {
       if (!productConsumptionMap[c.productId]) {
         productConsumptionMap[c.productId] = {
@@ -343,9 +349,10 @@ export const SalesReports: React.FC = () => {
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
-              <option value="all">🛏️ Todas (En Curso + Finalizadas)</option>
+              <option value="all">🛏️ Todas (En Curso + Finalizadas + Anuladas)</option>
               <option value="active">🟢 Solo En Curso (Ocupadas Ahora)</option>
               <option value="completed">✅ Solo Finalizadas (Cobradas)</option>
+              <option value="cancelled">🚫 Solo Anuladas (Prueba / Error)</option>
             </select>
           </div>
 
@@ -852,7 +859,19 @@ export const SalesReports: React.FC = () => {
 
                       {/* 8. Estado */}
                       <td className="py-3.5 px-4 text-center">
-                        {stay.status === 'active' ? (
+                        {stay.status === 'cancelled' ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full bg-rose-600 text-white shadow-2xs">
+                              <Ban className="w-3 h-3" />
+                              ANULADA
+                            </span>
+                            {stay.cancellationReason && (
+                              <span className="text-[9px] text-rose-700 block max-w-xs truncate font-medium mx-auto" title={stay.cancellationReason}>
+                                {stay.cancellationReason}
+                              </span>
+                            )}
+                          </div>
+                        ) : stay.status === 'active' ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
                             Ocupada

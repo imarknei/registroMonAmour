@@ -451,6 +451,18 @@ export const syncStayToFirebase = async (stay: Stay): Promise<void> => {
 
 export const syncCompletedStayToFirebase = syncStayToFirebase;
 
+export const deleteStayFromFirebase = async (stayId: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, `stays/${stayId}`));
+    await remove(ref(db, `completed_stays/${stayId}`));
+  } catch (err) {
+    console.error(`Error eliminando stay ${stayId} en Firebase:`, err);
+  }
+};
+
 export const syncExpenseToFirestore = async (expense: Expense): Promise<void> => {
   const db = realtimeDb || (await initializeFirebaseClient())?.db;
   if (!db) return;
