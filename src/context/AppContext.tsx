@@ -20,12 +20,17 @@ import {
   Expense,
   ExpenseCategory,
   PlanType,
+  StaffMember,
+  StaffConsumption,
+  StaffSettlement,
+  StaffSettlementDiscountItem,
 } from '../types';
 import {
   INITIAL_ROOMS,
   INITIAL_TARIFFS,
   INITIAL_PRODUCTS,
   SYSTEM_USERS,
+  INITIAL_STAFF_MEMBERS,
 } from '../data/initialData';
 import { calculateStayTime, formatDateTime } from '../utils/timeUtils';
 import {
@@ -44,8 +49,11 @@ import {
   subscribeToExpenses,
   subscribeToAllShifts,
   subscribeToAllStays,
-  subscribeToShifts,
-  subscribeToCompletedStays,
+  subscribeToStaffConsumptions,
+  syncStaffConsumptionToFirestore,
+  deleteStaffConsumptionFromFirebase,
+  subscribeToStaffSettlements,
+  syncStaffSettlementToFirestore,
   syncRoomToFirestore,
   syncProductToFirestore,
   deleteProductFromFirestore,
@@ -68,6 +76,9 @@ interface AppContextType {
   shiftsHistory: Shift[];
   completedStays: Stay[];
   expenses: Expense[];
+  staffConsumptions: StaffConsumption[];
+  staffSettlements: StaffSettlement[];
+  staffMembers: StaffMember[];
   soundAlertsEnabled: boolean;
   toasts: ToastMessage[];
   nowTimestamp: number;
@@ -161,9 +172,42 @@ interface AppContextType {
     notes?: string;
   }) => void;
 
+  // Staff Consumptions & Payroll Settlements
+  addStaffConsumption: (consumptionData: {
+    staffId: string;
+    staffName: string;
+    items: {
+      productId: string;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      subtotal: number;
+    }[];
+    totalAmount: number;
+    notes?: string;
+  }) => StaffConsumption;
+  removeStaffConsumption: (id: string, restoreInventory?: boolean) => void;
+  recordStaffSettlement: (settlementData: {
+    staffId: string;
+    staffName: string;
+    periodStart: string;
+    periodEnd: string;
+    weekKey: string;
+    baseSalary: number;
+    daysWorkedCount?: number;
+    shiftsWorkedCount?: number;
+    discounts: StaffSettlementDiscountItem[];
+    totalDiscounts: number;
+    netPaidAmount: number;
+    notes?: string;
+    paymentMethod: 'efectivo' | 'transferencia' | 'qr';
+  }) => StaffSettlement;
+  saveStaffMember: (member: StaffMember) => void;
+
   // Shift & Cash Closing
   closeCurrentShift: (
     responsiblePersonName: string,
+    nextReceptionistName: string,
     totalPhysicalCashInDrawer: number,
     declaredQrVendis: number,
     declaredQrUnion: number,
@@ -193,6 +237,9 @@ const STORAGE_KEYS = {
   COMPLETED_STAYS: 'mon_amour_completed_stays_v1',
   EXPENSES: 'mon_amour_expenses_v1',
   SOUND_ENABLED: 'mon_amour_sound_enabled_v1',
+  STAFF_CONSUMPTIONS: 'mon_amour_staff_consumptions_v1',
+  STAFF_SETTLEMENTS: 'mon_amour_staff_settlements_v1',
+  STAFF_MEMBERS: 'mon_amour_staff_members_v1',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -268,6 +315,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [staffConsumptions, setStaffConsumptions] = useState<StaffConsumption[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STAFF_CONSUMPTIONS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [staffSettlements, setStaffSettlements] = useState<StaffSettlement[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STAFF_SETTLEMENTS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STAFF_MEMBERS);
+      return saved ? JSON.parse(saved) : INITIAL_STAFF_MEMBERS;
+    } catch {
+      return INITIAL_STAFF_MEMBERS;
+    }
+  });
+
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED);
@@ -277,28 +351,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Toast notifications state
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  // Ticking clock for real-time room timers
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
-
-  // Real-time 1-second ticker so all timers, countdowns and overtime updates synchronously in live view
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setNowTimestamp(Date.now());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Firebase connection state
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
-
-  // Current logged in user object
-  const currentUser = SYSTEM_USERS.find((u) => u.id === currentUserId) || SYSTEM_USERS[1];
-
-  // Keep a map of sound alerts played per stay to avoid looping sound constantly
-  const [playedAlerts, setPlayedAlerts] = useState<Record<string, { warning?: boolean; overtime?: boolean }>>({});
 
   // 2. Persist to LocalStorage
   useEffect(() => {
@@ -334,31 +389,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [expenses]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.STAFF_CONSUMPTIONS, JSON.stringify(staffConsumptions));
+  }, [staffConsumptions]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.STAFF_SETTLEMENTS, JSON.stringify(staffSettlements));
+  }, [staffSettlements]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.STAFF_MEMBERS, JSON.stringify(staffMembers));
+  }, [staffMembers]);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, JSON.stringify(soundAlertsEnabled));
   }, [soundAlertsEnabled]);
 
-  // 3. Timer ticker (every 1 second)
+  // 3. Current User object
+  const currentUser = useMemo<User>(() => {
+    const found = SYSTEM_USERS.find((u) => u.id === currentUserId);
+    return found || SYSTEM_USERS[1];
+  }, [currentUserId]);
+
+  // 4. Realtime Tick & Sound Alerts
   useEffect(() => {
     const timer = setInterval(() => {
-      setNowTimestamp(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+      const now = Date.now();
+      setNowTimestamp(now);
 
-  // 4. Firebase Cloud Database REALTIME SYNC (onValue)
+      if (soundAlertsEnabled) {
+        rooms.forEach((room) => {
+          if (room.status === 'ocupada' && room.currentStay) {
+            const extraRate = tariffs[room.type]?.extraHourPrice || 30;
+            const timeCalc = calculateStayTime(
+              room.currentStay.startTime,
+              room.currentStay.chosenDurationMinutes,
+              extraRate,
+              now
+            );
+
+            if (timeCalc.remainingMinutes === 5 && timeCalc.remainingSeconds === 0) {
+              playWarningBeep();
+            }
+
+            if (timeCalc.isOvertime && timeCalc.overtimeSeconds === 1) {
+              playOvertimeAlert();
+            }
+          }
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [rooms, tariffs, soundAlertsEnabled]);
+
+  // 5. Firebase Realtime Synchronization
   useEffect(() => {
-    let unsubs: (() => void)[] = [];
+    const unsubs: (() => void)[] = [];
 
     const setupFirebaseSync = async () => {
-      const conf = getStoredFirebaseConfig();
-      if (!conf || !conf.projectId || !conf.apiKey) return;
+      const initResult = await initializeFirebaseClient();
+      setIsFirestoreConnected(initResult.success);
 
-      const initRes = await initializeFirebaseClient(conf);
-      if (!initRes.success) return;
+      if (!initResult.success) {
+        return;
+      }
 
-      setIsFirestoreConnected(true);
-
-      // Subscribe to Realtime Rooms
+      // Rooms
       const unsubRooms = await subscribeToRooms((firestoreRooms) => {
         if (firestoreRooms && firestoreRooms.length > 0) {
           setRooms(firestoreRooms);
@@ -366,15 +462,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (unsubRooms) unsubs.push(unsubRooms);
 
-      // Subscribe to Realtime Products (Minibar/Inventario)
-      const unsubProd = await subscribeToProducts((firestoreProducts) => {
+      // Products
+      const unsubProducts = await subscribeToProducts((firestoreProducts) => {
         if (firestoreProducts && firestoreProducts.length > 0) {
           setProducts(firestoreProducts);
         }
       });
-      if (unsubProd) unsubs.push(unsubProd);
+      if (unsubProducts) unsubs.push(unsubProducts);
 
-      // Subscribe to Realtime Tariffs
+      // Tariffs
       const unsubTariffs = await subscribeToTariffs((firestoreTariffs) => {
         if (firestoreTariffs) {
           setTariffs(firestoreTariffs);
@@ -382,7 +478,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (unsubTariffs) unsubs.push(unsubTariffs);
 
-      // Subscribe to Realtime Expenses
+      // Expenses
       const unsubExp = await subscribeToExpenses((firestoreExpenses) => {
         if (firestoreExpenses) {
           setExpenses(firestoreExpenses);
@@ -390,29 +486,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (unsubExp) unsubs.push(unsubExp);
 
-      // Subscribe to Realtime Shifts History (Todos los turnos para el admin)
+      // Shifts
       const unsubShifts = await subscribeToAllShifts((firestoreShifts) => {
         if (firestoreShifts) {
           setShiftsHistory(firestoreShifts);
-          // Sincronizar también turnos activos en curso
-          const openMap: Record<string, Shift> = {};
-          firestoreShifts.filter((s) => s.status === 'open').forEach((s) => {
-            openMap[s.receptionistId] = s;
-          });
-          if (Object.keys(openMap).length > 0) {
-            setActiveShifts((prev) => ({ ...prev, ...openMap }));
+          const openShifts = firestoreShifts.filter((s) => s.status === 'open');
+          if (openShifts.length > 0) {
+            // Keep only the single most recent open shift
+            openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+            const latestOpen = openShifts[0];
+            setActiveShifts({ [latestOpen.receptionistId]: latestOpen });
           }
         }
       });
       if (unsubShifts) unsubs.push(unsubShifts);
 
-      // Subscribe to Realtime All Stays (Todas las habitaciones y estadías en vivo)
+      // Stays
       const unsubStays = await subscribeToAllStays((firestoreStays) => {
         if (firestoreStays) {
           setCompletedStays(firestoreStays);
         }
       });
       if (unsubStays) unsubs.push(unsubStays);
+
+      // Staff Consumptions
+      const unsubStaffCons = await subscribeToStaffConsumptions((firestoreStaffCons) => {
+        if (firestoreStaffCons) {
+          setStaffConsumptions(firestoreStaffCons);
+        }
+      });
+      if (unsubStaffCons) unsubs.push(unsubStaffCons);
+
+      // Staff Settlements
+      const unsubStaffSettles = await subscribeToStaffSettlements((firestoreStaffSettles) => {
+        if (firestoreStaffSettles) {
+          setStaffSettlements(firestoreStaffSettles);
+        }
+      });
+      if (unsubStaffSettles) unsubs.push(unsubStaffSettles);
     };
 
     setupFirebaseSync();
@@ -422,34 +533,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // 5. Ensure current user has an active shift
+  // 6. Ensure there is EXACTLY ONE active shift for reception
   const ensureActiveShift = useCallback((user: User): Shift => {
-    // 1. Buscar en estado local activeShifts si ya hay un turno abierto
-    if (activeShifts[user.id] && activeShifts[user.id].status === 'open') {
-      return activeShifts[user.id];
+    // 1. Buscar si ya hay un turno abierto en activeShifts
+    const openInActive = Object.values(activeShifts).find((s) => s.status === 'open');
+    if (openInActive) {
+      return openInActive;
     }
 
-    // 2. Buscar en historial de turnos sincronizados de Firebase
-    const existingOpenShift = shiftsHistory.find(
-      (s) => s.receptionistId === user.id && s.status === 'open'
-    );
-    if (existingOpenShift) {
-      setActiveShifts((prev) => ({
-        ...prev,
-        [user.id]: existingOpenShift,
-      }));
-      return existingOpenShift;
+    // 2. Buscar si hay algún turno abierto en historial
+    const openInHistory = shiftsHistory.find((s) => s.status === 'open');
+    if (openInHistory) {
+      setActiveShifts({ [openInHistory.receptionistId]: openInHistory });
+      return openInHistory;
     }
 
-    // 3. Obtener caja chica del último turno cerrado o valor por defecto
+    // 3. Obtener caja chica del último turno cerrado o 100 Bs por defecto
     const lastClosedShift = shiftsHistory.find((s) => s.status === 'closed');
     const initialFloat = lastClosedShift?.handoverCashFloat || 100;
 
-    const shiftType = user.role === 'recepcionista_noche' ? 'noche' : 'dia';
+    const receptionistUser = user.role === 'admin' ? SYSTEM_USERS[1] : user;
+    const shiftType = receptionistUser.role === 'recepcionista_noche' ? 'noche' : 'dia';
     const newShift: Shift = {
-      id: `shift-${user.id}-${Date.now()}`,
-      receptionistId: user.id,
-      receptionistName: user.name,
+      id: `shift-${receptionistUser.id}-${Date.now()}`,
+      receptionistId: receptionistUser.id,
+      receptionistName: receptionistUser.name,
       shiftType,
       startTime: new Date().toISOString(),
       status: 'open',
@@ -463,28 +571,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       stayIds: [],
     };
 
-    setActiveShifts((prev) => ({
-      ...prev,
-      [user.id]: newShift,
-    }));
-
+    setActiveShifts({ [receptionistUser.id]: newShift });
     syncShiftToFirestore(newShift);
     return newShift;
   }, [activeShifts, shiftsHistory]);
 
   // Turno base sin recalcular
   const rawTargetShift = useMemo<Shift | null>(() => {
+    const openInActive = Object.values(activeShifts).find((s) => s.status === 'open');
+    if (openInActive) return openInActive;
+
+    const historyOpen = shiftsHistory.find((s) => s.status === 'open');
+    if (historyOpen) return historyOpen;
+
     if (currentUser.role !== 'admin') {
       return ensureActiveShift(currentUser);
     }
-    // Si es Administrador: obtener el turno abierto más reciente de cualquier recepcionista
-    const openShifts = Object.values(activeShifts).filter((s) => s.status === 'open');
-    if (openShifts.length > 0) {
-      openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-      return openShifts[0];
-    }
-    const historyOpen = shiftsHistory.find((s) => s.status === 'open');
-    return historyOpen || null;
+    return ensureActiveShift(SYSTEM_USERS[1]);
   }, [currentUser, activeShifts, shiftsHistory, ensureActiveShift]);
 
   // Cálculo en vivo y exacto del total en caja del turno (Caja Chica, Ventas Efectivo, QR y Gastos)
@@ -643,19 +746,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const expectedQr = Math.max(rawTargetShift.expectedQr || 0, liveQrSales, expectedQrVendis + expectedQrUnion);
     const salesCount = Math.max(rawTargetShift.salesCount || 0, liveSalesCount);
 
-    const shiftExpenses = rawTargetShift.expenses || [];
+    // Sumar egresos / pagos de este turno
+    const shiftExpenses = expenses.filter((e) => {
+      if (e.shiftId === rawTargetShift.id) return true;
+      const expTime = new Date(e.timestamp).getTime();
+      return (
+        e.registeredById === rawTargetShift.receptionistId &&
+        expTime >= shiftStartTime &&
+        expTime <= shiftEndTime
+      );
+    });
+
     const totalExpensesCash = shiftExpenses
-      .filter((e: Expense) => e.paymentMethod === 'efectivo')
-      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+      .filter((e) => e.paymentMethod === 'efectivo')
+      .reduce((sum, e) => sum + e.amount, 0);
+
     const totalExpensesQrVendis = shiftExpenses
-      .filter((e: Expense) => e.paymentMethod === 'qr_vendis')
-      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+      .filter((e) => e.paymentMethod === 'qr_vendis')
+      .reduce((sum, e) => sum + e.amount, 0);
+
     const totalExpensesQrUnion = shiftExpenses
-      .filter((e: Expense) => e.paymentMethod === 'qr_union')
-      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
-    const totalExpensesQr = totalExpensesQrVendis + totalExpensesQrUnion + shiftExpenses
-      .filter((e: Expense) => e.paymentMethod === 'qr')
-      .reduce((sum: number, e: Expense) => sum + e.amount, 0);
+      .filter((e) => e.paymentMethod === 'qr_union')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const totalExpensesQr = shiftExpenses
+      .filter((e) => e.paymentMethod === 'qr' || e.paymentMethod === 'qr_vendis' || e.paymentMethod === 'qr_union')
+      .reduce((sum, e) => sum + e.amount, 0);
 
     return {
       ...rawTargetShift,
@@ -664,116 +780,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       expectedQrUnion,
       expectedQr,
       salesCount,
+      stayIds: Array.from(trackedStayIds),
+      expenses: shiftExpenses,
       totalExpensesCash,
       totalExpensesQrVendis,
       totalExpensesQrUnion,
       totalExpensesQr,
-      stayIds: Array.from(trackedStayIds),
     };
-  }, [rawTargetShift, rooms, completedStays]);
+  }, [rawTargetShift, rooms, completedStays, expenses]);
 
-  // Toast Helpers
+  // Toast Management
+  const showToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newToast: ToastMessage = { ...toast, id };
+    setToasts((prev) => [...prev, newToast]);
+    return id;
+  }, []);
+
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const showToast = useCallback(
-    (toast: Omit<ToastMessage, 'id'>): string => {
-      const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const duration = toast.durationMs ?? 5500;
-      const newToast: ToastMessage = { ...toast, id };
+  const toggleSoundAlerts = () => {
+    setSoundAlertsEnabled((prev) => !prev);
+  };
 
-      setToasts((prev) => [newToast, ...prev.slice(0, 4)]); // max 5 concurrent toasts
-
-      if (duration > 0) {
-        setTimeout(() => {
-          dismissToast(id);
-        }, duration);
-      }
-
-      return id;
-    },
-    [dismissToast]
-  );
-
-  // Sound alerts watchdog for occupied rooms
-  useEffect(() => {
-    if (!soundAlertsEnabled) return;
-
-    rooms.forEach((room) => {
-      if (room.status === 'ocupada' && room.currentStay) {
-        const stay = room.currentStay;
-        const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-        const calc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
-        const stayKey = `${stay.id}`;
-        const alertState = playedAlerts[stayKey] || {};
-
-        if (calc.isWarning && !alertState.warning && !calc.isOvertime) {
-          playWarningBeep();
-          setPlayedAlerts((prev) => ({
-            ...prev,
-            [stayKey]: { ...alertState, warning: true },
-          }));
-          showToast({
-            title: `¡Tiempo por Vencer!`,
-            message: `${room.name}: Quedan menos de 10 minutos de estadía.`,
-            type: 'warning',
-          });
-        }
-
-        if (calc.isOvertime && !alertState.overtime) {
-          playOvertimeAlert();
-          setPlayedAlerts((prev) => ({
-            ...prev,
-            [stayKey]: { ...alertState, overtime: true },
-          }));
-          showToast({
-            title: calc.gracePeriodActive ? `¡Tiempo Cumplido!` : `¡Hora Extra Aplicada!`,
-            message: calc.gracePeriodActive
-              ? `${room.name}: Llegó a 00:00. Iniciando 10 minutos de espera sin costo.`
-              : `${room.name}: Excedió los 10 min de espera. Se aplicó recargo de hora extra: +${formatBs(calc.overtimeCharge)}.`,
-            type: calc.gracePeriodActive ? 'warning' : 'error',
-          });
-        }
-      }
-    });
-  }, [nowTimestamp, rooms, tariffs, soundAlertsEnabled, playedAlerts, showToast]);
-
-  // Actions
   const setCurrentUserById = (userId: string) => {
     setCurrentUserId(userId);
-    const selectedUser = SYSTEM_USERS.find((u) => u.id === userId);
-    if (selectedUser) {
-      showToast({
-        title: 'Usuario Actualizado',
-        message: `Sesión activa: ${selectedUser.name} (${selectedUser.shiftName})`,
-        type: 'info',
-        durationMs: 3000,
-      });
-    }
   };
 
-  const toggleSoundAlerts = () => {
-    setSoundAlertsEnabled((prev) => {
-      const next = !prev;
-      showToast({
-        title: next ? 'Sonido Activado' : 'Sonido Silenciado',
-        message: next
-          ? 'Se emitirán tonos de alerta antes de vencer el tiempo y al registrar consumos.'
-          : 'Alertas sonoras silenciadas.',
-        type: 'info',
-        durationMs: 2500,
-      });
-      return next;
-    });
-  };
-
-  // ROOM OPERATIONS (With Prepaid Support & Instant Realtime Sync)
+  // ROOM OPERATIONS
   const registerRoomEntry = (entryData: {
     roomId: string;
     chosenPlan: PlanType;
-    chosenDurationMinutes?: number;
     durationMinutes?: number;
+    chosenDurationMinutes?: number;
     basePrice: number;
     paymentMethod: PaymentMethod;
     isPrepaid?: boolean;
@@ -792,9 +833,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const room = rooms.find((r) => r.id === entryData.roomId);
     if (!room) return;
 
-    const duration = entryData.chosenDurationMinutes || entryData.durationMinutes || 60;
     const stayId = `stay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const isPrepaid = entryData.isPrepaid ?? true; // Default to prepaid if paid at entrance
+    const duration = entryData.chosenDurationMinutes || entryData.durationMinutes || 120;
+
+    const isPrepaid = entryData.isPrepaid ?? true;
     const prepaidAmount = isPrepaid ? (entryData.prepaidAmount !== undefined ? entryData.prepaidAmount : entryData.basePrice) : 0;
     const prepaidCash = isPrepaid ? (entryData.prepaidCash !== undefined ? entryData.prepaidCash : (entryData.cashPaid || (entryData.paymentMethod === 'efectivo' ? prepaidAmount : 0))) : 0;
     const prepaidQrVendis = isPrepaid ? (entryData.prepaidQrVendis !== undefined ? entryData.prepaidQrVendis : (entryData.qrVendisPaid || (entryData.paymentMethod === 'qr_vendis' ? prepaidAmount : 0))) : 0;
@@ -830,7 +872,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'active',
     };
 
-    // If prepaid, add collected amount to active shift expected totals immediately
     if (isPrepaid && (prepaidCash > 0 || prepaidQr > 0) && currentUser.role !== 'admin') {
       setActiveShifts((prev) => {
         const active = prev[currentUser.id] || ensureActiveShift(currentUser);
@@ -841,7 +882,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           expectedQrUnion: (active.expectedQrUnion || 0) + prepaidQrUnion,
           expectedQr: active.expectedQr + prepaidQr,
           salesCount: active.salesCount + 1,
-          stayIds: [...active.stayIds, newStay.id],
+          stayIds: [...active.stayIds, stayId],
         };
         syncShiftToFirestore(updatedShift);
         return {
@@ -858,13 +899,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cleaningStartTime: undefined,
     };
 
-    // Update state locally
     setRooms((prev) => prev.map((r) => (r.id === room.id ? updatedRoom : r)));
-
-    // Sync to Cloud Firebase Realtime DB
     syncRoomToFirestore(updatedRoom);
     syncStayToFirebase(newStay);
-    setCompletedStays((prev) => [newStay, ...prev.filter((s) => s.id !== newStay.id)]);
 
     playSuccessChime();
     showToast({
@@ -873,6 +910,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'success',
     });
   };
+
+  const registerStay = registerRoomEntry;
 
   const addConsumptionToRoom = (
     roomId: string,
@@ -909,7 +948,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...product,
       stock: product.stock - quantity,
     };
-
     setProducts((prev) => prev.map((p) => (p.id === productId ? updatedProduct : p)));
     syncProductToFirestore(updatedProduct);
 
@@ -973,7 +1011,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    // 3. Play sound & emit interactive toast with UNDO action
     playAddConsumptionSound();
     showToast({
       title: isPaid ? '¡Consumo Cobrado y Agregado!' : '¡Consumo Cargado a la Cuenta!',
@@ -1008,7 +1045,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncProductToFirestore(updatedProduct);
     }
 
-    // Si fue pagado en el momento, descontar de la caja activa
     if (item.isPaid && currentUser.role !== 'admin') {
       setActiveShifts((prev) => {
         const active = prev[currentUser.id] || ensureActiveShift(currentUser);
@@ -1169,7 +1205,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCompletedStays((prev) => [completedStay, ...prev]);
     syncCompletedStayToFirebase(completedStay);
 
-    // Update active shift if money was collected at checkout or if it wasn't prepaid
     if (finalCash > 0 || finalQr > 0 || !isPrepaid) {
       const shiftReceptionistId = currentUser.role === 'admin' ? stay.receptionistId : currentUser.id;
       setActiveShifts((prev) => {
@@ -1184,9 +1219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           salesCount: alreadyCounted ? active.salesCount : active.salesCount + 1,
           stayIds: active.stayIds.includes(completedStay.id) ? active.stayIds : [...active.stayIds, completedStay.id],
         };
-
         syncShiftToFirestore(updatedShift);
-
         return {
           ...prev,
           [shiftReceptionistId]: updatedShift,
@@ -1194,12 +1227,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    const newStatus: RoomStatus = checkoutData.setCleaning ? 'limpieza' : 'disponible';
+    const setCleaning = checkoutData.setCleaning !== false;
     const updatedRoom: Room = {
       ...room,
-      status: newStatus,
+      status: setCleaning ? 'limpieza' : 'disponible',
       currentStay: undefined,
-      cleaningStartTime: newStatus === 'limpieza' ? new Date().toISOString() : undefined,
+      cleaningStartTime: setCleaning ? new Date().toISOString() : undefined,
     };
 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
@@ -1207,10 +1240,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     playSuccessChime();
     showToast({
-      title: 'Habitación Cerrada con Éxito',
-      message: `${room.name} cobrada: Total ${formatBs(totalAmount)} (Saldo salida: ${formatBs(remainingDue)})`,
+      title: '¡Estadía Cobrada & Finalizada!',
+      message: `${room.name} desocupada. Cobro final: ${formatBs(remainingDue)} (${getPaymentMethodLabel(effectivePaymentMethod)}). Total: ${formatBs(totalAmount)}.`,
       type: 'success',
-      durationMs: 5000,
     });
 
     return completedStay;
@@ -1229,6 +1261,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
     syncRoomToFirestore(updatedRoom);
+
+    showToast({
+      title: 'Estado Actualizado',
+      message: `${room.name} ahora está ${newStatus.toUpperCase()}`,
+      type: 'info',
+    });
   };
 
   const changeRoom = (
@@ -1239,13 +1277,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       oldRoomStatus?: 'limpieza' | 'disponible';
     }
   ): boolean => {
-    const sourceRoom = rooms.find((r) => r.id === currentRoomId);
+    const currentRoom = rooms.find((r) => r.id === currentRoomId);
     const targetRoom = rooms.find((r) => r.id === targetRoomId);
 
-    if (!sourceRoom || !sourceRoom.currentStay) {
+    if (!currentRoom || !currentRoom.currentStay) {
       showToast({
-        title: 'Error al cambiar habitación',
-        message: 'La habitación de origen no tiene una estadía activa.',
+        title: 'Error de cambio',
+        message: 'La habitación de origen no tiene una estancia activa.',
         type: 'error',
       });
       return false;
@@ -1253,28 +1291,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!targetRoom || targetRoom.status !== 'disponible') {
       showToast({
-        title: 'Error al cambiar habitación',
-        message: `La habitación destino (${targetRoom?.name || 'Seleccionada'}) no está disponible.`,
+        title: 'Habitación no disponible',
+        message: `La habitación ${targetRoom?.name || targetRoomId} no está disponible.`,
         type: 'error',
       });
       return false;
     }
 
-    const currentStay = sourceRoom.currentStay;
-    const oldRoomStatus = options?.oldRoomStatus || 'limpieza';
-    const changeTimestamp = new Date().toISOString();
-    const reasonText = reason.trim() || 'Inconveniente o error';
-    const auditNote = `[Cambio ${formatDateTime(changeTimestamp)}]: Traslado de ${sourceRoom.name} a ${targetRoom.name}. Motivo: ${reasonText}`;
+    const timestamp = new Date().toISOString();
+    const oldStay = currentRoom.currentStay;
+    const changeLogNote = `[Cambio de Habitación: Trasladado desde ${currentRoom.name} a ${targetRoom.name} por ${currentUser.name} a las ${formatDateTime(timestamp)}. Motivo: ${reason}]`;
 
     const transferredStay: Stay = {
-      ...currentStay,
+      ...oldStay,
       roomId: targetRoom.id,
       roomName: targetRoom.name,
       roomType: targetRoom.type,
-      notes: currentStay.notes ? `${currentStay.notes} | ${auditNote}` : auditNote,
+      notes: oldStay.notes ? `${oldStay.notes} | ${changeLogNote}` : changeLogNote,
     };
 
-    // 1. Updated target room (now occupied)
+    const oldRoomNextStatus = options?.oldRoomStatus || 'limpieza';
+    const updatedOldRoom: Room = {
+      ...currentRoom,
+      status: oldRoomNextStatus,
+      currentStay: undefined,
+      cleaningStartTime: oldRoomNextStatus === 'limpieza' ? timestamp : undefined,
+    };
+
     const updatedTargetRoom: Room = {
       ...targetRoom,
       status: 'ocupada',
@@ -1282,45 +1325,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cleaningStartTime: undefined,
     };
 
-    // 2. Updated source room (freed to cleaning or available)
-    const updatedSourceRoom: Room = {
-      ...sourceRoom,
-      status: oldRoomStatus,
-      currentStay: undefined,
-      cleaningStartTime: oldRoomStatus === 'limpieza' ? new Date().toISOString() : undefined,
-    };
-
-    // 3. Update local state
     setRooms((prev) =>
       prev.map((r) => {
-        if (r.id === targetRoom.id) return updatedTargetRoom;
-        if (r.id === sourceRoom.id) return updatedSourceRoom;
+        if (r.id === currentRoomId) return updatedOldRoom;
+        if (r.id === targetRoomId) return updatedTargetRoom;
         return r;
       })
     );
 
-    // 4. Update completedStays state
-    setCompletedStays((prev) =>
-      prev.map((s) => (s.id === transferredStay.id ? transferredStay : s))
-    );
-
-    // 5. Sync to Firebase
+    syncRoomToFirestore(updatedOldRoom);
     syncRoomToFirestore(updatedTargetRoom);
-    syncRoomToFirestore(updatedSourceRoom);
     syncStayToFirebase(transferredStay);
 
     playSuccessChime();
     showToast({
-      title: '¡Cambio de Habitación Realizado!',
-      message: `Trasladado con éxito de ${sourceRoom.name} a ${targetRoom.name}. Motivo: "${reasonText}".`,
+      title: '¡Cambio de Habitación Exitoso!',
+      message: `Huésped trasladado de ${currentRoom.name} a ${targetRoom.name}. Motivo registrado: "${reason}".`,
       type: 'success',
-      durationMs: 6000,
+      durationMs: 7000,
     });
 
     return true;
   };
 
-  // EXPENSES / SHIFT PAYMENTS (Hacer Pagos)
+  // EXPENSES / SHIFT PAYMENTS
   const addExpenseToShift = (expenseData: {
     description: string;
     category: ExpenseCategory;
@@ -1329,75 +1357,229 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     receiptNumber?: string;
     notes?: string;
   }) => {
+    if (!currentShift) {
+      showToast({
+        title: 'Sin turno activo',
+        message: 'Debe haber un turno activo para registrar pagos de caja.',
+        type: 'error',
+      });
+      return;
+    }
+
     const expenseId = `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newExpense: Expense = {
       id: expenseId,
-      description: expenseData.description,
+      description: expenseData.description.trim(),
       category: expenseData.category,
       amount: expenseData.amount,
       paymentMethod: expenseData.paymentMethod,
       timestamp: new Date().toISOString(),
-      shiftId: currentShift ? currentShift.id : `shift-${currentUser.id}`,
+      shiftId: currentShift.id,
       registeredById: currentUser.id,
       registeredByName: currentUser.name,
-      receiptNumber: expenseData.receiptNumber,
-      notes: expenseData.notes,
+      receiptNumber: expenseData.receiptNumber?.trim() || undefined,
+      notes: expenseData.notes?.trim() || undefined,
     };
 
-    // 1. Guardar en lista general de gastos
     setExpenses((prev) => [newExpense, ...prev]);
-
-    // 2. Asociar al turno activo
-    if (currentUser.role !== 'admin') {
-      setActiveShifts((prev) => {
-        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
-        const shiftExpenses = [...(active.expenses || []), newExpense];
-        const totalExpensesCash = shiftExpenses
-          .filter((e) => e.paymentMethod === 'efectivo')
-          .reduce((sum, e) => sum + e.amount, 0);
-        const totalExpensesQrVendis = shiftExpenses
-          .filter((e) => e.paymentMethod === 'qr_vendis')
-          .reduce((sum, e) => sum + e.amount, 0);
-        const totalExpensesQrUnion = shiftExpenses
-          .filter((e) => e.paymentMethod === 'qr_union')
-          .reduce((sum, e) => sum + e.amount, 0);
-        const totalExpensesQr = totalExpensesQrVendis + totalExpensesQrUnion + shiftExpenses
-          .filter((e) => e.paymentMethod === 'qr')
-          .reduce((sum, e) => sum + e.amount, 0);
-
-        const updatedShift: Shift = {
-          ...active,
-          expenses: shiftExpenses,
-          totalExpensesCash,
-          totalExpensesQrVendis,
-          totalExpensesQrUnion,
-          totalExpensesQr,
-        };
-
-        syncShiftToFirestore(updatedShift);
-
-        return {
-          ...prev,
-          [currentUser.id]: updatedShift,
-        };
-      });
-    }
-
-    // 3. Sincronizar gasto a Firebase
     syncExpenseToFirestore(newExpense);
 
     playSuccessChime();
     showToast({
-      title: '💸 Pago / Egreso Registrado',
-      message: `Se registró pago de ${formatBs(newExpense.amount)} por "${newExpense.description}" (${newExpense.paymentMethod === 'efectivo' ? 'Efectivo Gaveta' : newExpense.paymentMethod === 'qr_vendis' ? 'QR Vendis' : newExpense.paymentMethod === 'qr_union' ? 'QR Banco Unión' : 'QR'}).`,
-      type: 'info',
-      durationMs: 6000,
+      title: '¡Pago / Salida de Caja Registrado!',
+      message: `Se registró salida de ${formatBs(expenseData.amount)} (${expenseData.description}) pagado en ${getPaymentMethodLabel(expenseData.paymentMethod)}.`,
+      type: 'success',
     });
   };
 
-  // SHIFT CLOSING (Synchronized with Firebase in Realtime)
+  // STAFF CONSUMPTIONS & SETTLEMENTS
+  const addStaffConsumption = (consumptionData: {
+    staffId: string;
+    staffName: string;
+    items: {
+      productId: string;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      subtotal: number;
+    }[];
+    totalAmount: number;
+    notes?: string;
+  }): StaffConsumption => {
+    const id = `staff-cons-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+    const mappedItems: import('../types').StaffConsumptionItem[] = consumptionData.items.map((it, idx) => ({
+      id: `it-${Date.now()}-${idx}`,
+      productId: it.productId,
+      productName: it.productName,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice,
+      subtotal: it.subtotal,
+    }));
+
+    const newConsumption: StaffConsumption = {
+      id,
+      staffId: consumptionData.staffId,
+      staffName: consumptionData.staffName,
+      date: new Date().toISOString(),
+      items: mappedItems,
+      totalAmount: consumptionData.totalAmount,
+      notes: consumptionData.notes,
+      shiftId: currentShift?.id,
+      recordedBy: currentUser.name,
+      isSettled: false,
+    };
+
+    // Descontar stock de inventario
+    consumptionData.items.forEach((item) => {
+      const prod = products.find((p) => p.id === item.productId);
+      if (prod) {
+        const updatedStock = Math.max(0, prod.stock - item.quantity);
+        const updatedProduct = { ...prod, stock: updatedStock };
+        setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
+        syncProductToFirestore(updatedProduct);
+      }
+    });
+
+    setStaffConsumptions((prev) => [newConsumption, ...prev]);
+    syncStaffConsumptionToFirestore(newConsumption);
+
+    playAddConsumptionSound();
+    showToast({
+      title: '¡Consumo de Personal Registrado!',
+      message: `Se registró ${formatBs(consumptionData.totalAmount)} para ${consumptionData.staffName}. Descontado de inventario.`,
+      type: 'success',
+    });
+
+    return newConsumption;
+  };
+
+  const removeStaffConsumption = (id: string, restoreInventory = true) => {
+    const cons = staffConsumptions.find((c) => c.id === id);
+    if (!cons) return;
+
+    if (restoreInventory) {
+      cons.items.forEach((item) => {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod) {
+          const updatedStock = prod.stock + item.quantity;
+          const updatedProduct = { ...prod, stock: updatedStock };
+          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
+          syncProductToFirestore(updatedProduct);
+        }
+      });
+    }
+
+    setStaffConsumptions((prev) => prev.filter((c) => c.id !== id));
+    deleteStaffConsumptionFromFirebase(id);
+
+    showToast({
+      title: 'Consumo de Personal Eliminado',
+      message: `Se anuló el consumo y se repuso el stock.`,
+      type: 'info',
+    });
+  };
+
+  const recordStaffSettlement = (settlementData: {
+    staffId: string;
+    staffName: string;
+    periodStart: string;
+    periodEnd: string;
+    weekKey: string;
+    baseSalary: number;
+    daysWorkedCount?: number;
+    shiftsWorkedCount?: number;
+    discounts: StaffSettlementDiscountItem[];
+    totalDiscounts: number;
+    netPaidAmount: number;
+    notes?: string;
+    paymentMethod: 'efectivo' | 'transferencia' | 'qr';
+  }): StaffSettlement => {
+    const settlementId = `settle-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+    const newSettlement: StaffSettlement = {
+      ...settlementData,
+      id: settlementId,
+      paymentDate: new Date().toISOString(),
+      paidBy: currentUser.name,
+      status: 'paid',
+    };
+
+    // Marcar consumos del personal incluidos como liquidados
+    const consRefIds = new Set(
+      settlementData.discounts
+        .filter((d) => d.type === 'staff_consumption' && d.refId)
+        .map((d) => d.refId!)
+    );
+    if (consRefIds.size > 0) {
+      setStaffConsumptions((prev) =>
+        prev.map((c) =>
+          consRefIds.has(c.id)
+            ? { ...c, isSettled: true, settlementId, settledAt: new Date().toISOString() }
+            : c
+        )
+      );
+      staffConsumptions.forEach((c) => {
+        if (consRefIds.has(c.id)) {
+          syncStaffConsumptionToFirestore({
+            ...c,
+            isSettled: true,
+            settlementId,
+            settledAt: new Date().toISOString(),
+          });
+        }
+      });
+    }
+
+    // Marcar turnos con faltante incluidos como liquidados
+    const shiftRefIds = new Set(
+      settlementData.discounts
+        .filter((d) => d.type === 'shift_shortage' && d.refId)
+        .map((d) => d.refId!)
+    );
+    if (shiftRefIds.size > 0) {
+      setShiftsHistory((prev) =>
+        prev.map((s) =>
+          shiftRefIds.has(s.id) ? { ...s, isSettled: true, settlementId } : s
+        )
+      );
+      shiftsHistory.forEach((s) => {
+        if (shiftRefIds.has(s.id)) {
+          syncShiftToFirestore({
+            ...s,
+            isSettled: true,
+            settlementId,
+          });
+        }
+      });
+    }
+
+    setStaffSettlements((prev) => [newSettlement, ...prev]);
+    syncStaffSettlementToFirestore(newSettlement);
+
+    playSuccessChime();
+    showToast({
+      title: '¡Pago Semanal Registrado y Marcado como Pagado!',
+      message: `Se liquidó el pago de ${formatBs(newSettlement.netPaidAmount)} para ${newSettlement.staffName}.`,
+      type: 'success',
+      durationMs: 7000,
+    });
+
+    return newSettlement;
+  };
+
+  const saveStaffMember = (member: StaffMember) => {
+    setStaffMembers((prev) => {
+      const exists = prev.some((m) => m.id === member.id);
+      if (exists) {
+        return prev.map((m) => (m.id === member.id ? member : m));
+      }
+      return [...prev, member];
+    });
+  };
+
+  // SHIFT & CASH CLOSING (ARQUEO CIEGO & RELEVO CONTINUO)
   const closeCurrentShift = (
     responsiblePersonName: string,
+    nextReceptionistName: string,
     totalPhysicalCashInDrawer: number,
     declaredQrVendis: number,
     declaredQrUnion: number,
@@ -1408,45 +1590,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!shift) return null;
 
     const startingCashFloat = shift.initialCashFloat || 100;
-    const floatLeftForNext =
-      handoverCashFloat !== undefined && !isNaN(handoverCashFloat) ? handoverCashFloat : 100;
+    const floatLeftForNext = handoverCashFloat !== undefined ? handoverCashFloat : startingCashFloat;
+    const totalExpensesCash = shift.totalExpensesCash || 0;
+    const totalExpensesQrVendis = shift.totalExpensesQrVendis || 0;
+    const totalExpensesQrUnion = shift.totalExpensesQrUnion || 0;
+    const totalExpensesQr = shift.totalExpensesQr || (totalExpensesQrVendis + totalExpensesQrUnion);
 
-    // Calcular egresos/gastos del turno
-    const shiftExpenses = shift.expenses || [];
-    const totalExpensesCash =
-      shift.totalExpensesCash !== undefined
-        ? shift.totalExpensesCash
-        : shiftExpenses
-            .filter((e: Expense) => e.paymentMethod === 'efectivo')
-            .reduce((sum: number, e: Expense) => sum + e.amount, 0);
-    const totalExpensesQrVendis =
-      shift.totalExpensesQrVendis !== undefined
-        ? shift.totalExpensesQrVendis
-        : shiftExpenses
-            .filter((e: Expense) => e.paymentMethod === 'qr_vendis')
-            .reduce((sum: number, e: Expense) => sum + e.amount, 0);
-    const totalExpensesQrUnion =
-      shift.totalExpensesQrUnion !== undefined
-        ? shift.totalExpensesQrUnion
-        : shiftExpenses
-            .filter((e: Expense) => e.paymentMethod === 'qr_union')
-            .reduce((sum: number, e: Expense) => sum + e.amount, 0);
-    const totalExpensesQr = totalExpensesQrVendis + totalExpensesQrUnion + (shift.totalExpensesQr || 0);
-
+    // Ventas netas declaradas
+    const declaredSalesCash = Math.max(0, totalPhysicalCashInDrawer - floatLeftForNext + totalExpensesCash);
     const declaredQrTotal = declaredQrVendis + declaredQrUnion;
 
-    // Ventas declaradas en efectivo: Total contado - Fondo dejado + Gastos en efectivo pagados
-    const declaredSalesCash = Math.max(
-      0,
-      totalPhysicalCashInDrawer - floatLeftForNext + totalExpensesCash
-    );
+    const expectedNetCash = shift.expectedCash;
+    const expectedNetQrVendis = shift.expectedQrVendis || 0;
+    const expectedNetQrUnion = shift.expectedQrUnion || 0;
+    const expectedNetQrTotal = shift.expectedQr;
 
-    const expectedCashInDrawer = Math.max(0, startingCashFloat + shift.expectedCash - totalExpensesCash);
-    const expectedNetQrVendis = Math.max(0, (shift.expectedQrVendis || 0) - totalExpensesQrVendis);
-    const expectedNetQrUnion = Math.max(0, (shift.expectedQrUnion || 0) - totalExpensesQrUnion);
-    const expectedNetQrTotal = Math.max(0, shift.expectedQr - totalExpensesQr);
-
-    const diffCash = totalPhysicalCashInDrawer - expectedCashInDrawer;
+    const diffCash = declaredSalesCash - expectedNetCash;
     const diffQrVendis = declaredQrVendis - expectedNetQrVendis;
     const diffQrUnion = declaredQrUnion - expectedNetQrUnion;
     const diffQr = declaredQrTotal - expectedNetQrTotal;
@@ -1461,7 +1620,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...shift,
       status: 'closed',
       endTime: new Date().toISOString(),
-      responsiblePersonName: responsiblePersonName.trim(),
+      receptionistName: responsiblePersonName.trim() || shift.receptionistName,
+      responsiblePersonName: responsiblePersonName.trim() || shift.receptionistName,
+      handedOverTo: nextReceptionistName.trim(),
       initialCashFloat: startingCashFloat,
       handoverCashFloat: floatLeftForNext,
       totalExpensesCash,
@@ -1488,19 +1649,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setShiftsHistory((prev) => [closedShift, ...prev.filter((s) => s.id !== closedShift.id)]);
     syncShiftToFirestore(closedShift);
 
-    // 2. Determinar siguiente usuario
+    // 2. Determinar siguiente usuario según nombre entrante
     const nextUser =
-      currentUser.id === 'user-recep-dia'
+      SYSTEM_USERS.find((u) => u.name.toLowerCase().includes(nextReceptionistName.toLowerCase())) ||
+      (shift.receptionistId === 'user-recep-dia'
         ? SYSTEM_USERS.find((u) => u.id === 'user-recep-noche') || SYSTEM_USERS[2]
-        : currentUser.id === 'user-recep-noche'
-        ? SYSTEM_USERS.find((u) => u.id === 'user-recep-dia') || SYSTEM_USERS[1]
-        : currentUser;
+        : SYSTEM_USERS.find((u) => u.id === 'user-recep-dia') || SYSTEM_USERS[1]);
 
-    // 3. Crear nuevo turno limpio
+    // 3. Crear UN SOLO nuevo turno abierto para el recepcionista entrante
     const newShiftForNext: Shift = {
       id: `shift-${nextUser.id}-${Date.now()}`,
       receptionistId: nextUser.id,
-      receptionistName: nextUser.name,
+      receptionistName: nextReceptionistName.trim() || nextUser.name,
       shiftType: nextUser.role === 'recepcionista_noche' ? 'noche' : 'dia',
       startTime: new Date().toISOString(),
       status: 'open',
@@ -1514,38 +1674,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       stayIds: [],
     };
 
-    const newShiftForCurrent: Shift = {
-      id: `shift-${currentUser.id}-${Date.now() + 1}`,
-      receptionistId: currentUser.id,
-      receptionistName: currentUser.name,
-      shiftType: currentUser.role === 'recepcionista_noche' ? 'noche' : 'dia',
-      startTime: new Date().toISOString(),
-      status: 'open',
-      initialCashFloat: floatLeftForNext,
-      expectedCash: 0,
-      expectedQr: 0,
-      totalExpensesCash: 0,
-      totalExpensesQr: 0,
-      expenses: [],
-      salesCount: 0,
-      stayIds: [],
-    };
-
-    setActiveShifts((prev) => ({
-      ...prev,
-      [currentUser.id]: newShiftForCurrent,
+    setActiveShifts({
       [nextUser.id]: newShiftForNext,
-    }));
+    });
 
     syncShiftToFirestore(newShiftForNext);
 
-    // 4. Conmutar usuario
+    // 4. Conmutar usuario activo
     setCurrentUserId(nextUser.id);
 
     playSuccessChime();
     showToast({
       title: '¡Cambio de Turno Realizado con Éxito!',
-      message: `Turno entregado por "${responsiblePersonName}". Sesión traspasada a ${nextUser.name} con Caja Chica de ${formatBs(floatLeftForNext)} (${handoverActiveRoomsCount} habitación/es activa/s traspasadas).`,
+      message: `Turno entregado por "${responsiblePersonName}" a "${nextReceptionistName || nextUser.name}". Caja Chica de ${formatBs(floatLeftForNext)} (${handoverActiveRoomsCount} habitación/es activa/s traspasadas).`,
       type: discountAmount > 0 ? 'warning' : 'success',
       durationMs: 8500,
     });
@@ -1553,7 +1694,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return closedShift;
   };
 
-  // ADMIN ACTIONS (Synchronized with Firebase in Realtime)
+  // ADMIN ACTIONS
   const cancelStay = (stayId: string, reason: string, restoreInventory = true): boolean => {
     if (currentUser.role !== 'admin') {
       showToast({
@@ -1564,29 +1705,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Buscar la estadía en habitaciones activas o en historial
     let targetStay: Stay | undefined;
     let targetRoom: Room | undefined;
 
-    const roomWithActiveStay = rooms.find((r) => r.currentStay?.id === stayId);
-    if (roomWithActiveStay && roomWithActiveStay.currentStay) {
-      targetStay = roomWithActiveStay.currentStay;
-      targetRoom = roomWithActiveStay;
-    } else {
+    for (const r of rooms) {
+      if (r.currentStay && r.currentStay.id === stayId) {
+        targetStay = r.currentStay;
+        targetRoom = r;
+        break;
+      }
+    }
+
+    if (!targetStay) {
       targetStay = completedStays.find((s) => s.id === stayId);
     }
 
     if (!targetStay) {
       showToast({
-        title: 'Error al Anular',
-        message: 'No se encontró el registro de la habitación.',
+        title: 'Registro no encontrado',
+        message: `No se encontró la estancia con ID ${stayId}.`,
         type: 'error',
       });
       return false;
     }
 
-    // 2. Si la habitación está ocupada con esta estadía, liberarla
-    if (targetRoom) {
+    if (restoreInventory && targetStay.consumptions && targetStay.consumptions.length > 0) {
+      targetStay.consumptions.forEach((item) => {
+        const product = products.find((p) => p.id === item.productId);
+        if (product) {
+          const updatedProduct = {
+            ...product,
+            stock: product.stock + item.quantity,
+          };
+          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
+          syncProductToFirestore(updatedProduct);
+        }
+      });
+    }
+
+    const cancelledStay: Stay = {
+      ...targetStay,
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: currentUser.name,
+      cancellationReason: reason,
+      restoreInventoryOnCancel: restoreInventory,
+    };
+
+    if (targetRoom && targetRoom.currentStay?.id === stayId) {
       const updatedRoom: Room = {
         ...targetRoom,
         status: 'disponible',
@@ -1597,46 +1763,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncRoomToFirestore(updatedRoom);
     }
 
-    // 3. Reponer stock de consumos si aplica
-    if (restoreInventory && targetStay.consumptions && targetStay.consumptions.length > 0) {
-      targetStay.consumptions.forEach((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        if (prod) {
-          const updatedProd = {
-            ...prod,
-            stock: prod.stock + item.quantity,
-          };
-          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProd : p)));
-          syncProductToFirestore(updatedProd);
-        }
-      });
-    }
-
-    // 4. Marcar la estadía como anulada
-    const cancelledStay: Stay = {
-      ...targetStay,
-      status: 'cancelled',
-      cancelledAt: new Date().toISOString(),
-      cancelledBy: currentUser.name,
-      cancellationReason: reason || 'Anulado por Administrador (Prueba o Error)',
-      restoreInventoryOnCancel: restoreInventory,
-    };
-
-    // Actualizar completedStays
-    setCompletedStays((prev) => {
-      const exists = prev.some((s) => s.id === stayId);
-      return exists
-        ? prev.map((s) => (s.id === stayId ? cancelledStay : s))
-        : [cancelledStay, ...prev];
-    });
-
-    syncStayToFirebase(cancelledStay);
+    setCompletedStays((prev) => [
+      cancelledStay,
+      ...prev.filter((s) => s.id !== cancelledStay.id),
+    ]);
+    syncCompletedStayToFirebase(cancelledStay);
 
     showToast({
-      title: '🚫 Habitación Anulada con Éxito',
-      message: `${cancelledStay.roomName}: Registro cancelado por ${currentUser.name}. Motivo: ${reason || 'Error / Prueba'}.`,
+      title: '¡Registro Anulado Correctamente!',
+      message: `Se anuló el registro de ${targetStay.roomName}. ${restoreInventory ? 'Se repuso el inventario consumido.' : ''}`,
       type: 'warning',
-      durationMs: 7000,
+      durationMs: 6000,
     });
 
     return true;
@@ -1645,10 +1782,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const saveProduct = (product: Product) => {
     setProducts((prev) => {
       const exists = prev.some((p) => p.id === product.id);
-      const next = exists
-        ? prev.map((p) => (p.id === product.id ? product : p))
-        : [...prev, product];
-      return next;
+      if (exists) {
+        return prev.map((p) => (p.id === product.id ? product : p));
+      }
+      return [...prev, product];
     });
     syncProductToFirestore(product);
   };
@@ -1671,28 +1808,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveShifts({});
     setCompletedStays([]);
     setExpenses([]);
-    localStorage.clear();
-    showToast({
-      title: 'Datos Restablecidos',
-      message: 'Se han reiniciado los valores oficiales de Mon Amour.',
-      type: 'info',
-    });
+    setStaffConsumptions([]);
+    setStaffSettlements([]);
   };
 
   const exportDatabaseJson = () => {
-    const exportData = {
-      exportDate: new Date().toISOString(),
+    const data = {
       rooms,
       tariffs,
       products,
       shiftsHistory,
       completedStays,
       expenses,
+      staffConsumptions,
+      staffSettlements,
+      exportedAt: new Date().toISOString(),
     };
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
+    const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(data, null, 2))}`;
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `mon_amour_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    downloadAnchor.setAttribute('href', jsonString);
+    downloadAnchor.setAttribute('download', `mon_amour_backup_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -1700,28 +1835,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const importDatabaseJson = (jsonString: string): boolean => {
     try {
-      const data = JSON.parse(jsonString);
-      if (data.rooms && data.tariffs && data.products) {
-        setRooms(data.rooms);
-        setTariffs(data.tariffs);
-        setProducts(data.products);
-        if (data.shiftsHistory) setShiftsHistory(data.shiftsHistory);
-        if (data.completedStays) setCompletedStays(data.completedStays);
-        if (data.expenses) setExpenses(data.expenses);
-        showToast({
-          title: 'Copia de Seguridad Restaurada',
-          message: 'Base de datos importada correctamente.',
-          type: 'success',
-        });
-        return true;
-      }
-      return false;
+      const parsed = JSON.parse(jsonString);
+      if (parsed.rooms) setRooms(parsed.rooms);
+      if (parsed.tariffs) setTariffs(parsed.tariffs);
+      if (parsed.products) setProducts(parsed.products);
+      if (parsed.shiftsHistory) setShiftsHistory(parsed.shiftsHistory);
+      if (parsed.completedStays) setCompletedStays(parsed.completedStays);
+      if (parsed.expenses) setExpenses(parsed.expenses);
+      if (parsed.staffConsumptions) setStaffConsumptions(parsed.staffConsumptions);
+      if (parsed.staffSettlements) setStaffSettlements(parsed.staffSettlements);
+      return true;
     } catch {
-      showToast({
-        title: 'Error al Importar',
-        message: 'El archivo JSON no tiene el formato válido de copia de seguridad.',
-        type: 'error',
-      });
       return false;
     }
   };
@@ -1737,6 +1861,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         shiftsHistory,
         completedStays,
         expenses,
+        staffConsumptions,
+        staffSettlements,
+        staffMembers,
         soundAlertsEnabled,
         toasts,
         nowTimestamp,
@@ -1745,7 +1872,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleSoundAlerts,
         showToast,
         dismissToast,
-        registerStay: registerRoomEntry,
+        registerStay,
         registerRoomEntry,
         addConsumptionToRoom,
         removeConsumptionFromRoom,
@@ -1753,6 +1880,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         changeRoomStatus,
         changeRoom,
         addExpenseToShift,
+        addStaffConsumption,
+        removeStaffConsumption,
+        recordStaffSettlement,
+        saveStaffMember,
         closeCurrentShift,
         cancelStay,
         saveProduct,

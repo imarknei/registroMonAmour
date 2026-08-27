@@ -204,6 +204,9 @@ export interface Shift {
   salesCount: number;
   stayIds: string[];
   handoverActiveRoomsCount?: number; // Habitaciones que quedaron ocupadas al traspasar el turno
+  handedOverTo?: string; // Nombre del recepcionista a quien entrega la caja (turno entrante)
+  isSettled?: boolean; // True si el faltante ya fue descontado en un pago semanal
+  settlementId?: string; // ID del comprobante de liquidación
 }
 
 export interface WeeklyDiscountReport {
@@ -221,4 +224,70 @@ export interface WeeklyDiscountReport {
   totalExpensesQr?: number;
   totalFaltante: number;
   totalDiscount: number;
+}
+
+// ----------------------------------------------------
+// MODELO DE CONSUMO DE PERSONAL Y LIQUIDACIÓN SEMANAL
+// ----------------------------------------------------
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: string; // 'recepcionista', 'limpieza', 'mantenimiento', 'administracion', 'otro'
+  shiftName?: string;
+  defaultWeeklySalary?: number; // Sueldo base semanal sugerido (ej: 700 Bs)
+  active?: boolean;
+}
+
+export interface StaffConsumptionItem {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+}
+
+export interface StaffConsumption {
+  id: string;
+  staffId: string; // ID o nombre del empleado
+  staffName: string;
+  date: string; // ISO date
+  items: StaffConsumptionItem[];
+  totalAmount: number;
+  notes?: string;
+  shiftId?: string;
+  recordedBy: string; // Nombre de quien lo registró
+  isSettled?: boolean; // True si ya fue descontado en una liquidación semanal
+  settlementId?: string; // ID del pago semanal
+  settledAt?: string;
+}
+
+export interface StaffSettlementDiscountItem {
+  id: string;
+  type: 'shift_shortage' | 'staff_consumption' | 'custom_discount';
+  refId?: string; // ID del turno o del consumo
+  description: string;
+  amount: number;
+  date: string;
+}
+
+export interface StaffSettlement {
+  id: string;
+  staffId: string;
+  staffName: string;
+  periodStart: string;
+  periodEnd: string;
+  weekKey: string;
+  baseSalary: number;
+  daysWorkedCount?: number;
+  shiftsWorkedCount?: number;
+  discounts: StaffSettlementDiscountItem[];
+  totalDiscounts: number;
+  netPaidAmount: number; // baseSalary - totalDiscounts
+  paymentDate: string;
+  paidBy: string; // Administrador
+  status: 'paid';
+  notes?: string;
+  paymentMethod: 'efectivo' | 'transferencia' | 'qr';
 }

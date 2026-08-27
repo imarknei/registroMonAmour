@@ -13,6 +13,11 @@ import {
   X,
   PlusCircle,
   MinusCircle,
+  TrendingUp,
+  Boxes,
+  ArrowDownToLine,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 
 export const InventoryManager: React.FC = () => {
@@ -23,7 +28,11 @@ export const InventoryManager: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
-  // New product initial state
+  // Quick Restock Modal state
+  const [restockProduct, setRestockProduct] = useState<Product | null>(null);
+  const [addedStockQuantity, setAddedStockQuantity] = useState<string>('');
+
+  // New/Edit product form state
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
     category: 'preservativos',
@@ -32,6 +41,7 @@ export const InventoryManager: React.FC = () => {
     minStockAlert: 5,
     description: '',
   });
+  const [formAddStock, setFormAddStock] = useState<string>('');
 
   const categories: { key: ProductCategory | 'all'; label: string }[] = [
     { key: 'all', label: 'Todos los Productos' },
@@ -60,14 +70,21 @@ export const InventoryManager: React.FC = () => {
       minStockAlert: 5,
       description: '',
     });
+    setFormAddStock('');
     setIsCreating(true);
     setEditingProduct(null);
   };
 
   const handleOpenEdit = (product: Product) => {
     setFormData({ ...product });
+    setFormAddStock('');
     setEditingProduct(product);
     setIsCreating(false);
+  };
+
+  const handleOpenQuickRestock = (product: Product) => {
+    setRestockProduct(product);
+    setAddedStockQuantity('');
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -76,12 +93,16 @@ export const InventoryManager: React.FC = () => {
       return;
     }
 
+    const additionalStock = parseInt(formAddStock, 10) || 0;
+    const baseStock = Number(formData.stock) || 0;
+    const finalStock = isCreating ? baseStock : Math.max(0, baseStock + additionalStock);
+
     const productToSave: Product = {
       id: formData.id || `prod-${Date.now()}`,
       name: formData.name.trim(),
       category: (formData.category as ProductCategory) || 'preservativos',
       price: Number(formData.price),
-      stock: Number(formData.stock),
+      stock: finalStock,
       minStockAlert: Number(formData.minStockAlert) || 5,
       description: formData.description?.trim() || undefined,
     };
@@ -89,6 +110,18 @@ export const InventoryManager: React.FC = () => {
     saveProduct(productToSave);
     setIsCreating(false);
     setEditingProduct(null);
+  };
+
+  const handleConfirmQuickRestock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!restockProduct) return;
+    const toAdd = parseInt(addedStockQuantity, 10) || 0;
+    if (toAdd <= 0) return;
+
+    const newStock = restockProduct.stock + toAdd;
+    saveProduct({ ...restockProduct, stock: newStock });
+    setRestockProduct(null);
+    setAddedStockQuantity('');
   };
 
   const handleQuickStockChange = (productId: string, delta: number) => {
@@ -114,7 +147,7 @@ export const InventoryManager: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Gestione productos, precios de venta y reposición de stock. Los consumos se descuentan automáticamente al registrarse en habitaciones.
+            Gestione productos, precios de venta y reposición rápida de stock con cálculo automático.
           </p>
         </div>
 
@@ -199,82 +232,112 @@ export const InventoryManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Product Table */}
+      {/* Products Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-extrabold border-b border-slate-200">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-50 text-slate-400 uppercase font-extrabold text-[10px] tracking-wider border-b border-slate-200">
               <tr>
-                <th className="py-3.5 px-4">Producto</th>
-                <th className="py-3.5 px-4">Categoría</th>
-                <th className="py-3.5 px-4 text-right">Precio Venta</th>
-                <th className="py-3.5 px-4 text-center">Stock Actual</th>
-                <th className="py-3.5 px-4 text-center">Ajuste Rápido</th>
-                <th className="py-3.5 px-4 text-center">Estado</th>
-                <th className="py-3.5 px-4 text-right">Acciones</th>
+                <th className="py-3 px-4">Producto</th>
+                <th className="py-3 px-4">Categoría</th>
+                <th className="py-3 px-4 text-right">Precio Venta</th>
+                <th className="py-3 px-4 text-center">Stock Actual</th>
+                <th className="py-3 px-4 text-center">Ingreso Rápido (+Stock)</th>
+                <th className="py-3 px-4 text-center">Estado</th>
+                <th className="py-3 px-4 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
-                    No se encontraron productos con los filtros seleccionados.
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                    No se encontraron productos coincidentes.
                   </td>
                 </tr>
               ) : (
                 filteredProducts.map((prod) => {
                   const isLow = prod.stock <= prod.minStockAlert;
                   return (
-                    <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr
+                      key={prod.id}
+                      className={`hover:bg-slate-50/80 transition-colors ${
+                        isLow ? 'bg-rose-50/20' : ''
+                      }`}
+                    >
                       <td className="py-3.5 px-4">
-                        <span className="font-bold text-slate-800 block text-xs">{prod.name}</span>
-                        {prod.description && (
-                          <span className="text-[10px] text-slate-400 block line-clamp-1">
-                            {prod.description}
-                          </span>
-                        )}
+                        <div>
+                          <strong className="font-extrabold text-slate-900 block text-xs">
+                            {prod.name}
+                          </strong>
+                          {prod.description && (
+                            <span className="text-[10px] text-slate-400 block truncate max-w-xs">
+                              {prod.description}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-semibold text-[10px]">
+                        <span className="inline-block px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[10px]">
                           {getCategoryLabel(prod.category)}
                         </span>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-brand-700 text-sm">
+                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-brand-700">
                         {formatBs(prod.price)}
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
-                        <span className="font-mono font-bold text-sm text-slate-800">{prod.stock}</span>
+                        <span
+                          className={`font-mono text-sm font-black inline-block px-2 py-0.5 rounded-md ${
+                            prod.stock <= 0
+                              ? 'bg-rose-100 text-rose-800'
+                              : isLow
+                              ? 'bg-amber-100 text-amber-900'
+                              : 'bg-slate-100 text-slate-800'
+                          }`}
+                        >
+                          {prod.stock} unid.
+                        </span>
                         <span className="text-[10px] text-slate-400 block">mín: {prod.minStockAlert}</span>
                       </td>
 
-                      {/* Quick stock adjustment */}
+                      {/* Quick stock adjustment & Restock Modal Trigger */}
                       <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => handleQuickStockChange(prod.id, -1)}
-                            disabled={prod.stock <= 0}
-                            title="Restar 1 unidad"
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded disabled:opacity-30"
+                            onClick={() => handleOpenQuickRestock(prod)}
+                            title="Ingresar cantidad con sumatoria automática"
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-black rounded-lg text-[10px] transition-all flex items-center gap-1 shadow-xs active:scale-95"
                           >
-                            <MinusCircle className="w-4 h-4" />
+                            <ArrowDownToLine className="w-3 h-3 text-emerald-600" />
+                            + Ingresar
                           </button>
-                          <button
-                            onClick={() => handleQuickStockChange(prod.id, +5)}
-                            title="Sumar +5 unidades"
-                            className="px-2 py-0.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded font-mono font-bold text-[10px]"
-                          >
-                            +5
-                          </button>
-                          <button
-                            onClick={() => handleQuickStockChange(prod.id, +10)}
-                            title="Sumar +10 unidades"
-                            className="px-2 py-0.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded font-mono font-bold text-[10px]"
-                          >
-                            +10
-                          </button>
+
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => handleQuickStockChange(prod.id, -1)}
+                              disabled={prod.stock <= 0}
+                              title="Restar 1 unidad"
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded disabled:opacity-30"
+                            >
+                              <MinusCircle className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleQuickStockChange(prod.id, +5)}
+                              title="Sumar +5 unidades"
+                              className="px-1.5 py-0.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded font-mono font-bold text-[10px]"
+                            >
+                              +5
+                            </button>
+                            <button
+                              onClick={() => handleQuickStockChange(prod.id, +10)}
+                              title="Sumar +10 unidades"
+                              className="px-1.5 py-0.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded font-mono font-bold text-[10px]"
+                            >
+                              +10
+                            </button>
+                          </div>
                         </div>
                       </td>
 
@@ -322,6 +385,137 @@ export const InventoryManager: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* QUICK RESTOCK MODAL (CON SUMATORIA AUTOMÁTICA) */}
+      {restockProduct && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-scale-in">
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowDownToLine className="w-5 h-5" />
+                <h3 className="font-extrabold text-sm">Ingreso de Inventario</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setRestockProduct(null);
+                  setAddedStockQuantity('');
+                }}
+                className="p-1 rounded-full hover:bg-white/20 text-white/80"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmQuickRestock} className="p-5 space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Producto</span>
+                <h4 className="font-black text-sm text-slate-900">{restockProduct.name}</h4>
+                <span className="text-xs font-semibold text-brand-700 font-mono">
+                  {formatBs(restockProduct.price)} c/u
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-center">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Stock Actual</span>
+                  <span className="font-mono text-base font-black text-slate-700">
+                    {restockProduct.stock} unid.
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Mínimo Alerta</span>
+                  <span className="font-mono text-base font-bold text-amber-700">
+                    {restockProduct.minStockAlert} unid.
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-700 mb-1.5">
+                  Cantidad a Ingresar / Agregar (+) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    autoFocus
+                    placeholder="Ej. 24"
+                    value={addedStockQuantity}
+                    onChange={(e) => setAddedStockQuantity(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-emerald-300 font-mono text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-emerald-50/30"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    unidades
+                  </span>
+                </div>
+              </div>
+
+              {/* Botones rápidos de cantidad */}
+              <div className="flex items-center gap-1.5">
+                {[6, 12, 24, 48, 100].map((quickQty) => (
+                  <button
+                    key={quickQty}
+                    type="button"
+                    onClick={() => setAddedStockQuantity(quickQty.toString())}
+                    className="flex-1 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 font-mono text-xs font-bold rounded-lg border border-slate-200 transition-colors"
+                  >
+                    +{quickQty}
+                  </button>
+                ))}
+              </div>
+
+              {/* SUMATORIA AUTOMÁTICA EN VIVO */}
+              {(() => {
+                const addNum = parseInt(addedStockQuantity, 10) || 0;
+                const totalCalculated = restockProduct.stock + addNum;
+                return (
+                  <div className="p-3.5 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl space-y-1">
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span>Stock Actual:</span>
+                      <span className="font-mono font-bold">{restockProduct.stock} unid.</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-emerald-400 font-bold">
+                      <span>+ Cantidad Ingresada:</span>
+                      <span className="font-mono">+{addNum} unid.</span>
+                    </div>
+                    <div className="pt-1.5 border-t border-slate-700 flex items-center justify-between text-sm">
+                      <span className="font-black uppercase tracking-wider text-rose-300">
+                        NUEVO STOCK TOTAL:
+                      </span>
+                      <span className="font-mono font-black text-xl text-emerald-300">
+                        {totalCalculated} unid.
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRestockProduct(null);
+                    setAddedStockQuantity('');
+                  }}
+                  className="w-1/2 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-700 text-xs hover:bg-slate-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={!addedStockQuantity || parseInt(addedStockQuantity, 10) <= 0}
+                  className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  Confirmar Ingreso
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal Create/Edit Product */}
       {(isCreating || editingProduct) && (
@@ -374,7 +568,7 @@ export const InventoryManager: React.FC = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Precio (Bs) *</label>
                   <input
@@ -384,18 +578,6 @@ export const InventoryManager: React.FC = () => {
                     required
                     value={formData.price ?? ''}
                     onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Stock Actual *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={formData.stock ?? ''}
-                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value, 10) })}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                   />
                 </div>
@@ -412,6 +594,54 @@ export const InventoryManager: React.FC = () => {
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                   />
                 </div>
+              </div>
+
+              {/* SECCIÓN DE STOCK CON SUMATORIA AUTOMÁTICA */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wide block">
+                  Control de Stock & Reposición
+                </span>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                      {isCreating ? 'Stock Inicial *' : 'Stock Registrado'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      value={formData.stock ?? ''}
+                      onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value, 10) })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    />
+                  </div>
+
+                  {!isCreating && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-emerald-700 mb-0.5">
+                        + Cantidad a Sumar (+)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Ej. +12"
+                        value={formAddStock}
+                        onChange={(e) => setFormAddStock(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 font-mono text-xs font-black bg-emerald-50/50 text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {!isCreating && (
+                  <div className="flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 font-semibold">Stock Total Resultante:</span>
+                    <strong className="font-mono text-brand-700 font-black text-sm">
+                      {(Number(formData.stock) || 0) + (parseInt(formAddStock, 10) || 0)} unid.
+                    </strong>
+                  </div>
+                )}
               </div>
 
               <div>

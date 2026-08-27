@@ -21,6 +21,8 @@ import {
   MinusCircle,
   Landmark,
   ShieldCheck,
+  UserPlus,
+  ArrowRight,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
@@ -30,9 +32,10 @@ interface ShiftCloseModalProps {
 }
 
 export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClose }) => {
-  const { currentShift, currentUser, closeCurrentShift, rooms } = useApp();
+  const { currentShift, currentUser, closeCurrentShift, rooms, staffMembers } = useApp();
 
   const [responsibleName, setResponsibleName] = useState<string>('');
+  const [nextReceptionistName, setNextReceptionistName] = useState<string>('');
   const [totalPhysicalCash, setTotalPhysicalCash] = useState<string>('');
   const [declaredQrVendis, setDeclaredQrVendis] = useState<string>('');
   const [declaredQrUnion, setDeclaredQrUnion] = useState<string>('');
@@ -40,11 +43,21 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  // Set default names based on active shift and next shift
   useEffect(() => {
-    if (currentShift?.initialCashFloat !== undefined) {
-      setHandoverFloat(currentShift.initialCashFloat.toString());
+    if (currentShift) {
+      setResponsibleName(currentShift.responsiblePersonName || currentShift.receptionistName || currentUser.name);
+      if (currentShift.initialCashFloat !== undefined) {
+        setHandoverFloat(currentShift.initialCashFloat.toString());
+      }
+      // Suggest opposite receptionist as default next
+      const defaultNext =
+        currentShift.receptionistId === 'user-recep-dia'
+          ? 'Recepcionista Noche'
+          : 'Recepcionista Día';
+      setNextReceptionistName(defaultNext);
     }
-  }, [currentShift]);
+  }, [currentShift, currentUser]);
 
   if (!isOpen || !currentShift) return null;
 
@@ -60,18 +73,14 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
   // Active rooms currently occupied during shift handover
   const occupiedRooms = rooms.filter((r) => r.status === 'ocupada' && r.currentStay);
 
-  // Next receptionist in line
-  const nextUser =
-    currentUser.id === 'user-recep-dia'
-      ? SYSTEM_USERS.find((u) => u.id === 'user-recep-noche') || SYSTEM_USERS[2]
-      : currentUser.id === 'user-recep-noche'
-      ? SYSTEM_USERS.find((u) => u.id === 'user-recep-dia') || SYSTEM_USERS[1]
-      : currentUser;
-
   const handleCloseShift = (e: React.FormEvent) => {
     e.preventDefault();
     if (!responsibleName.trim()) {
-      alert('Por favor ingrese el nombre de la persona que está entregando el turno.');
+      alert('Por favor ingrese el nombre de la persona que está entregando la caja.');
+      return;
+    }
+    if (!nextReceptionistName.trim()) {
+      alert('Por favor ingrese el nombre de la persona que está RECIBIENDO la caja para el siguiente turno.');
       return;
     }
     if (totalPhysicalCash.trim() === '') {
@@ -82,6 +91,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
     setIsSubmitting(true);
     closeCurrentShift(
       responsibleName.trim(),
+      nextReceptionistName.trim(),
       numTotalPhysicalCash,
       numDeclaredQrVendis,
       numDeclaredQrUnion,
@@ -91,7 +101,6 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
     setIsSubmitting(false);
 
     onClose();
-    setResponsibleName('');
     setTotalPhysicalCash('');
     setDeclaredQrVendis('');
     setDeclaredQrUnion('');
@@ -109,10 +118,10 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
             </div>
             <div>
               <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                Cierre de Turno y Arqueo Ciego
+                Cierre de Caja y Relevo de Turno
               </h2>
               <p className="text-xs text-rose-200 font-medium">
-                {currentUser.name} • {currentUser.shiftName}
+                {currentShift.receptionistName} • {currentShift.shiftType === 'noche' ? 'Turno Noche' : 'Turno Día'}
               </p>
             </div>
           </div>
@@ -131,29 +140,60 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
             <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <strong className="block font-black text-amber-950 text-sm">
-                Arqueo Ciego de Caja
+                Arqueo Ciego & Relevo Continuo
               </strong>
               <span>
-                Declara con exactitud el efectivo físico contado en gaveta y los totales de comprobantes de QR Vendis y QR Banco Unión. El Administrador cotejará el cuadre directamente en su panel.
+                Declara el efectivo contado en gaveta y los comprobantes QR. Al confirmar, este turno se cerrará y se abrirá automáticamente el nuevo turno a nombre de quien recibe la caja.
               </span>
             </div>
           </div>
 
-          {/* Responsible Person Input */}
+          {/* RELEVO DE PERSONAS: QUIÉN ENTREGA Y QUIÉN RECIBE */}
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
-            <div>
-              <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-brand-600" />
-                Nombre de quien entrega el turno <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ej. Juan Pérez (Recepcionista saliente)..."
-                value={responsibleName}
-                onChange={(e) => setResponsibleName(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 font-bold text-xs bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <ArrowRightLeft className="w-4 h-4 text-brand-600" />
+              1. Responsables del Relevo de Caja
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Persona Saliente (Entrega) */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5 text-rose-600" />
+                  Recepcionista que ENTREGA (Saliente) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. Juan Pérez..."
+                  value={responsibleName}
+                  onChange={(e) => setResponsibleName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 font-bold text-xs bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+
+              {/* Persona Entrante (Recibe) */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                  Recepcionista que RECIBE (Entrante) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. María López..."
+                  value={nextReceptionistName}
+                  onChange={(e) => setNextReceptionistName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border-2 border-emerald-300 font-bold text-xs bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 bg-white p-2.5 rounded-xl border border-slate-200">
+              <ArrowRight className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+              <span>
+                Al guardar, la sesión pasará a <strong>{nextReceptionistName || '...'}</strong> y se iniciará su nuevo turno abierto de forma ordenada.
+              </span>
             </div>
           </div>
 
@@ -161,7 +201,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
           <div className="space-y-4">
             <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
               <Coins className="w-4 h-4 text-brand-600" />
-              Declaración Física de Caja y Comprobantes
+              2. Arqueo Ciego de Caja & Comprobantes
             </h3>
 
             {/* 1. Efectivo Total en Gaveta */}
@@ -169,14 +209,14 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between">
                 <label className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
                   <DollarSign className="w-4 h-4 text-emerald-600" />
-                  1. Efectivo Total Contado en Gaveta (Bs) <span className="text-rose-500">*</span>
+                  Efectivo Total Contado en Gaveta (Bs) <span className="text-rose-500">*</span>
                 </label>
                 <span className="text-[11px] font-mono font-bold text-emerald-800 bg-white px-2 py-0.5 rounded-lg border border-emerald-200">
                   {formatBs(numTotalPhysicalCash)}
                 </span>
               </div>
               <p className="text-[11px] text-emerald-800 leading-tight">
-                Cuenta todo el dinero físico que hay físicamente en gaveta (billetes y monedas).
+                Cuenta todo el dinero físico que hay físicamente en gaveta (incluyendo caja chica y ventas).
               </p>
               <div className="relative">
                 <input
@@ -200,14 +240,14 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between">
                 <label className="text-xs font-extrabold text-sky-950 flex items-center gap-1.5">
                   <QrCode className="w-4 h-4 text-sky-600" />
-                  2. QR Vendis Declarado (Bs)
+                  QR Vendis Declarado (Bs)
                 </label>
                 <span className="text-[11px] font-mono font-bold text-sky-800 bg-white px-2 py-0.5 rounded-lg border border-sky-200">
                   {formatBs(numDeclaredQrVendis)}
                 </span>
               </div>
               <p className="text-[11px] text-sky-800 leading-tight">
-                Total recaudado en QR Vendis según comprobantes o extracto de la aplicación.
+                Total recaudado en QR Vendis según comprobantes de cobro.
               </p>
               <div className="relative">
                 <input
@@ -230,14 +270,14 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between">
                 <label className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
                   <Landmark className="w-4 h-4 text-indigo-600" />
-                  3. QR Banco Unión Declarado (Bs)
+                  QR Banco Unión Declarado (Bs)
                 </label>
                 <span className="text-[11px] font-mono font-bold text-indigo-800 bg-white px-2 py-0.5 rounded-lg border border-indigo-200">
                   {formatBs(numDeclaredQrUnion)}
                 </span>
               </div>
               <p className="text-[11px] text-indigo-800 leading-tight">
-                Total recaudado en transferencias o QR Banco Unión según comprobantes bancarios.
+                Total recaudado en transferencias o QR Banco Unión según comprobantes.
               </p>
               <div className="relative">
                 <input
@@ -260,14 +300,14 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between">
                 <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
                   <ArrowRightLeft className="w-4 h-4 text-brand-600" />
-                  4. Caja Chica que se Deja en Gaveta para el Siguiente Turno (Bs)
+                  Caja Chica que se Deja en Gaveta para {nextReceptionistName || 'el Siguiente Turno'} (Bs)
                 </label>
                 <span className="text-[11px] font-mono font-bold text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
                   {formatBs(numHandoverFloat)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-tight">
-                Fondo de cambio en efectivo que se deja físicamente en gaveta para {nextUser.name}.
+                Fondo de cambio en efectivo que se deja físicamente en gaveta para el nuevo turno.
               </p>
               <div className="relative">
                 <input
@@ -301,53 +341,56 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
             </div>
           </div>
 
-          {/* Active Rooms in Stay Warning */}
-          {occupiedRooms.length > 0 && (
-            <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200 text-xs space-y-1.5">
-              <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
-                <BedDouble className="w-4 h-4 text-brand-600" />
-                Habitaciones Ocupadas que pasan al siguiente turno ({occupiedRooms.length}):
+          {/* Traspaso de Habitaciones Activas */}
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2 text-xs text-blue-900">
+            <div className="flex items-center justify-between font-bold">
+              <span className="flex items-center gap-1.5">
+                <BedDouble className="w-4 h-4 text-blue-600" />
+                Habitaciones Ocupadas en Curso ({occupiedRooms.length}):
               </span>
-              <div className="flex flex-wrap gap-1">
-                {occupiedRooms.map((r) => (
-                  <span key={r.id} className="text-[10px] bg-white px-2 py-0.5 rounded border border-slate-200 font-semibold text-slate-700">
-                    {r.name} ({getRoomTypeLabel(r.type)})
-                  </span>
-                ))}
-              </div>
+              <span className="px-2 py-0.5 rounded-full bg-blue-200/70 text-blue-950 font-black">
+                {occupiedRooms.length} habitacion(es)
+              </span>
             </div>
-          )}
+            <p className="text-[11px] text-blue-800 leading-tight">
+              {occupiedRooms.length > 0
+                ? `Las ${occupiedRooms.length} habitaciones activas pasarán en curso al turno de ${nextReceptionistName || 'el siguiente recepcionista'}. Sus cobros pendientes ingresarán al turno que haga el checkout.`
+                : 'No hay habitaciones ocupadas en este momento. Todas las habitaciones están libres o en limpieza.'}
+            </p>
+          </div>
 
-          {/* Observations & Notes */}
+          {/* Notas / Observaciones */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Observaciones / Novedades de la entrega (Opcional):
+              Observaciones de Entrega de Turno (Opcional)
             </label>
             <textarea
               rows={2}
+              placeholder="Ej. Se dejan 10 toallas limpias, habitación 4 pidió no molestar hasta las 10:00..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej. Se dejó 100 Bs en cambio de monedas de 2 y 5 Bs, habitación 4 extendió tiempo..."
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-brand-500 resize-none"
+              className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors"
+              disabled={isSubmitting}
+              className="w-1/2 py-3 rounded-xl border border-slate-300 font-bold text-slate-700 text-xs hover:bg-slate-100 transition-colors"
             >
               Cancelar
             </button>
+
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-black shadow-lg shadow-slate-900/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="w-1/2 py-3 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4 text-rose-400" />
-              <span>Confirmar y Cerrar Turno</span>
+              {isSubmitting ? 'Cerrando...' : 'Confirmar Cierre & Relevo'}
             </button>
           </div>
         </form>

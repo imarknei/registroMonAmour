@@ -5,7 +5,7 @@
  * Sincronización en vivo ultra-rápida (en milisegundos) entre todos los dispositivos (Recepción, Celulares, Administrador global)
  */
 
-import { Room, Product, TariffCatalog, Shift, Expense, Stay } from '../types';
+import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement } from '../types';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -538,5 +538,120 @@ export const uploadAllDataToFirebase = async (data: {
   } catch (err: any) {
     console.error('Error subiendo todo a Firebase:', err);
     return { success: false, message: err.message || 'Error al subir datos' };
+  }
+};
+
+// ==========================================
+// 👔 SINCRONIZACIÓN DE CONSUMO DE PERSONAL Y PAGOS
+// ==========================================
+
+export const subscribeToStaffConsumptions = async (
+  onData: (consumptions: StaffConsumption[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const staffRef = ref(db, 'staff_consumptions');
+
+    const listener = onValue(
+      staffRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const list: StaffConsumption[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          list.sort((a, b) => (b.date > a.date ? 1 : -1));
+          onData(list);
+        } else {
+          onData([]);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de staff_consumptions:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(staffRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a staff_consumptions:', err);
+    return null;
+  }
+};
+
+export const syncStaffConsumptionToFirestore = async (consumption: StaffConsumption): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, set } = await import('firebase/database');
+    const clean = sanitizeForFirebase(consumption);
+    await set(ref(db, `staff_consumptions/${consumption.id}`), clean);
+  } catch (err) {
+    console.error(`Error guardando staff_consumption ${consumption.id} en Firebase:`, err);
+  }
+};
+
+export const deleteStaffConsumptionFromFirebase = async (id: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, `staff_consumptions/${id}`));
+  } catch (err) {
+    console.error(`Error eliminando staff_consumption ${id} en Firebase:`, err);
+  }
+};
+
+export const subscribeToStaffSettlements = async (
+  onData: (settlements: StaffSettlement[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const settlementsRef = ref(db, 'staff_settlements');
+
+    const listener = onValue(
+      settlementsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const list: StaffSettlement[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          list.sort((a, b) => (b.paymentDate > a.paymentDate ? 1 : -1));
+          onData(list);
+        } else {
+          onData([]);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de staff_settlements:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(settlementsRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a staff_settlements:', err);
+    return null;
+  }
+};
+
+export const syncStaffSettlementToFirestore = async (settlement: StaffSettlement): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, set } = await import('firebase/database');
+    const clean = sanitizeForFirebase(settlement);
+    await set(ref(db, `staff_settlements/${settlement.id}`), clean);
+  } catch (err) {
+    console.error(`Error guardando staff_settlement ${settlement.id} en Firebase:`, err);
   }
 };

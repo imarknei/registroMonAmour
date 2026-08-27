@@ -23,6 +23,8 @@ import {
   ShieldAlert,
   Receipt,
   MinusCircle,
+  Coffee,
+  Coins,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
@@ -33,6 +35,7 @@ interface NavbarProps {
   setCurrentView: (view: AdminViewType) => void;
   onOpenShiftCloseModal: () => void;
   onOpenExpenseModal: () => void;
+  onOpenStaffConsumptionModal: () => void;
   onOpenAdminLogin: () => void;
   onLockAdmin: () => void;
   isAdminAuthenticated: boolean;
@@ -43,6 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setCurrentView,
   onOpenShiftCloseModal,
   onOpenExpenseModal,
+  onOpenStaffConsumptionModal,
   onOpenAdminLogin,
   onLockAdmin,
   isAdminAuthenticated,
@@ -192,6 +196,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action Tools: Expense Modal, Sound Toggle, Shift Close & User Dropdown */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* BOTÓN CONSUMO DEL PERSONAL */}
+            <button
+              onClick={onOpenStaffConsumptionModal}
+              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold bg-rose-50 hover:bg-rose-100 text-brand-800 border border-rose-200 shadow-xs active:scale-95 transition-all flex items-center gap-1.5"
+              title="Registrar consumo de minibar tomado por el personal (para descontar en pago semanal)"
+            >
+              <Coffee className="w-3.5 h-3.5 text-brand-600" />
+              <span className="hidden sm:inline">Consumo Personal</span>
+              <span className="sm:hidden">Consumo</span>
+            </button>
+
             {/* BOTÓN HACER PAGOS / SALIDA DE CAJA */}
             {currentUser.role !== 'admin' && (
               <button

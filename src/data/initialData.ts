@@ -392,3 +392,38 @@ export const SYSTEM_USERS: User[] = [
     avatarColor: 'bg-rose-700',
   },
 ];
+
+export const INITIAL_STAFF_MEMBERS: import('../types').StaffMember[] = [
+  {
+    id: 'user-recep-dia',
+    name: 'Recepcionista Día',
+    role: 'recepcionista',
+    shiftName: 'Turno Día (08:00 - 20:00)',
+    defaultWeeklySalary: 700,
+    active: true,
+  },
+  {
+    id: 'user-recep-noche',
+    name: 'Recepcionista Noche',
+    role: 'recepcionista',
+    shiftName: 'Turno Noche (20:00 - 08:00)',
+    defaultWeeklySalary: 700,
+    active: true,
+  },
+  {
+    id: 'staff-limpieza-1',
+    name: 'Personal de Limpieza (Sra. Carmen)',
+    role: 'limpieza',
+    shiftName: 'Limpieza y Desinfección',
+    defaultWeeklySalary: 500,
+    active: true,
+  },
+  {
+    id: 'staff-mantenimiento',
+    name: 'Personal de Mantenimiento',
+    role: 'mantenimiento',
+    shiftName: 'Mantenimiento General',
+    defaultWeeklySalary: 600,
+    active: true,
+  },
+];
