@@ -362,7 +362,7 @@ export const TariffManager: React.FC = () => {
                 Tarifa Especial: Promoción 3 Horas
               </h3>
               <p className="text-xs text-slate-500">
-                Precio de promoción general disponible en la pantalla de registro para todas las habitaciones elegibles.
+                Precio de promoción general disponible en la pantalla de registro para todas las habitaciones del motel (Ventilador, Aire, Suite, Jacuzzi y Golden Suite).
               </p>
             </div>
           </div>

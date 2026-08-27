@@ -132,12 +132,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     });
   }
 
-  // Add Promo 3h if configured (para habitaciones distintas de ventilador y suite)
-  if (tariffs?.promo3hPrice && room.type !== 'ventilador' && room.type !== 'suite') {
+  // Add Promo 3h if configured (disponible en TODAS las habitaciones)
+  if (tariffs?.promo3hPrice) {
     planOptions.push({
       key: 'promo3h',
       title: 'Promo 3 Horas',
-      subtitle: 'Tarifa Promo Especial (180 min)',
+      subtitle: `Tarifa Especial Promoción (${tariffs.promo3hPrice} Bs - 180 min)`,
       durationMinutes: 180,
       price: tariffs.promo3hPrice,
       icon: <Sparkles className="w-4 h-4 text-amber-500" />,
