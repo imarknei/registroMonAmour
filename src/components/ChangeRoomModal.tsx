@@ -53,7 +53,12 @@ export const ChangeRoomModal: React.FC<ChangeRoomModalProps> = ({
   const stay = sourceRoom.currentStay;
   const sourceBadge = getRoomTypeBadge(sourceRoom.type);
   const extraRate = tariffs[sourceRoom.type]?.extraHourPrice || 30;
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
+  const priceNight = tariffs[sourceRoom.type]?.priceNight || (sourceRoom.type === 'ventilador' ? 140 : sourceRoom.type === 'aire' ? 150 : sourceRoom.type === 'suite' ? 180 : sourceRoom.type === 'jacuzzi' ? 220 : 230);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, Date.now(), {
+    priceNight,
+    baseRoomPrice: stay.baseRoomPrice,
+    chosenPlan: stay.chosenPlan,
+  });
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
 
   // Filter available target rooms (must be disponible and different from source)

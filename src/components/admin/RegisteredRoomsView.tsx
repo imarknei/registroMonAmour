@@ -166,7 +166,12 @@ export const RegisteredRoomsView: React.FC = () => {
       if (s.status === 'completed') completedRoomsCount++;
 
       const extraRate = tariffs[s.roomType]?.extraHourPrice || (s.roomType === 'jacuzzi' || s.roomType === 'golden_suite' ? 40 : 30);
-      const timeCalc = calculateStayTime(s.startTime, s.chosenDurationMinutes, extraRate, Date.now());
+      const priceNight = tariffs[s.roomType]?.priceNight || (s.roomType === 'ventilador' ? 140 : s.roomType === 'aire' ? 150 : s.roomType === 'suite' ? 180 : s.roomType === 'jacuzzi' ? 220 : 230);
+      const timeCalc = calculateStayTime(s.startTime, s.chosenDurationMinutes, extraRate, Date.now(), {
+        priceNight,
+        baseRoomPrice: s.baseRoomPrice,
+        chosenPlan: s.chosenPlan,
+      });
       const consSum = s.consumptions ? s.consumptions.reduce((sum, c) => sum + c.subtotal, 0) : 0;
       const stayOvertime = s.overtimeCharge !== undefined ? s.overtimeCharge : timeCalc.overtimeCharge;
 
@@ -549,7 +554,12 @@ export const RegisteredRoomsView: React.FC = () => {
             const isCancelled = stay.status === 'cancelled';
             const isActive = stay.status === 'active';
             const extraRate = tariffs[stay.roomType]?.extraHourPrice || (stay.roomType === 'jacuzzi' || stay.roomType === 'golden_suite' ? 40 : 30);
-            const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, Date.now());
+            const priceNight = tariffs[stay.roomType]?.priceNight || (stay.roomType === 'ventilador' ? 140 : stay.roomType === 'aire' ? 150 : stay.roomType === 'suite' ? 180 : stay.roomType === 'jacuzzi' ? 220 : 230);
+            const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, Date.now(), {
+              priceNight,
+              baseRoomPrice: stay.baseRoomPrice,
+              chosenPlan: stay.chosenPlan,
+            });
             const consumptionsTotal = stay.consumptions ? stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0) : 0;
             const stayOvertime = stay.overtimeCharge !== undefined ? stay.overtimeCharge : timeCalc.overtimeCharge;
             const totalDue = stay.totalAmount || (stay.baseRoomPrice + consumptionsTotal + stayOvertime);

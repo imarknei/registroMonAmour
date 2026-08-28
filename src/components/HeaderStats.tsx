@@ -16,7 +16,12 @@ export const HeaderStats: React.FC = () => {
   const overtimeRooms = rooms.filter((r) => {
     if (r.status === 'ocupada' && r.currentStay) {
       const extraRate = tariffs[r.type]?.extraHourPrice || 30;
-      const calc = calculateStayTime(r.currentStay.startTime, r.currentStay.chosenDurationMinutes, extraRate, nowTimestamp);
+      const priceNight = tariffs[r.type]?.priceNight || (r.type === 'ventilador' ? 140 : r.type === 'aire' ? 150 : r.type === 'suite' ? 180 : r.type === 'jacuzzi' ? 220 : 230);
+      const calc = calculateStayTime(r.currentStay.startTime, r.currentStay.chosenDurationMinutes, extraRate, nowTimestamp, {
+        priceNight,
+        baseRoomPrice: r.currentStay.baseRoomPrice,
+        chosenPlan: r.currentStay.chosenPlan,
+      });
       return calc.isOvertime;
     }
     return false;

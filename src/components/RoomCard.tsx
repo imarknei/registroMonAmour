@@ -192,7 +192,12 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   }
 
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now());
+  const priceNight = roomTariff?.priceNight || (room.type === 'ventilador' ? 140 : room.type === 'aire' ? 150 : room.type === 'suite' ? 180 : room.type === 'jacuzzi' ? 220 : 230);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now(), {
+    priceNight,
+    baseRoomPrice: stay.baseRoomPrice,
+    chosenPlan: stay.chosenPlan,
+  });
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
   const currentTotalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
   const isPrepaid = stay.isPrepaid || false;
@@ -202,7 +207,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   return (
     <div
       className={`rounded-2xl border-2 p-5 shadow-md flex flex-col justify-between relative overflow-hidden transition-all ${
-        timeCalc.isOvertime
+        timeCalc.autoNightConverted && !timeCalc.isOvertime
+          ? 'bg-gradient-to-br from-indigo-50/90 via-purple-50/70 to-slate-50 border-indigo-300 shadow-indigo-500/10'
+          : timeCalc.isOvertime
           ? 'bg-rose-50/90 border-brand-500 shadow-brand-500/15'
           : timeCalc.isWarning
           ? 'bg-amber-50/90 border-amber-400'
@@ -225,7 +232,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           <div className="flex flex-col items-end gap-1">
             <span
               className={`inline-flex items-center gap-1 text-xs font-extrabold px-2.5 py-1 rounded-full border ${
-                timeCalc.isOvertime
+                timeCalc.autoNightConverted && !timeCalc.isOvertime
+                  ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                  : timeCalc.isOvertime
                   ? timeCalc.gracePeriodActive
                     ? 'bg-amber-500 text-white border-amber-600'
                     : 'bg-brand-600 text-white border-brand-700 animate-pulse'
@@ -234,7 +243,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
                   : 'bg-brand-50 text-brand-700 border-brand-200'
               }`}
             >
-              {timeCalc.isOvertime
+              {timeCalc.autoNightConverted && !timeCalc.isOvertime
+                ? '🌙 Noche 12h (Auto)'
+                : timeCalc.isOvertime
                 ? timeCalc.gracePeriodActive
                   ? 'En Espera (10 min)'
                   : `¡Tiempo Extra (+${formatBs(timeCalc.overtimeCharge)})!`
@@ -259,7 +270,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         {/* Live Timer Display */}
         <div
           className={`rounded-2xl p-3.5 mb-3 border text-center relative overflow-hidden ${
-            timeCalc.isOvertime
+            timeCalc.autoNightConverted && !timeCalc.isOvertime
+              ? 'bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 text-white border-indigo-900'
+              : timeCalc.isOvertime
               ? timeCalc.gracePeriodActive
                 ? 'bg-amber-600 text-white border-amber-700'
                 : 'bg-brand-600 text-white border-brand-700'
@@ -270,7 +283,13 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         >
           <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-widest opacity-90 mb-0.5">
             <Clock className="w-3.5 h-3.5" />
-            {timeCalc.isOvertime ? (timeCalc.gracePeriodActive ? 'Cronómetro de Espera' : 'Cronómetro Excedido') : 'Tiempo Restante'}
+            {timeCalc.autoNightConverted && !timeCalc.isOvertime
+              ? 'Tiempo Restante Noche (12h)'
+              : timeCalc.isOvertime
+              ? timeCalc.gracePeriodActive
+                ? 'Cronómetro de Espera'
+                : 'Cronómetro Excedido'
+              : 'Tiempo Restante'}
           </div>
 
           <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-tight my-0.5">
@@ -279,8 +298,12 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               : formatTimerDisplay(timeCalc.remainingMinutes, timeCalc.remainingSeconds)}
           </div>
 
-          {/* Overtime penalty charge badge */}
-          {timeCalc.isOvertime && (
+          {/* Overtime penalty charge badge OR Auto-night badge */}
+          {timeCalc.autoNightConverted ? (
+            <div className="mt-1.5 inline-block bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 text-[11px] font-extrabold px-3 py-0.5 rounded-full">
+              Tarifa Noche: {formatBs(stay.baseRoomPrice + timeCalc.overtimeCharge)} (Cubre 12h)
+            </div>
+          ) : timeCalc.isOvertime ? (
             <div className="mt-1.5 inline-block bg-white text-brand-700 text-xs font-black px-3 py-1 rounded-full shadow-sm">
               {timeCalc.gracePeriodActive ? (
                 'Espera / Tolerancia (10 min) • 0 Bs'
@@ -288,14 +311,18 @@ export const RoomCard: React.FC<RoomCardProps> = ({
                 `+${formatBs(timeCalc.overtimeCharge)} Extra (${timeCalc.extraBlocksCount} x 20 min)`
               )}
             </div>
-          )}
+          ) : null}
 
           {/* Progress bar for normal countdown */}
           {!timeCalc.isOvertime && (
             <div className="w-full bg-white/20 rounded-full h-1.5 mt-2 overflow-hidden">
               <div
                 className={`h-full transition-all duration-1000 ${
-                  timeCalc.isWarning ? 'bg-amber-200' : 'bg-emerald-400'
+                  timeCalc.autoNightConverted
+                    ? 'bg-indigo-400'
+                    : timeCalc.isWarning
+                    ? 'bg-amber-200'
+                    : 'bg-emerald-400'
                 }`}
                 style={{ width: `${Math.max(5, 100 - timeCalc.percentElapsed)}%` }}
               />
@@ -310,9 +337,13 @@ export const RoomCard: React.FC<RoomCardProps> = ({
             <strong className="font-semibold text-slate-800">{formatTimeOnly(stay.startTime)}</strong>
           </div>
           <div className="flex justify-between text-slate-600">
-            <span>Plan Elegido:</span>
+            <span>Plan:</span>
             <span className="font-bold text-slate-800 uppercase">
-              {stay.chosenPlan} ({formatBs(stay.baseRoomPrice)})
+              {timeCalc.autoNightConverted ? (
+                <span className="text-indigo-700 font-extrabold">{stay.chosenPlan} ➔ NOCHE (12h)</span>
+              ) : (
+                `${stay.chosenPlan} (${formatBs(stay.baseRoomPrice)})`
+              )}
             </span>
           </div>
 

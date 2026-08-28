@@ -420,11 +420,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rooms.forEach((room) => {
           if (room.status === 'ocupada' && room.currentStay) {
             const extraRate = tariffs[room.type]?.extraHourPrice || 30;
+            const priceNight = tariffs[room.type]?.priceNight || 140;
             const timeCalc = calculateStayTime(
               room.currentStay.startTime,
               room.currentStay.chosenDurationMinutes,
               extraRate,
-              now
+              now,
+              {
+                priceNight,
+                baseRoomPrice: room.currentStay.baseRoomPrice,
+                chosenPlan: room.currentStay.chosenPlan,
+              }
             );
 
             if (timeCalc.remainingMinutes === 5 && timeCalc.remainingSeconds === 0) {
@@ -1110,7 +1116,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const stay = room.currentStay;
     const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-    const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate);
+    const priceNight = tariffs[room.type]?.priceNight || (room.type === 'ventilador' ? 140 : room.type === 'aire' ? 150 : room.type === 'suite' ? 180 : room.type === 'jacuzzi' ? 220 : 230);
+    const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, Date.now(), {
+      priceNight,
+      baseRoomPrice: stay.baseRoomPrice,
+      chosenPlan: stay.chosenPlan,
+    });
     const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
     const paidConsumptionsCash = stay.consumptions
       .filter((item) => item.isPaid && item.paymentMethod === 'efectivo')

@@ -7,48 +7,209 @@ export interface OvertimeCalculation {
   extraBlockRate: number; // Tarifa por fracción de 20 min (10 Bs)
   extraHoursCount: number; // Para compatibilidad (fracciones de 20 min)
   extraHourRate: number; // Tarifa por fracción (10 Bs)
-  overtimeCharge: number; // 0 si está dentro de los 10 min de espera, o extraBlocksCount * 10 Bs
+  overtimeCharge: number; // Monto extra acumulado
   remainingMinutes: number;
   remainingSeconds: number;
   isWarning: boolean; // Menos de 10 minutos restantes
   percentElapsed: number;
+  // Regla de Conversión Automática a Noche Completa (12 horas):
+  autoNightConverted: boolean; // True si superó las 3 horas (180 min) y pasó automáticamente a tarifa de noche
+  nightPriceApplied?: number; // Precio de noche de la habitación
+  totalElapsedMinutes: number; // Minutos totales transcurridos desde que ingresó
+  effectiveDurationMinutes: number; // Minutos totales asignados (ej. 60, 120 o 720)
 }
 
 /**
- * Regla de Control de Tiempo y Recargos Motel Mon Amour:
- * - Cuenta regresiva hasta 0.
- * - Al llegar a 0, arranca el cronómetro de tiempo excedido.
- * - Durante los primeros 10 minutos de espera (0 a 10 min): 0 Bs (tolerancia gratuita de espera).
- * - A partir del minuto 11: cobra 10 Bs por cada 20 minutos de tiempo excedido:
- *   - Minutos 11 a 20: 10 Bs (1er bloque de 20 min)
- *   - Minutos 21 a 40: 20 Bs (2do bloque de 20 min)
- *   - Minutos 41 a 60: 30 Bs (3er bloque de 20 min)
- *   - Minutos 61 a 80: 40 Bs (4to bloque de 20 min)
- *   - etc., sucesivamente a 10 Bs por cada 20 minutos hasta la salida.
+ * Regla de Control de Tiempo y Tarifas Motel Mon Amour:
+ * 1. La primera hora / tiempo inicial transcurre normalmente.
+ * 2. Si el huésped se queda más tiempo (hora 2 y hora 3 hasta 180 min):
+ *    - 10 minutos de tolerancia gratuita de espera.
+ *    - A partir del minuto 11: se suma 10 Bs por cada 20 minutos de tiempo excedido.
+ * 3. PASANDO LAS 3 HORAS (minuto 181 en adelante):
+ *    - AUTOMÁTICAMENTE pasa a precio por NOCHE de 12 horas (720 min).
+ *    - El costo de la habitación se fija al precio de noche de esa habitación.
+ *    - El huésped recibe las 12 horas completas de permanencia y el cronómetro/temporizador
+ *      cuenta el tiempo restante hasta completar las 12 horas.
+ * 4. Si supera las 12 horas (720 min), aplican horas extras sobre la tarifa de noche.
  */
 export function calculateStayTime(
   startTimeIso: string,
   durationMinutes: number,
   extraHourPrice: number = 30,
-  nowMs?: number
+  nowMs?: number,
+  options?: {
+    priceNight?: number;
+    baseRoomPrice?: number;
+    chosenPlan?: string;
+  }
 ): OvertimeCalculation {
   const start = new Date(startTimeIso).getTime();
   const now = nowMs || Date.now();
   const elapsedMs = Math.max(0, now - start);
-  const totalAllocatedMs = durationMinutes * 60 * 1000;
-  
-  const diffMs = totalAllocatedMs - elapsedMs;
-  const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
+  const totalElapsedMinutes = Math.floor(elapsedMs / (60 * 1000));
 
-  if (diffMs >= 0) {
-    // Aún dentro del tiempo pagado normal
-    const totalRemainingSec = Math.floor(diffMs / 1000);
+  const isAlreadyNightPlan = options?.chosenPlan === 'noche' || durationMinutes >= 720;
+  const priceNight = options?.priceNight || 140;
+  const baseRoomPrice = options?.baseRoomPrice !== undefined ? options.baseRoomPrice : 45;
+
+  // CASO 1: Ya era un plan de noche de 12 horas contratado desde el inicio
+  if (isAlreadyNightPlan) {
+    const totalAllocatedMs = 720 * 60 * 1000;
+    const diffMs = totalAllocatedMs - elapsedMs;
+    const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
+
+    if (diffMs >= 0) {
+      const totalRemainingSec = Math.floor(diffMs / 1000);
+      const remainingMinutes = Math.floor(totalRemainingSec / 60);
+      const remainingSeconds = totalRemainingSec % 60;
+      return {
+        isOvertime: false,
+        overtimeMinutes: 0,
+        overtimeSeconds: 0,
+        gracePeriodActive: false,
+        extraBlocksCount: 0,
+        extraBlockRate: 10,
+        extraHoursCount: 0,
+        extraHourRate: 10,
+        overtimeCharge: 0,
+        remainingMinutes,
+        remainingSeconds,
+        isWarning: remainingMinutes < 10,
+        percentElapsed,
+        autoNightConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: 720,
+      };
+    } else {
+      const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
+      const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
+      const overtimeSeconds = totalOvertimeSec % 60;
+
+      let overtimeCharge = 0;
+      let gracePeriodActive = false;
+      let extraBlocksCount = 0;
+
+      if (overtimeMinutes <= 10) {
+        gracePeriodActive = true;
+        extraBlocksCount = 0;
+        overtimeCharge = 0;
+      } else {
+        gracePeriodActive = false;
+        extraBlocksCount = Math.ceil(overtimeMinutes / 20);
+        overtimeCharge = extraBlocksCount * 10;
+      }
+
+      return {
+        isOvertime: true,
+        overtimeMinutes,
+        overtimeSeconds,
+        gracePeriodActive,
+        extraBlocksCount,
+        extraBlockRate: 10,
+        extraHoursCount: extraBlocksCount,
+        extraHourRate: 10,
+        overtimeCharge,
+        remainingMinutes: 0,
+        remainingSeconds: 0,
+        isWarning: false,
+        percentElapsed: 100,
+        autoNightConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: 720,
+      };
+    }
+  }
+
+  // CASO 2: Empezó por horas (1h, 2h, 3h, etc.)
+  // Si lleva hasta 3 horas (<= 180 min):
+  if (totalElapsedMinutes <= 180) {
+    const totalAllocatedMs = durationMinutes * 60 * 1000;
+    const diffMs = totalAllocatedMs - elapsedMs;
+    const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
+
+    if (diffMs >= 0) {
+      // Dentro de su tiempo inicial
+      const totalRemainingSec = Math.floor(diffMs / 1000);
+      const remainingMinutes = Math.floor(totalRemainingSec / 60);
+      const remainingSeconds = totalRemainingSec % 60;
+      return {
+        isOvertime: false,
+        overtimeMinutes: 0,
+        overtimeSeconds: 0,
+        gracePeriodActive: false,
+        extraBlocksCount: 0,
+        extraBlockRate: 10,
+        extraHoursCount: 0,
+        extraHourRate: 10,
+        overtimeCharge: 0,
+        remainingMinutes,
+        remainingSeconds,
+        isWarning: remainingMinutes < 10,
+        percentElapsed,
+        autoNightConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: durationMinutes,
+      };
+    } else {
+      // Entre su duración y las 3 horas: Horas extras
+      const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
+      const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
+      const overtimeSeconds = totalOvertimeSec % 60;
+
+      let overtimeCharge = 0;
+      let gracePeriodActive = false;
+      let extraBlocksCount = 0;
+
+      if (overtimeMinutes <= 10) {
+        gracePeriodActive = true;
+        extraBlocksCount = 0;
+        overtimeCharge = 0;
+      } else {
+        gracePeriodActive = false;
+        extraBlocksCount = Math.ceil(overtimeMinutes / 20);
+        const rawOvertimeCharge = extraBlocksCount * 10;
+        const maxNightDifference = Math.max(0, priceNight - baseRoomPrice);
+        overtimeCharge = Math.min(rawOvertimeCharge, maxNightDifference);
+      }
+
+      return {
+        isOvertime: true,
+        overtimeMinutes,
+        overtimeSeconds,
+        gracePeriodActive,
+        extraBlocksCount,
+        extraBlockRate: 10,
+        extraHoursCount: extraBlocksCount,
+        extraHourRate: 10,
+        overtimeCharge,
+        remainingMinutes: 0,
+        remainingSeconds: 0,
+        isWarning: false,
+        percentElapsed: 100,
+        autoNightConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: durationMinutes,
+      };
+    }
+  }
+
+  // CASO 3: PASÓ LAS 3 HORAS (> 180 min)
+  // CONVERSIÓN AUTOMÁTICA A TARIFA DE NOCHE (12 HORAS / 720 MINUTOS)
+  const totalNightAllocatedMs = 720 * 60 * 1000;
+  const nightDiffMs = totalNightAllocatedMs - elapsedMs;
+  const percentElapsed = Math.min(100, (elapsedMs / totalNightAllocatedMs) * 100);
+
+  // Recargo de ajuste para que Tarifa Base + Recargo = Precio de Noche
+  const nightConversionCharge = Math.max(0, priceNight - baseRoomPrice);
+
+  if (nightDiffMs >= 0) {
+    // Está entre la hora 3 y la hora 12: ¡Tiene derecho a las 12 horas completas de noche!
+    const totalRemainingSec = Math.floor(nightDiffMs / 1000);
     const remainingMinutes = Math.floor(totalRemainingSec / 60);
     const remainingSeconds = totalRemainingSec % 60;
-    const isWarning = remainingMinutes < 10;
 
     return {
-      isOvertime: false,
+      isOvertime: false, // Ahora está cubierto dentro de sus 12 horas de noche
       overtimeMinutes: 0,
       overtimeSeconds: 0,
       gracePeriodActive: false,
@@ -56,37 +217,34 @@ export function calculateStayTime(
       extraBlockRate: 10,
       extraHoursCount: 0,
       extraHourRate: 10,
-      overtimeCharge: 0,
+      overtimeCharge: nightConversionCharge,
       remainingMinutes,
       remainingSeconds,
-      isWarning,
+      isWarning: remainingMinutes < 10,
       percentElapsed,
+      autoNightConverted: true,
+      nightPriceApplied: priceNight,
+      totalElapsedMinutes,
+      effectiveDurationMinutes: 720,
     };
   } else {
-    // Tiempo excedido (Cronómetro activo)
-    const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
+    // Superó incluso las 12 horas completas:
+    const totalOvertimeSec = Math.floor(Math.abs(nightDiffMs) / 1000);
     const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
     const overtimeSeconds = totalOvertimeSec % 60;
 
-    let overtimeCharge = 0;
+    let extraAfterNight = 0;
     let gracePeriodActive = false;
     let extraBlocksCount = 0;
 
-    // Regla de 10 minutos de espera gratuita:
     if (overtimeMinutes <= 10) {
-      // De 0 a 10 minutos de espera: NO COBRA NADA (0 Bs)
       gracePeriodActive = true;
       extraBlocksCount = 0;
-      overtimeCharge = 0;
+      extraAfterNight = 0;
     } else {
-      // Minuto 11 en adelante: Cobra 10 Bs por cada 20 minutos de cronómetro
-      // Minutos 11 a 20: 1 bloque -> 10 Bs
-      // Minutos 21 a 40: 2 bloques -> 20 Bs
-      // Minutos 41 a 60: 3 bloques -> 30 Bs
-      // Minutos 61 a 80: 4 bloques -> 40 Bs
       gracePeriodActive = false;
       extraBlocksCount = Math.ceil(overtimeMinutes / 20);
-      overtimeCharge = extraBlocksCount * 10;
+      extraAfterNight = extraBlocksCount * 10;
     }
 
     return {
@@ -98,11 +256,15 @@ export function calculateStayTime(
       extraBlockRate: 10,
       extraHoursCount: extraBlocksCount,
       extraHourRate: 10,
-      overtimeCharge,
+      overtimeCharge: nightConversionCharge + extraAfterNight,
       remainingMinutes: 0,
       remainingSeconds: 0,
       isWarning: false,
       percentElapsed: 100,
+      autoNightConverted: true,
+      nightPriceApplied: priceNight,
+      totalElapsedMinutes,
+      effectiveDurationMinutes: 720,
     };
   }
 }

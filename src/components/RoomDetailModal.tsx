@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Room, Product, PaymentMethod, Stay, ConsumptionItem } from '../types';
 import { useApp } from '../context/AppContext';
-import { calculateStayTime, formatDateTime, formatTimeOnly } from '../utils/timeUtils';
+import { calculateStayTime, formatDateTime, formatTimeOnly, formatTimerDisplay } from '../utils/timeUtils';
 import { formatBs, getRoomTypeBadge, getPaymentMethodLabel } from '../utils/formatUtils';
 import {
   X,
@@ -68,7 +68,12 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   const stay = room.currentStay;
   const roomTariff = tariffs[room.type];
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now());
+  const priceNight = roomTariff?.priceNight || (room.type === 'ventilador' ? 140 : room.type === 'aire' ? 150 : room.type === 'suite' ? 180 : room.type === 'jacuzzi' ? 220 : 230);
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now(), {
+    priceNight,
+    baseRoomPrice: stay.baseRoomPrice,
+    chosenPlan: stay.chosenPlan,
+  });
 
   // Consumos desglosados (pagados en el momento vs pendientes)
   const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
@@ -313,6 +318,21 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           {/* TAB 1: COBRO & SALIDA */}
           {activeTab === 'checkout' && (
             <div className="space-y-4">
+              {/* Auto Night Conversion Notice */}
+              {timeCalc.autoNightConverted && (
+                <div className="p-4 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white rounded-2xl border border-indigo-400 shadow-md space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <strong className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                      Convertido Automáticamente a Noche Completa (12 Horas)
+                    </strong>
+                  </div>
+                  <p className="text-xs text-indigo-100 leading-relaxed">
+                    El huésped superó las 3 horas de permanencia. El sistema ajustó automáticamente la tarifa al <strong>Precio por Noche ({formatBs(timeCalc.nightPriceApplied || 140)})</strong>, otorgándole derecho a permanecer 12 horas completas ({formatTimerDisplay(timeCalc.remainingMinutes, timeCalc.remainingSeconds)} restantes).
+                  </p>
+                </div>
+              )}
+
               {/* Overtime Notice */}
               {timeCalc.isOvertime && (
                 <div
@@ -437,7 +457,9 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 {timeCalc.overtimeCharge > 0 && (
                   <div className="flex justify-between text-xs text-amber-300">
                     <span>
-                      Recargo Tiempo Extra (+{timeCalc.overtimeMinutes} min • {timeCalc.extraBlocksCount} x 20 min):
+                      {timeCalc.autoNightConverted
+                        ? `Ajuste Automático a Tarifa de Noche (12 Horas por superar 3h):`
+                        : `Recargo Tiempo Extra (+${timeCalc.overtimeMinutes} min • ${timeCalc.extraBlocksCount} x 20 min):`}
                     </span>
                     <span className="font-mono font-semibold">+{formatBs(timeCalc.overtimeCharge)}</span>
                   </div>
