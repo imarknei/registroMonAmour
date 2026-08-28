@@ -49,6 +49,13 @@ export function calculateStayTime(
   const totalElapsedMinutes = Math.floor(elapsedMs / (60 * 1000));
 
   const isAlreadyNightPlan = options?.chosenPlan === 'noche' || durationMinutes >= 720;
+  const isBonflixPlan =
+    options?.chosenPlan === 'bonflix_2h' ||
+    options?.chosenPlan === 'bonflix_4h' ||
+    options?.chosenPlan === 'bonflix_150' ||
+    options?.chosenPlan === 'bonflix_190' ||
+    Boolean(options?.chosenPlan?.toLowerCase().includes('bonflix'));
+
   const priceNight = options?.priceNight || 140;
   const baseRoomPrice = options?.baseRoomPrice !== undefined ? options.baseRoomPrice : 45;
 
@@ -116,6 +123,75 @@ export function calculateStayTime(
         autoNightConverted: false,
         totalElapsedMinutes,
         effectiveDurationMinutes: 720,
+      };
+    }
+  }
+
+  // CASO 2: PROMO BONFLIX (2h o 4h)
+  // No aplica pasar automáticamente al precio de noche. Se cobran 30 Bs adicionales por cada hora extra (+10 Bs c/20 min).
+  if (isBonflixPlan) {
+    const totalAllocatedMs = durationMinutes * 60 * 1000;
+    const diffMs = totalAllocatedMs - elapsedMs;
+    const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
+
+    if (diffMs >= 0) {
+      const totalRemainingSec = Math.floor(diffMs / 1000);
+      const remainingMinutes = Math.floor(totalRemainingSec / 60);
+      const remainingSeconds = totalRemainingSec % 60;
+      return {
+        isOvertime: false,
+        overtimeMinutes: 0,
+        overtimeSeconds: 0,
+        gracePeriodActive: false,
+        extraBlocksCount: 0,
+        extraBlockRate: 10,
+        extraHoursCount: 0,
+        extraHourRate: 10,
+        overtimeCharge: 0,
+        remainingMinutes,
+        remainingSeconds,
+        isWarning: remainingMinutes < 10,
+        percentElapsed,
+        autoNightConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: durationMinutes,
+      };
+    } else {
+      const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
+      const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
+      const overtimeSeconds = totalOvertimeSec % 60;
+
+      let overtimeCharge = 0;
+      let gracePeriodActive = false;
+      let extraBlocksCount = 0;
+
+      if (overtimeMinutes <= 10) {
+        gracePeriodActive = true;
+        extraBlocksCount = 0;
+        overtimeCharge = 0;
+      } else {
+        gracePeriodActive = false;
+        extraBlocksCount = Math.ceil(overtimeMinutes / 20);
+        overtimeCharge = extraBlocksCount * 10; // 10 Bs por cada 20 min = 30 Bs adicionales por cada hora
+      }
+
+      return {
+        isOvertime: true,
+        overtimeMinutes,
+        overtimeSeconds,
+        gracePeriodActive,
+        extraBlocksCount,
+        extraBlockRate: 10,
+        extraHoursCount: extraBlocksCount,
+        extraHourRate: 10,
+        overtimeCharge,
+        remainingMinutes: 0,
+        remainingSeconds: 0,
+        isWarning: false,
+        percentElapsed: 100,
+        autoNightConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: durationMinutes,
       };
     }
   }
