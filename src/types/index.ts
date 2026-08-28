@@ -258,6 +258,9 @@ export interface StaffConsumption {
   notes?: string;
   shiftId?: string;
   recordedBy: string; // Nombre de quien lo registró
+  isPaid?: boolean; // True si pagó al contado/en el acto, False si es a descontar de su semana
+  paymentType?: 'descuento_semanal' | 'pagado_ahora';
+  paymentMethod?: PaymentMethod; // 'efectivo', 'qr_vendis', 'qr_union'
   isSettled?: boolean; // True si ya fue descontado en una liquidación semanal
   settlementId?: string; // ID del pago semanal
   settledAt?: string;

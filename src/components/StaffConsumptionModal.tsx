@@ -17,6 +17,9 @@ import {
   MinusCircle,
   FileText,
   Calendar,
+  DollarSign,
+  QrCode,
+  Wallet,
 } from 'lucide-react';
 
 interface StaffConsumptionModalProps {
@@ -39,6 +42,8 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
     currentUser.role !== 'admin' ? currentUser.id : staffMembers[0]?.id || 'user-recep-dia'
   );
   const [customStaffName, setCustomStaffName] = useState<string>('');
+  const [paymentType, setPaymentType] = useState<'descuento_semanal' | 'pagado_ahora'>('descuento_semanal');
+  const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'qr_vendis' | 'qr_union'>('efectivo');
   const [searchProduct, setSearchProduct] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -129,6 +134,9 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
       staffName: effectiveStaffName,
       items,
       totalAmount: totalCartAmount,
+      isPaid: paymentType === 'pagado_ahora',
+      paymentType,
+      paymentMethod: paymentType === 'pagado_ahora' ? paymentMethod : undefined,
       notes: notes.trim() || undefined,
     });
 
@@ -136,6 +144,8 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
     setCart([]);
     setNotes('');
     setCustomStaffName('');
+    setPaymentType('descuento_semanal');
+    setPaymentMethod('efectivo');
   };
 
   return (
@@ -227,6 +237,106 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
             )}
           </div>
 
+          {/* Modalidad de Pago / Descuento */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+            <label className="block text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <DollarSign className="w-4 h-4 text-emerald-600" />
+              ¿Cómo se cancela este consumo? <span className="text-rose-500">*</span>
+            </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Opción 1: Descontar de su semana */}
+              <button
+                type="button"
+                onClick={() => setPaymentType('descuento_semanal')}
+                className={`p-3 rounded-2xl border-2 text-left transition-all ${
+                  paymentType === 'descuento_semanal'
+                    ? 'border-amber-500 bg-amber-50/90 text-amber-950 shadow-xs'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-black flex items-center gap-1.5 text-amber-900">
+                    ⏳ Descontar de su Semana
+                  </span>
+                  {paymentType === 'descuento_semanal' && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Se acumula en su cuenta para <strong>descontarle de su sueldo</strong> al final de la semana.
+                </p>
+              </button>
+
+              {/* Opción 2: Pagó en el acto */}
+              <button
+                type="button"
+                onClick={() => setPaymentType('pagado_ahora')}
+                className={`p-3 rounded-2xl border-2 text-left transition-all ${
+                  paymentType === 'pagado_ahora'
+                    ? 'border-emerald-600 bg-emerald-50/90 text-emerald-950 shadow-xs'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-black flex items-center gap-1.5 text-emerald-800">
+                    💵 Pagó en el Acto (Al Contado)
+                  </span>
+                  {paymentType === 'pagado_ahora' && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  El empleado <strong>pagó ahora mismo</strong>. Ingresa a la caja del turno activo y no se le descuenta de su sueldo.
+                </p>
+              </button>
+            </div>
+
+            {/* Sub-selector de método de pago si pagó ahora */}
+            {paymentType === 'pagado_ahora' && (
+              <div className="pt-2.5 border-t border-slate-200/80 animate-fade-in space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 block">
+                  Selecciona el método de pago recibido:
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('efectivo')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      paymentMethod === 'efectivo'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    💵 Efectivo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('qr_vendis')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      paymentMethod === 'qr_vendis'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    📱 QR Vendis
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('qr_union')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      paymentMethod === 'qr_union'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    🏦 QR B. Unión
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Selector de Productos */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
@@ -312,7 +422,7 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <ShoppingBag className="w-4 h-4 text-brand-600" />
-                Detalle del Consumo a Descontar ({cart.length} productos)
+                Detalle del Consumo ({cart.length} productos)
               </span>
               <span className="text-xs font-bold text-slate-500">
                 Empleado: <strong className="text-brand-800">{effectiveStaffName}</strong>
@@ -378,11 +488,19 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
             {/* Total */}
             <div className="p-3.5 bg-slate-900 text-white rounded-xl flex items-center justify-between">
               <div>
-                <span className="text-xs font-black uppercase tracking-wider text-rose-300 block">
-                  TOTAL A DESCONTAR EN PAGO SEMANAL:
+                <span
+                  className={`text-xs font-black uppercase tracking-wider block ${
+                    paymentType === 'pagado_ahora' ? 'text-emerald-300' : 'text-amber-300'
+                  }`}
+                >
+                  {paymentType === 'pagado_ahora'
+                    ? 'TOTAL COBRADO EN EL ACTO:'
+                    : 'TOTAL A DESCONTAR EN PAGO SEMANAL:'}
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Se descontará del sueldo de {effectiveStaffName}
+                  {paymentType === 'pagado_ahora'
+                    ? `Ingresa a caja del turno activo (${paymentMethod.toUpperCase()})`
+                    : `Se descontará del sueldo semanal de ${effectiveStaffName}`}
                 </span>
               </div>
               <span className="text-2xl font-black font-mono text-emerald-400">
@@ -418,10 +536,16 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
             <button
               type="submit"
               disabled={cart.length === 0}
-              className="w-1/2 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+              className={`w-1/2 py-2.5 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 ${
+                paymentType === 'pagado_ahora'
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-brand-600 hover:bg-brand-700'
+              }`}
             >
               <Check className="w-4 h-4" />
-              Registrar Consumo ({formatBs(totalCartAmount)})
+              {paymentType === 'pagado_ahora'
+                ? `Cobrar en el Acto (${formatBs(totalCartAmount)})`
+                : `Registrar p/ Descontar (${formatBs(totalCartAmount)})`}
             </button>
           </div>
         </form>

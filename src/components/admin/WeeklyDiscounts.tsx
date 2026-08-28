@@ -89,12 +89,12 @@ export const WeeklyDiscounts: React.FC = () => {
   // Shifts with shortage
   const shiftsWithShortage = staffShifts.filter((s) => (s.discountAmount || 0) > 0);
 
-  // Consumptions of selected staff that belong to this week or are unpaid
+  // Consumptions of selected staff that belong to this week or are unpaid (excluyendo los ya pagados en el acto)
   const staffUnsettledConsumptions = staffConsumptions.filter((c) => {
     const isStaff =
       c.staffId === selectedStaffId ||
       c.staffName?.toLowerCase().includes(currentStaff?.name.toLowerCase());
-    return isStaff && !c.isSettled;
+    return isStaff && !c.isSettled && !c.isPaid;
   });
 
   // Auto-initialize selected discounts checkboxes when staff or week changes
@@ -763,12 +763,18 @@ export const WeeklyDiscounts: React.FC = () => {
                       <td className="py-3.5 px-4 text-center">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            cons.isSettled
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-900'
+                            cons.isPaid
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : cons.isSettled
+                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                              : 'bg-amber-100 text-amber-900 border border-amber-200'
                           }`}
                         >
-                          {cons.isSettled ? '✓ Descontado en Pago' : '⏳ Pendiente de Descuento'}
+                          {cons.isPaid
+                            ? `✓ Pagado en el Acto (${getPaymentMethodLabel(cons.paymentMethod || 'efectivo')})`
+                            : cons.isSettled
+                            ? '✓ Descontado en Pago Semanal'
+                            : '⏳ Pendiente de Descuento'}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">

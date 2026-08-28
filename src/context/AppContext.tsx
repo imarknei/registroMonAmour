@@ -184,6 +184,9 @@ interface AppContextType {
       subtotal: number;
     }[];
     totalAmount: number;
+    isPaid?: boolean;
+    paymentType?: 'descuento_semanal' | 'pagado_ahora';
+    paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
     notes?: string;
   }) => StaffConsumption;
   removeStaffConsumption: (id: string, restoreInventory?: boolean) => void;
@@ -1415,6 +1418,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subtotal: number;
     }[];
     totalAmount: number;
+    isPaid?: boolean;
+    paymentType?: 'descuento_semanal' | 'pagado_ahora';
+    paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
     notes?: string;
   }): StaffConsumption => {
     const id = `staff-cons-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
@@ -1427,6 +1433,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subtotal: it.subtotal,
     }));
 
+    const isPaid = consumptionData.isPaid ?? (consumptionData.paymentType === 'pagado_ahora');
+    const paymentType = isPaid ? 'pagado_ahora' : 'descuento_semanal';
+    const paymentMethod = isPaid ? (consumptionData.paymentMethod || 'efectivo') : undefined;
+
     const newConsumption: StaffConsumption = {
       id,
       staffId: consumptionData.staffId,
@@ -1437,10 +1447,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: consumptionData.notes,
       shiftId: currentShift?.id,
       recordedBy: currentUser.name,
-      isSettled: false,
+      isPaid,
+      paymentType,
+      paymentMethod,
+      isSettled: isPaid ? true : false,
     };
 
-    // Descontar stock de inventario
+    if (isPaid && currentShift) {
+      let addCash = 0;
+      let addQrVendis = 0;
+      let addQrUnion = 0;
+      let addQr = 0;
+
+      if (paymentMethod === 'efectivo') {
+        addCash = consumptionData.totalAmount;
+      } else if (paymentMethod === 'qr_vendis') {
+        addQrVendis = consumptionData.totalAmount;
+        addQr = consumptionData.totalAmount;
+      } else if (paymentMethod === 'qr_union') {
+        addQrUnion = consumptionData.totalAmount;
+        addQr = consumptionData.totalAmount;
+      } else if (paymentMethod === 'qr') {
+        addQrVendis = consumptionData.totalAmount;
+        addQr = consumptionData.totalAmount;
+      }
+
+      const updatedShift: Shift = {
+        ...currentShift,
+        expectedCash: currentShift.expectedCash + addCash,
+        expectedQrVendis: (currentShift.expectedQrVendis || 0) + addQrVendis,
+        expectedQrUnion: (currentShift.expectedQrUnion || 0) + addQrUnion,
+        expectedQr: currentShift.expectedQr + addQr,
+        salesCount: (currentShift.salesCount || 0) + 1,
+      };
+      setShiftsHistory((prev) =>
+        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
+      );
+      syncShiftToFirestore(updatedShift);
+    }
+
     consumptionData.items.forEach((item) => {
       const prod = products.find((p) => p.id === item.productId);
       if (prod) {
@@ -1456,8 +1501,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     playAddConsumptionSound();
     showToast({
-      title: '¡Consumo de Personal Registrado!',
-      message: `Se registró ${formatBs(consumptionData.totalAmount)} para ${consumptionData.staffName}. Descontado de inventario.`,
+      title: isPaid ? '¡Consumo Pagado en el Acto!' : '¡Consumo a Descontar Registrado!',
+      message: isPaid
+        ? `Se cobró ${formatBs(consumptionData.totalAmount)} en ${getPaymentMethodLabel(paymentMethod || 'efectivo')} a ${consumptionData.staffName}. Ingresado a caja.`
+        : `Se registró ${formatBs(consumptionData.totalAmount)} para descontar del sueldo semanal de ${consumptionData.staffName}.`,
       type: 'success',
     });
 
@@ -1467,6 +1514,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeStaffConsumption = (id: string, restoreInventory = true) => {
     const cons = staffConsumptions.find((c) => c.id === id);
     if (!cons) return;
+
+    if (cons.isPaid && currentShift && cons.shiftId === currentShift.id) {
+      let subCash = 0;
+      let subQrVendis = 0;
+      let subQrUnion = 0;
+      let subQr = 0;
+
+      if (cons.paymentMethod === 'efectivo') {
+        subCash = cons.totalAmount;
+      } else if (cons.paymentMethod === 'qr_vendis') {
+        subQrVendis = cons.totalAmount;
+        subQr = cons.totalAmount;
+      } else if (cons.paymentMethod === 'qr_union') {
+        subQrUnion = cons.totalAmount;
+        subQr = cons.totalAmount;
+      } else if (cons.paymentMethod === 'qr') {
+        subQrVendis = cons.totalAmount;
+        subQr = cons.totalAmount;
+      }
+
+      const updatedShift: Shift = {
+        ...currentShift,
+        expectedCash: Math.max(0, currentShift.expectedCash - subCash),
+        expectedQrVendis: Math.max(0, (currentShift.expectedQrVendis || 0) - subQrVendis),
+        expectedQrUnion: Math.max(0, (currentShift.expectedQrUnion || 0) - subQrUnion),
+        expectedQr: Math.max(0, currentShift.expectedQr - subQr),
+        salesCount: Math.max(0, (currentShift.salesCount || 1) - 1),
+      };
+      setShiftsHistory((prev) =>
+        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
+      );
+      syncShiftToFirestore(updatedShift);
+    }
 
     if (restoreInventory) {
       cons.items.forEach((item) => {
@@ -1484,8 +1564,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteStaffConsumptionFromFirebase(id);
 
     showToast({
-      title: 'Consumo de Personal Eliminado',
-      message: `Se anuló el consumo y se repuso el stock.`,
+      title: 'Consumo Anulado',
+      message: `Se anuló el consumo de ${cons.staffName} y se repuso el stock.`,
       type: 'info',
     });
   };
