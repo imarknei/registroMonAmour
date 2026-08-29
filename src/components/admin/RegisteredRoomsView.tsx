@@ -561,10 +561,17 @@ export const RegisteredRoomsView: React.FC = () => {
               chosenPlan: stay.chosenPlan,
             });
             const consumptionsTotal = stay.consumptions ? stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0) : 0;
+            const paidConsumptionsTotal = stay.consumptions
+              ? stay.consumptions.filter((c) => c.isPaid).reduce((sum, c) => sum + c.subtotal, 0)
+              : 0;
+            const unpaidConsumptionsTotal = stay.consumptions
+              ? stay.consumptions.filter((c) => !c.isPaid).reduce((sum, c) => sum + c.subtotal, 0)
+              : 0;
             const stayOvertime = stay.overtimeCharge !== undefined ? stay.overtimeCharge : timeCalc.overtimeCharge;
             const totalDue = stay.totalAmount || (stay.baseRoomPrice + consumptionsTotal + stayOvertime);
             const prepaidAmt = stay.isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
-            const pendingBalance = Math.max(0, totalDue - prepaidAmt);
+            const totalAlreadyPaid = prepaidAmt + paidConsumptionsTotal;
+            const pendingBalance = Math.max(0, totalDue - totalAlreadyPaid);
             const badge = getRoomTypeBadge(stay.roomType);
 
             return (
@@ -588,37 +595,40 @@ export const RegisteredRoomsView: React.FC = () => {
                       {isCancelled ? (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white flex items-center gap-1">
                           <Ban className="w-3 h-3" />
-                          ANULADA
+                          ANULADO POR ADMIN
                         </span>
                       ) : isActive ? (
-                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          En Curso
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                          En curso (Activa)
                         </span>
                       ) : (
-                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-slate-400" />
                           Completada
                         </span>
                       )}
                     </div>
-                    <h3 className={`text-lg font-black tracking-tight ${isCancelled ? 'text-rose-900 line-through' : 'text-slate-900'}`}>
-                      {stay.roomName}
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <span>{stay.roomName}</span>
+                      <span className="text-xs font-normal text-slate-400">({stay.id})</span>
                     </h3>
                   </div>
 
-                  <div className="text-right">
-                    <span className={`text-lg font-extrabold font-mono block ${isCancelled ? 'text-rose-700' : 'text-brand-700'}`}>
-                      {formatBs(totalDue)}
-                    </span>
-                    {stay.isPrepaid ? (
+                  <div>
+                    {stay.isPrepaid || paidConsumptionsTotal > 0 ? (
                       <div className="space-y-0.5 text-right">
-                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Adelanto: {formatBs(prepaidAmt)}
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 inline-block">
+                          ✓ Pagado: {formatBs(totalAlreadyPaid)}
                         </span>
                         {isActive && pendingBalance > 0 && (
                           <span className="text-[9px] font-black text-rose-600 block">
                             Saldo x cobrar: {formatBs(pendingBalance)}
+                          </span>
+                        )}
+                        {isActive && pendingBalance === 0 && (
+                          <span className="text-[9px] font-black text-emerald-600 block">
+                            ✓ Cuenta Liquidada (0 Bs)
                           </span>
                         )}
                       </div>

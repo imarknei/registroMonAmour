@@ -199,10 +199,18 @@ export const RoomCard: React.FC<RoomCardProps> = ({
     chosenPlan: stay.chosenPlan,
   });
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
+  const paidConsumptionsTotal = stay.consumptions
+    .filter((c) => c.isPaid)
+    .reduce((sum, c) => sum + c.subtotal, 0);
+  const unpaidConsumptionsTotal = stay.consumptions
+    .filter((c) => !c.isPaid)
+    .reduce((sum, c) => sum + c.subtotal, 0);
+
   const currentTotalAmount = stay.baseRoomPrice + timeCalc.overtimeCharge + consumptionsTotal;
   const isPrepaid = stay.isPrepaid || false;
   const prepaidAmt = isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
-  const pendingBalance = Math.max(0, currentTotalAmount - prepaidAmt);
+  const totalAlreadyPaid = prepaidAmt + paidConsumptionsTotal;
+  const pendingBalance = Math.max(0, currentTotalAmount - totalAlreadyPaid);
 
   return (
     <div
@@ -254,10 +262,10 @@ export const RoomCard: React.FC<RoomCardProps> = ({
                 : 'Ocupada'}
             </span>
 
-            {isPrepaid ? (
+            {isPrepaid || paidConsumptionsTotal > 0 ? (
               <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-0.5">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                Pagado: {formatBs(prepaidAmt)}
+                {pendingBalance === 0 ? `Pagado: ${formatBs(totalAlreadyPaid)}` : `Abonado: ${formatBs(totalAlreadyPaid)}`}
               </span>
             ) : (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
@@ -365,7 +373,14 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               <ShoppingBag className="w-3.5 h-3.5 text-brand-600" />
               Consumos ({stay.consumptions.length}):
             </span>
-            <strong className="font-bold text-slate-800">{formatBs(consumptionsTotal)}</strong>
+            <div className="text-right">
+              <strong className="font-bold text-slate-800">{formatBs(consumptionsTotal)}</strong>
+              {paidConsumptionsTotal > 0 && (
+                <span className="block text-[10px] text-emerald-700 font-bold">
+                  ({formatBs(paidConsumptionsTotal)} pagado en el acto)
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Balance breakdown */}
@@ -382,10 +397,23 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               </div>
             )}
 
-            <div className="flex justify-between items-center font-bold text-brand-700 text-sm pt-0.5">
-              <span>{isPrepaid ? 'Saldo Pendiente:' : 'Total a Cobrar:'}</span>
-              <span className="font-mono text-base font-extrabold text-brand-700">
-                {formatBs(pendingBalance)}
+            {paidConsumptionsTotal > 0 && (
+              <div className="flex justify-between text-[11px] text-emerald-700 font-semibold">
+                <span>Consumos Pagados en el Acto:</span>
+                <span className="font-mono">-{formatBs(paidConsumptionsTotal)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center font-bold text-sm pt-0.5">
+              <span className={pendingBalance === 0 ? 'text-emerald-700 font-black' : 'text-brand-700'}>
+                {pendingBalance === 0 ? 'Saldo Pendiente:' : isPrepaid ? 'Saldo Pendiente:' : 'Total a Cobrar:'}
+              </span>
+              <span
+                className={`font-mono text-base font-black ${
+                  pendingBalance === 0 ? 'text-emerald-600' : 'text-brand-700'
+                }`}
+              >
+                {pendingBalance === 0 ? '0.00 Bs (Liquidado)' : formatBs(pendingBalance)}
               </span>
             </div>
           </div>
@@ -428,14 +456,25 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         {/* Primary Checkout Button: CERRAR HABITACIÓN */}
         <button
           onClick={() => onOpenCheckout(room)}
-          className={`w-full py-2.5 px-4 font-black text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-white ${
-            timeCalc.isOvertime
+          className={`w-full py-2.5 px-4 font-black text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-white ${
+            pendingBalance === 0
+              ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25 active:scale-98'
+              : timeCalc.isOvertime
               ? 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/30 animate-pulse'
               : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/20'
           }`}
         >
-          <LogOut className="w-4 h-4" />
-          {pendingBalance === 0 ? 'LIBERAR HABITACIÓN (0 Bs Pendientes)' : `COBRAR SALIDA (${formatBs(pendingBalance)})`}
+          {pendingBalance === 0 ? (
+            <>
+              <CheckCircle className="w-4 h-4 text-white" />
+              LIBERAR HABITACIÓN (Cuenta Liquidada • 0 Bs)
+            </>
+          ) : (
+            <>
+              <LogOut className="w-4 h-4" />
+              COBRAR SALIDA ({formatBs(pendingBalance)})
+            </>
+          )}
         </button>
       </div>
     </div>
