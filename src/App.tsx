@@ -10,6 +10,7 @@ import { ShiftCloseModal } from './components/ShiftCloseModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { ExpenseModal } from './components/ExpenseModal';
 import { StaffConsumptionModal } from './components/StaffConsumptionModal';
+import { ExtraConsumptionModal } from './components/ExtraConsumptionModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { ToastContainer } from './components/Toast';
 import { AdminDashboard } from './components/admin/AdminDashboard';
@@ -35,6 +36,7 @@ export const App: React.FC = () => {
   const [isShiftCloseOpen, setIsShiftCloseOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isStaffConsumptionModalOpen, setIsStaffConsumptionModalOpen] = useState(false);
+  const [isExtraConsumptionModalOpen, setIsExtraConsumptionModalOpen] = useState(false);
   const [receiptStay, setReceiptStay] = useState<Stay | null>(null);
 
   // Check URL path /admin or hash #admin on load & popstate
@@ -128,6 +130,7 @@ export const App: React.FC = () => {
         onOpenShiftCloseModal={() => setIsShiftCloseOpen(true)}
         onOpenExpenseModal={() => setIsExpenseModalOpen(true)}
         onOpenStaffConsumptionModal={() => setIsStaffConsumptionModalOpen(true)}
+        onOpenExtraConsumptionModal={() => setIsExtraConsumptionModalOpen(true)}
         onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
         onLockAdmin={handleLockAdmin}
         isAdminAuthenticated={isAdminAuthenticated}
@@ -198,6 +201,11 @@ export const App: React.FC = () => {
       <StaffConsumptionModal
         isOpen={isStaffConsumptionModalOpen}
         onClose={() => setIsStaffConsumptionModalOpen(false)}
+      />
+
+      <ExtraConsumptionModal
+        isOpen={isExtraConsumptionModalOpen}
+        onClose={() => setIsExtraConsumptionModalOpen(false)}
       />
 
       {receiptStay && (

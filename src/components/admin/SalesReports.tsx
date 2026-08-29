@@ -36,6 +36,7 @@ export const SalesReports: React.FC = () => {
     rooms,
     products,
     shiftsHistory,
+    extraConsumptions,
     exportDatabaseJson,
     importDatabaseJson,
   } = useApp();
@@ -117,6 +118,41 @@ export const SalesReports: React.FC = () => {
     });
   }, [allUnifiedStays, dateRange, selectedReceptionist, statusFilter, searchQuery]);
 
+  // Filtered extra consumptions
+  const filteredExtraConsumptions = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
+    const weekStart = todayStart - (now.getDay() === 0 ? 6 : now.getDay() - 1) * 24 * 60 * 60 * 1000;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+    return extraConsumptions.filter((ec) => {
+      const ecTime = new Date(ec.date).getTime();
+
+      if (dateRange === 'today' && ecTime < todayStart) return false;
+      if (dateRange === 'yesterday' && (ecTime < yesterdayStart || ecTime >= todayStart)) return false;
+      if (dateRange === 'week' && ecTime < weekStart) return false;
+      if (dateRange === 'month' && ecTime < monthStart) return false;
+
+      if (selectedReceptionist !== 'all') {
+        const matchRecep =
+          ec.registeredById === selectedReceptionist ||
+          ec.registeredByName.toLowerCase().includes(selectedReceptionist.toLowerCase());
+        if (!matchRecep) return false;
+      }
+
+      if (searchQuery.trim() !== '') {
+        const q = searchQuery.toLowerCase();
+        const matchDesc = ec.description.toLowerCase().includes(q);
+        const matchRecep = ec.registeredByName.toLowerCase().includes(q);
+        const matchRoom = (ec.roomNumber || '').toLowerCase().includes(q);
+        if (!matchDesc && !matchRecep && !matchRoom) return false;
+      }
+
+      return true;
+    });
+  }, [extraConsumptions, dateRange, selectedReceptionist, searchQuery]);
+
   // Valid non-cancelled stays for financial totals
   const validStays = filteredStays.filter((s) => s.status !== 'cancelled');
 
@@ -150,6 +186,23 @@ export const SalesReports: React.FC = () => {
     });
   });
 
+  // Include extra consumptions in product statistics
+  filteredExtraConsumptions.forEach((ec) => {
+    (ec.items || []).forEach((item) => {
+      if (!productConsumptionMap[item.productId]) {
+        productConsumptionMap[item.productId] = {
+          name: item.productName,
+          quantity: 0,
+          totalBs: 0,
+        };
+      }
+      productConsumptionMap[item.productId].quantity += item.quantity;
+      productConsumptionMap[item.productId].totalBs += item.subtotal;
+      totalMinibarRevenue += item.subtotal;
+      totalMinibarUnits += item.quantity;
+    });
+  });
+
   const totalRevenue = totalBaseRoomRevenue + totalOvertimeRevenue + totalMinibarRevenue;
 
   // Cash vs QR breakdown
@@ -169,6 +222,15 @@ export const SalesReports: React.FC = () => {
       const half = Math.round((s.totalAmount || s.baseRoomPrice) / 2);
       totalCash += half;
       totalQr += (s.totalAmount || s.baseRoomPrice) - half;
+    }
+  });
+
+  // Add extra consumptions cash / QR
+  filteredExtraConsumptions.forEach((ec) => {
+    if (ec.paymentMethod === 'efectivo') {
+      totalCash += ec.totalAmount;
+    } else {
+      totalQr += ec.totalAmount;
     }
   });
 

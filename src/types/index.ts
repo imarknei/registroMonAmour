@@ -294,3 +294,32 @@ export interface StaffSettlement {
   notes?: string;
   paymentMethod: 'efectivo' | 'transferencia' | 'qr';
 }
+
+// ----------------------------------------------------
+// MODELO DE CONSUMOS EXTRAS / VENTAS DIRECTAS EN RECEPCIÓN
+// ----------------------------------------------------
+
+export interface ExtraConsumptionItem {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+}
+
+export interface ExtraConsumption {
+  id: string;
+  description: string; // Ej: "Consumo Habitación 3 (Salida / Cerrada)", "Venta Mostrador Recepción"
+  roomNumber?: string; // Opcional: "3", "1", "Recepción"
+  originType: 'habitacion_cerrada' | 'mostrador_recepcion' | 'cliente_espera' | 'otro';
+  date: string; // ISO date
+  items: ExtraConsumptionItem[];
+  totalAmount: number;
+  paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+  shiftId?: string;
+  registeredById: string;
+  registeredByName: string;
+  notes?: string;
+}
+

@@ -24,6 +24,7 @@ import {
   StaffConsumption,
   StaffSettlement,
   StaffSettlementDiscountItem,
+  ExtraConsumption,
 } from '../types';
 import {
   INITIAL_ROOMS,
@@ -54,6 +55,9 @@ import {
   deleteStaffConsumptionFromFirebase,
   subscribeToStaffSettlements,
   syncStaffSettlementToFirestore,
+  subscribeToExtraConsumptions,
+  syncExtraConsumptionToFirestore,
+  deleteExtraConsumptionFromFirebase,
   syncRoomToFirestore,
   syncProductToFirestore,
   deleteProductFromFirestore,
@@ -79,6 +83,7 @@ interface AppContextType {
   staffConsumptions: StaffConsumption[];
   staffSettlements: StaffSettlement[];
   staffMembers: StaffMember[];
+  extraConsumptions: ExtraConsumption[];
   soundAlertsEnabled: boolean;
   toasts: ToastMessage[];
   nowTimestamp: number;
@@ -172,6 +177,24 @@ interface AppContextType {
     notes?: string;
   }) => void;
 
+  // Extra Consumptions / Direct Counter Sales
+  addExtraConsumption: (data: {
+    description: string;
+    roomNumber?: string;
+    originType?: 'habitacion_cerrada' | 'mostrador_recepcion' | 'cliente_espera' | 'otro';
+    items: {
+      productId: string;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      subtotal: number;
+    }[];
+    totalAmount: number;
+    paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+    notes?: string;
+  }) => ExtraConsumption;
+  removeExtraConsumption: (id: string, restoreInventory?: boolean) => void;
+
   // Staff Consumptions & Payroll Settlements
   addStaffConsumption: (consumptionData: {
     staffId: string;
@@ -243,6 +266,7 @@ const STORAGE_KEYS = {
   STAFF_CONSUMPTIONS: 'mon_amour_staff_consumptions_v1',
   STAFF_SETTLEMENTS: 'mon_amour_staff_settlements_v1',
   STAFF_MEMBERS: 'mon_amour_staff_members_v1',
+  EXTRA_CONSUMPTIONS: 'mon_amour_extra_consumptions_v1',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -345,6 +369,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [extraConsumptions, setExtraConsumptions] = useState<ExtraConsumption[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.EXTRA_CONSUMPTIONS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED);
@@ -402,6 +435,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STAFF_MEMBERS, JSON.stringify(staffMembers));
   }, [staffMembers]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.EXTRA_CONSUMPTIONS, JSON.stringify(extraConsumptions));
+  }, [extraConsumptions]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, JSON.stringify(soundAlertsEnabled));
@@ -533,6 +570,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       if (unsubStaffSettles) unsubs.push(unsubStaffSettles);
+
+      // Extra Consumptions
+      const unsubExtraCons = await subscribeToExtraConsumptions((firestoreExtraCons) => {
+        if (firestoreExtraCons) {
+          setExtraConsumptions(firestoreExtraCons);
+        }
+      });
+      if (unsubExtraCons) unsubs.push(unsubExtraCons);
     };
 
     setupFirebaseSync();
@@ -749,6 +794,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    // 3. Sumar consumos extras y ventas de mostrador registradas en este turno
+    extraConsumptions.forEach((ec) => {
+      const ecTime = new Date(ec.date).getTime();
+      const matchesReceptionist = ec.registeredById === rawTargetShift.receptionistId;
+      const isThisShiftExtra =
+        ec.shiftId === rawTargetShift.id ||
+        (!ec.shiftId && matchesReceptionist && ecTime >= shiftStartTime && ecTime <= shiftEndTime);
+
+      if (isThisShiftExtra) {
+        if (ec.paymentMethod === 'efectivo') liveCashSales += ec.totalAmount;
+        else if (ec.paymentMethod === 'qr_vendis') {
+          liveQrVendisSales += ec.totalAmount;
+          liveQrSales += ec.totalAmount;
+        } else if (ec.paymentMethod === 'qr_union') {
+          liveQrUnionSales += ec.totalAmount;
+          liveQrSales += ec.totalAmount;
+        } else if (ec.paymentMethod === 'qr') {
+          liveQrVendisSales += ec.totalAmount;
+          liveQrSales += ec.totalAmount;
+        }
+        liveSalesCount++;
+      }
+    });
+
     const expectedCash = Math.max(rawTargetShift.expectedCash || 0, liveCashSales);
     const expectedQrVendis = Math.max(rawTargetShift.expectedQrVendis || 0, liveQrVendisSales);
     const expectedQrUnion = Math.max(rawTargetShift.expectedQrUnion || 0, liveQrUnionSales);
@@ -796,7 +865,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalExpensesQrUnion,
       totalExpensesQr,
     };
-  }, [rawTargetShift, rooms, completedStays, expenses]);
+  }, [rawTargetShift, rooms, completedStays, expenses, extraConsumptions]);
 
   // Toast Management
   const showToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
@@ -1570,6 +1639,166 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // EXTRA CONSUMPTIONS & DIRECT COUNTER SALES
+  const addExtraConsumption = (data: {
+    description: string;
+    roomNumber?: string;
+    originType?: 'habitacion_cerrada' | 'mostrador_recepcion' | 'cliente_espera' | 'otro';
+    items: {
+      productId: string;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      subtotal: number;
+    }[];
+    totalAmount: number;
+    paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+    notes?: string;
+  }): ExtraConsumption => {
+    const extraId = `extra-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const effectiveDesc =
+      data.description.trim() ||
+      (data.roomNumber ? `Consumo Habitación ${data.roomNumber} (Cerrada / Salida)` : 'Venta Mostrador / Recepción');
+
+    const newExtra: ExtraConsumption = {
+      id: extraId,
+      description: effectiveDesc,
+      roomNumber: data.roomNumber?.trim() || undefined,
+      originType: data.originType || (data.roomNumber ? 'habitacion_cerrada' : 'mostrador_recepcion'),
+      date: new Date().toISOString(),
+      items: data.items.map((it) => ({
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        productId: it.productId,
+        productName: it.productName,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        subtotal: it.subtotal,
+      })),
+      totalAmount: data.totalAmount,
+      paymentMethod: data.paymentMethod,
+      shiftId: currentShift?.id,
+      registeredById: currentUser.id,
+      registeredByName: currentUser.name,
+      notes: data.notes?.trim() || undefined,
+    };
+
+    // Actualizar caja del turno activo si existe
+    if (currentShift) {
+      let addCash = 0;
+      let addQrVendis = 0;
+      let addQrUnion = 0;
+      let addQr = 0;
+
+      if (data.paymentMethod === 'efectivo') {
+        addCash = data.totalAmount;
+      } else if (data.paymentMethod === 'qr_vendis') {
+        addQrVendis = data.totalAmount;
+        addQr = data.totalAmount;
+      } else if (data.paymentMethod === 'qr_union') {
+        addQrUnion = data.totalAmount;
+        addQr = data.totalAmount;
+      } else if (data.paymentMethod === 'qr') {
+        addQrVendis = data.totalAmount;
+        addQr = data.totalAmount;
+      }
+
+      const updatedShift: Shift = {
+        ...currentShift,
+        expectedCash: currentShift.expectedCash + addCash,
+        expectedQrVendis: (currentShift.expectedQrVendis || 0) + addQrVendis,
+        expectedQrUnion: (currentShift.expectedQrUnion || 0) + addQrUnion,
+        expectedQr: currentShift.expectedQr + addQr,
+        salesCount: (currentShift.salesCount || 0) + 1,
+      };
+      setShiftsHistory((prev) =>
+        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
+      );
+      syncShiftToFirestore(updatedShift);
+    }
+
+    // Descontar inventario
+    data.items.forEach((item) => {
+      const prod = products.find((p) => p.id === item.productId);
+      if (prod) {
+        const updatedStock = Math.max(0, prod.stock - item.quantity);
+        const updatedProduct = { ...prod, stock: updatedStock };
+        setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
+        syncProductToFirestore(updatedProduct);
+      }
+    });
+
+    setExtraConsumptions((prev) => [newExtra, ...prev]);
+    syncExtraConsumptionToFirestore(newExtra);
+
+    playAddConsumptionSound();
+    showToast({
+      title: '¡Consumo Extra / Venta Registrada!',
+      message: `Se ingresó ${formatBs(data.totalAmount)} en ${getPaymentMethodLabel(data.paymentMethod)} a la caja del turno activo (${newExtra.description}).`,
+      type: 'success',
+    });
+
+    return newExtra;
+  };
+
+  const removeExtraConsumption = (id: string, restoreInventory = true) => {
+    const extra = extraConsumptions.find((e) => e.id === id);
+    if (!extra) return;
+
+    if (currentShift && extra.shiftId === currentShift.id) {
+      let subCash = 0;
+      let subQrVendis = 0;
+      let subQrUnion = 0;
+      let subQr = 0;
+
+      if (extra.paymentMethod === 'efectivo') {
+        subCash = extra.totalAmount;
+      } else if (extra.paymentMethod === 'qr_vendis') {
+        subQrVendis = extra.totalAmount;
+        subQr = extra.totalAmount;
+      } else if (extra.paymentMethod === 'qr_union') {
+        subQrUnion = extra.totalAmount;
+        subQr = extra.totalAmount;
+      } else if (extra.paymentMethod === 'qr') {
+        subQrVendis = extra.totalAmount;
+        subQr = extra.totalAmount;
+      }
+
+      const updatedShift: Shift = {
+        ...currentShift,
+        expectedCash: Math.max(0, currentShift.expectedCash - subCash),
+        expectedQrVendis: Math.max(0, (currentShift.expectedQrVendis || 0) - subQrVendis),
+        expectedQrUnion: Math.max(0, (currentShift.expectedQrUnion || 0) - subQrUnion),
+        expectedQr: Math.max(0, currentShift.expectedQr - subQr),
+        salesCount: Math.max(0, (currentShift.salesCount || 1) - 1),
+      };
+      setShiftsHistory((prev) =>
+        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
+      );
+      syncShiftToFirestore(updatedShift);
+    }
+
+    if (restoreInventory) {
+      extra.items.forEach((item) => {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod) {
+          const updatedStock = prod.stock + item.quantity;
+          const updatedProduct = { ...prod, stock: updatedStock };
+          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
+          syncProductToFirestore(updatedProduct);
+        }
+      });
+    }
+
+    setExtraConsumptions((prev) => prev.filter((e) => e.id !== id));
+    deleteExtraConsumptionFromFirebase(id);
+
+    showToast({
+      title: 'Consumo Extra Anulado',
+      message: `Se anuló el consumo extra (${extra.description}) y se repuso el stock.`,
+      type: 'info',
+    });
+  };
+
   const recordStaffSettlement = (settlementData: {
     staffId: string;
     staffName: string;
@@ -1955,6 +2184,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         staffConsumptions,
         staffSettlements,
         staffMembers,
+        extraConsumptions,
         soundAlertsEnabled,
         toasts,
         nowTimestamp,
@@ -1971,6 +2201,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         changeRoomStatus,
         changeRoom,
         addExpenseToShift,
+        addExtraConsumption,
+        removeExtraConsumption,
         addStaffConsumption,
         removeStaffConsumption,
         recordStaffSettlement,

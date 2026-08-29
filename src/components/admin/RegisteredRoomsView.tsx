@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 export const RegisteredRoomsView: React.FC = () => {
-  const { rooms, tariffs, completedStays, expenses, currentUser, cancelStay } = useApp();
+  const { rooms, tariffs, completedStays, expenses, extraConsumptions, removeExtraConsumption, currentUser, cancelStay } = useApp();
 
   // Reloj local de 1 segundo para sincronización continua de temporizadores
   const [, setTick] = useState(0);
@@ -59,6 +59,7 @@ export const RegisteredRoomsView: React.FC = () => {
   // Acordeón de detalles del día
   const [showDailyConsumptions, setShowDailyConsumptions] = useState<boolean>(false);
   const [showDailyExpenses, setShowDailyExpenses] = useState<boolean>(false);
+  const [showDailyExtraConsumptions, setShowDailyExtraConsumptions] = useState<boolean>(false);
 
   // Determinar rango de timestamp del día seleccionado
   const targetDateString = useMemo(() => {
@@ -114,10 +115,19 @@ export const RegisteredRoomsView: React.FC = () => {
     });
   }, [expenses, targetDateString]);
 
+  // Consumos extras correspondientes al día seleccionado
+  const dayExtraConsumptions = useMemo(() => {
+    return extraConsumptions.filter((e) => {
+      const ecDate = e.date ? e.date.slice(0, 10) : '';
+      return ecDate === targetDateString;
+    });
+  }, [extraConsumptions, targetDateString]);
+
   // Consolidado de consumos / productos vendidos en el día seleccionado
   const dailyConsumptionsSummary = useMemo(() => {
     const map = new Map<string, { name: string; quantity: number; total: number; unitPrice: number }>();
 
+    // Consumos de habitaciones
     dayStays
       .filter((s) => s.status !== 'cancelled')
       .forEach((s) => {
@@ -139,8 +149,28 @@ export const RegisteredRoomsView: React.FC = () => {
         }
       });
 
+    // Consumos extras / ventas directas
+    dayExtraConsumptions.forEach((ec) => {
+      if (ec.items && ec.items.length > 0) {
+        ec.items.forEach((c) => {
+          const key = c.productId || c.productName;
+          const existing = map.get(key) || {
+            name: c.productName,
+            quantity: 0,
+            total: 0,
+            unitPrice: c.unitPrice,
+          };
+          map.set(key, {
+            ...existing,
+            quantity: existing.quantity + c.quantity,
+            total: existing.total + c.subtotal,
+          });
+        });
+      }
+    });
+
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [dayStays]);
+  }, [dayStays, dayExtraConsumptions]);
 
   // Cálculos financieros del día seleccionado (excluyendo anuladas)
   const dayFinancials = useMemo(() => {
@@ -188,6 +218,18 @@ export const RegisteredRoomsView: React.FC = () => {
       }
     });
 
+    // Sumar ventas / consumos extras del día
+    let extraConsumptionsSales = 0;
+    dayExtraConsumptions.forEach((ec) => {
+      extraConsumptionsSales += ec.totalAmount;
+      if (ec.paymentMethod === 'efectivo') {
+        totalCash += ec.totalAmount;
+      } else {
+        totalQr += ec.totalAmount;
+      }
+    });
+    consumptionsSales += extraConsumptionsSales;
+
     const totalGrossSales = baseRoomSales + consumptionsSales + overtimeSales;
     const totalExpensesCash = dayExpenses
       .filter((e) => e.paymentMethod === 'efectivo')
@@ -205,6 +247,7 @@ export const RegisteredRoomsView: React.FC = () => {
       cancelledRoomsCount,
       baseRoomSales,
       consumptionsSales,
+      extraConsumptionsSales,
       overtimeSales,
       totalGrossSales,
       totalCash,
@@ -214,7 +257,7 @@ export const RegisteredRoomsView: React.FC = () => {
       totalExpensesAmount,
       netRevenue,
     };
-  }, [dayStays, dayExpenses, tariffs]);
+  }, [dayStays, dayExpenses, dayExtraConsumptions, tariffs]);
 
   // Filtrado según pestaña y controles de búsqueda
   const displayedStays = useMemo(() => {
@@ -386,7 +429,7 @@ export const RegisteredRoomsView: React.FC = () => {
             </div>
           </div>
 
-          {/* BOTONES DESPLEGABLES PARA VER CONSUMOS Y GASTOS DEL DÍA */}
+          {/* BOTONES DESPLEGABLES PARA VER CONSUMOS, GASTOS Y VENTAS EXTRAS DEL DÍA */}
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-700/60">
             <button
               onClick={() => setShowDailyConsumptions(!showDailyConsumptions)}
@@ -398,6 +441,15 @@ export const RegisteredRoomsView: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setShowDailyExtraConsumptions(!showDailyExtraConsumptions)}
+              className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-xs font-bold text-purple-200 border border-purple-400/30 flex items-center gap-1.5 transition-colors"
+            >
+              <ShoppingBag className="w-3.5 h-3.5 text-purple-400" />
+              <span>Ver {dayExtraConsumptions.length} consumo(s) extra(s) / venta(s) directa(s)</span>
+              {showDailyExtraConsumptions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+
+            <button
               onClick={() => setShowDailyExpenses(!showDailyExpenses)}
               className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-bold text-slate-200 flex items-center gap-1.5 transition-colors"
             >
@@ -406,6 +458,58 @@ export const RegisteredRoomsView: React.FC = () => {
               {showDailyExpenses ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>
+
+          {/* DESPLEGABLE: CONSUMOS EXTRAS / VENTAS DIRECTAS DEL DÍA */}
+          {showDailyExtraConsumptions && (
+            <div className="bg-black/30 rounded-xl p-3.5 border border-purple-500/30 text-xs space-y-2 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-purple-300 uppercase tracking-wider block">
+                  Consumos Extras y Ventas Directas Registradas ({targetDateString}):
+                </span>
+                <span className="text-[11px] font-mono font-bold text-emerald-400">
+                  Total: +{formatBs(dayFinancials.extraConsumptionsSales || 0)}
+                </span>
+              </div>
+              {dayExtraConsumptions.length === 0 ? (
+                <p className="text-slate-400 italic">No se registraron consumos extras ni ventas directas en este día.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {dayExtraConsumptions.map((ec) => (
+                    <div key={ec.id} className="bg-white/5 p-2.5 rounded-lg flex items-center justify-between border border-white/10">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-200">{ec.description}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-900/60 text-purple-300 border border-purple-500/30">
+                            {ec.paymentMethod === 'efectivo' ? '💵 Efectivo' : ec.paymentMethod === 'qr_vendis' ? '📱 QR Vendis' : ec.paymentMethod === 'qr_union' ? '🏦 QR B. Unión' : '📱 QR'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {formatTimeOnly(ec.date)} • Por {ec.registeredByName} • {ec.items.map((it) => `${it.quantity}x ${it.productName}`).join(', ')}
+                          {ec.notes && <span className="italic ml-1 text-slate-400">({ec.notes})</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-emerald-400 text-sm">+{formatBs(ec.totalAmount)}</span>
+                        {currentUser.role === 'admin' && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`¿Anular consumo extra "${ec.description}" de ${formatBs(ec.totalAmount)} y reponer stock?`)) {
+                                removeExtraConsumption(ec.id, true);
+                              }
+                            }}
+                            className="p-1 rounded text-rose-400 hover:text-rose-300 hover:bg-rose-500/20"
+                            title="Anular venta extra y reponer stock"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* DESPLEGABLE: PRODUCTOS CONSUMIDOS EN EL DÍA */}
           {showDailyConsumptions && (

@@ -5,7 +5,7 @@
  * Sincronización en vivo ultra-rápida (en milisegundos) entre todos los dispositivos (Recepción, Celulares, Administrador global)
  */
 
-import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement } from '../types';
+import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement, ExtraConsumption } from '../types';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -655,3 +655,69 @@ export const syncStaffSettlementToFirestore = async (settlement: StaffSettlement
     console.error(`Error guardando staff_settlement ${settlement.id} en Firebase:`, err);
   }
 };
+
+// ==========================================
+// 🛒 SINCRONIZACIÓN DE CONSUMOS EXTRAS / VENTAS MOSTRADOR
+// ==========================================
+
+export const subscribeToExtraConsumptions = async (
+  onData: (consumptions: ExtraConsumption[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const extraRef = ref(db, 'extra_consumptions');
+
+    const listener = onValue(
+      extraRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const list: ExtraConsumption[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          list.sort((a, b) => (b.date > a.date ? 1 : -1));
+          onData(list);
+        } else {
+          onData([]);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de extra_consumptions:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(extraRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a extra_consumptions:', err);
+    return null;
+  }
+};
+
+export const syncExtraConsumptionToFirestore = async (consumption: ExtraConsumption): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, set } = await import('firebase/database');
+    const clean = sanitizeForFirebase(consumption);
+    await set(ref(db, `extra_consumptions/${consumption.id}`), clean);
+  } catch (err) {
+    console.error(`Error guardando extra_consumption ${consumption.id} en Firebase:`, err);
+  }
+};
+
+export const deleteExtraConsumptionFromFirebase = async (id: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, `extra_consumptions/${id}`));
+  } catch (err) {
+    console.error(`Error eliminando extra_consumption ${id} en Firebase:`, err);
+  }
+};
+
