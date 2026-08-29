@@ -32,7 +32,7 @@ import {
 import { SYSTEM_USERS } from '../../data/initialData';
 
 export const ShiftHistory: React.FC = () => {
-  const { shiftsHistory, completedStays, rooms, expenses } = useApp();
+  const { shiftsHistory, completedStays, rooms, expenses, cleanupOrphanShifts } = useApp();
 
   // Filtros
   const [selectedDateMode, setSelectedDateMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'custom'>('all');
@@ -382,14 +382,40 @@ export const ShiftHistory: React.FC = () => {
       </div>
 
       {/* ======================================================== */}
-      {/* 🟢 SECCIÓN: TURNOS ACTIVOS EN CURSO (EN VIVO) */}
+      {/* 🟢 SECCIÓN: TURNO ACTIVO EN CURSO (EN VIVO) */}
       {/* ======================================================== */}
       {activeOpenShifts.length > 0 && (
         <div className="space-y-3">
+          {/* Alerta de Consolidación si hay múltiples abiertos */}
+          {activeOpenShifts.length > 1 && (
+            <div className="bg-amber-50 rounded-3xl p-4 sm:p-5 border-2 border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-950 shadow-sm animate-fade-in">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-200 text-amber-900 flex items-center justify-center font-bold shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <strong className="text-xs sm:text-sm font-black block">
+                    Se detectaron {activeOpenShifts.length} turnos con estado abierto en la base de datos
+                  </strong>
+                  <p className="text-[11px] text-amber-800 font-medium">
+                    Para mantener el cuadre estricto de caja, la recepción debe operar con exactamente 1 turno activo. Puedes consolidarlos con un solo clic.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => cleanupOrphanShifts()}
+                className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 shrink-0"
+              >
+                <span>🧹 Consolidar a 1 Solo Turno</span>
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              Turnos Actualmente Abiertos en Recepción ({activeOpenShifts.length})
+              Turno Actualmente Abierto en Recepción (1)
             </h3>
             <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
               Sincronizado en Vivo Nube
@@ -397,7 +423,7 @@ export const ShiftHistory: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeOpenShifts.map((shift) => (
+            {activeOpenShifts.slice(0, 1).map((shift) => (
               <div
                 key={shift.id}
                 className="bg-white rounded-3xl border-2 border-emerald-300 shadow-sm p-5 space-y-3.5 relative overflow-hidden"

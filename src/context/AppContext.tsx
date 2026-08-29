@@ -243,6 +243,11 @@ interface AppContextType {
 
   // Admin functions
   cancelStay: (stayId: string, reason: string, restoreInventory?: boolean) => boolean;
+  updateStay: (
+    updatedStay: Stay,
+    options?: { previousConsumptions?: ConsumptionItem[]; restoreStockDiff?: boolean }
+  ) => boolean;
+  cleanupOrphanShifts: () => Promise<number>;
   saveProduct: (product: Product) => void;
   deleteProductById: (productId: string) => void;
   updateTariffCatalog: (tariffs: TariffCatalog) => void;
@@ -321,7 +326,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [shiftsHistory, setShiftsHistory] = useState<Shift[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SHIFTS_HISTORY);
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed: Shift[] = JSON.parse(saved);
+        const openShifts = parsed.filter((s) => s.status === 'open');
+        if (openShifts.length > 1) {
+          openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+          const latestOpen = openShifts[0];
+          const orphanIds = new Set(openShifts.slice(1).map((s) => s.id));
+          return parsed.map((s) =>
+            orphanIds.has(s.id)
+              ? { ...s, status: 'closed' as const, endTime: s.endTime || new Date().toISOString() }
+              : s
+          );
+        }
+        return parsed;
+      }
+      return [];
     } catch {
       return [];
     }
@@ -547,13 +567,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Shifts
       const unsubShifts = await subscribeToAllShifts((firestoreShifts) => {
         if (firestoreShifts) {
-          setShiftsHistory(firestoreShifts);
           const openShifts = firestoreShifts.filter((s) => s.status === 'open');
-          if (openShifts.length > 0) {
-            // Keep only the single most recent open shift
+
+          if (openShifts.length > 1) {
+            // Sorteamos los turnos abiertos por fecha de inicio descendente (el más nuevo primero)
             openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
             const latestOpen = openShifts[0];
+            const orphanShifts = openShifts.slice(1);
+
+            // Auto-cerrar turnos huérfanos anteriores en Firestore
+            orphanShifts.forEach((orphan) => {
+              const closedOrphan: Shift = {
+                ...orphan,
+                status: 'closed',
+                endTime: orphan.endTime || new Date().toISOString(),
+                notes: orphan.notes
+                  ? `${orphan.notes} • (Cierre automático de turno huérfano)`
+                  : 'Cierre automático de turno anterior huérfano',
+              };
+              syncShiftToFirestore(closedOrphan);
+            });
+
+            // Reconstruir lista limpia con solo 1 turno abierto
+            const sanitizedShifts = firestoreShifts.map((s) => {
+              if (s.id === latestOpen.id) return latestOpen;
+              if (orphanShifts.some((o) => o.id === s.id)) {
+                return {
+                  ...s,
+                  status: 'closed' as const,
+                  endTime: s.endTime || new Date().toISOString(),
+                };
+              }
+              return s;
+            });
+
+            setShiftsHistory(sanitizedShifts);
             setActiveShifts({ [latestOpen.receptionistId]: latestOpen });
+          } else {
+            setShiftsHistory(firestoreShifts);
+            if (openShifts.length === 1) {
+              const singleOpen = openShifts[0];
+              setActiveShifts({ [singleOpen.receptionistId]: singleOpen });
+            }
           }
         }
       });
@@ -2111,6 +2166,143 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  const updateStay = (
+    updatedStay: Stay,
+    options?: { previousConsumptions?: ConsumptionItem[]; restoreStockDiff?: boolean }
+  ): boolean => {
+    if (currentUser.role !== 'admin') {
+      showToast({
+        title: 'Acción No Permitida',
+        message: 'Solamente el Administrador tiene autorización para editar registros de habitaciones.',
+        type: 'error',
+      });
+      return false;
+    }
+
+    // 1. Manejar ajuste de inventario si los consumos cambiaron
+    if (options?.restoreStockDiff !== false && options?.previousConsumptions) {
+      const prevMap = new Map<string, number>();
+      options.previousConsumptions.forEach((item) => {
+        prevMap.set(item.productId, (prevMap.get(item.productId) || 0) + item.quantity);
+      });
+
+      const newMap = new Map<string, number>();
+      (updatedStay.consumptions || []).forEach((item) => {
+        newMap.set(item.productId, (newMap.get(item.productId) || 0) + item.quantity);
+      });
+
+      const allProductIds = new Set([...prevMap.keys(), ...newMap.keys()]);
+      allProductIds.forEach((prodId) => {
+        const prevQty = prevMap.get(prodId) || 0;
+        const newQty = newMap.get(prodId) || 0;
+        const diff = prevQty - newQty; // diff > 0 -> reponer stock (+diff). diff < 0 -> restar stock (-|diff|).
+        if (diff !== 0) {
+          const product = products.find((p) => p.id === prodId);
+          if (product) {
+            const updatedProduct = {
+              ...product,
+              stock: Math.max(0, product.stock + diff),
+            };
+            setProducts((prev) => prev.map((p) => (p.id === prodId ? updatedProduct : p)));
+            syncProductToFirestore(updatedProduct);
+          }
+        }
+      });
+    }
+
+    // 2. Si la estadía está actualmente activa en una habitación
+    let isLiveInRoom = false;
+    setRooms((prevRooms) =>
+      prevRooms.map((r) => {
+        if (r.currentStay && r.currentStay.id === updatedStay.id) {
+          isLiveInRoom = true;
+          const updatedRoom: Room = {
+            ...r,
+            currentStay: updatedStay,
+          };
+          syncRoomToFirestore(updatedRoom);
+          return updatedRoom;
+        }
+        return r;
+      })
+    );
+
+    // 3. Actualizar en historial de estadías completadas
+    setCompletedStays((prev) => {
+      const exists = prev.some((s) => s.id === updatedStay.id);
+      if (exists) {
+        return prev.map((s) => (s.id === updatedStay.id ? updatedStay : s));
+      } else if (!isLiveInRoom) {
+        return [updatedStay, ...prev];
+      }
+      return prev;
+    });
+
+    // 4. Sincronizar en Firebase
+    syncCompletedStayToFirebase(updatedStay);
+
+    showToast({
+      title: '¡Estadía Modificada!',
+      message: `Se guardaron los cambios para ${updatedStay.roomName || 'la habitación'} correctamente.`,
+      type: 'success',
+      durationMs: 4000,
+    });
+
+    return true;
+  };
+
+  const cleanupOrphanShifts = async (): Promise<number> => {
+    const openShifts = shiftsHistory.filter((s) => s.status === 'open');
+    if (openShifts.length <= 1) {
+      showToast({
+        title: 'Turnos ya Consolidados',
+        message: 'Actualmente solo existe 1 turno abierto en recepción.',
+        type: 'info',
+      });
+      return 0;
+    }
+
+    openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    const latestOpen = openShifts[0];
+    const orphanShifts = openShifts.slice(1);
+
+    orphanShifts.forEach((orphan) => {
+      const closedOrphan: Shift = {
+        ...orphan,
+        status: 'closed',
+        endTime: orphan.endTime || new Date().toISOString(),
+        notes: orphan.notes
+          ? `${orphan.notes} • (Consolidado por Admin)`
+          : 'Cierre y consolidación de turno huérfano',
+      };
+      syncShiftToFirestore(closedOrphan);
+    });
+
+    const updatedShifts = shiftsHistory.map((s) => {
+      if (s.id === latestOpen.id) return latestOpen;
+      if (orphanShifts.some((o) => o.id === s.id)) {
+        return {
+          ...s,
+          status: 'closed' as const,
+          endTime: s.endTime || new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    setShiftsHistory(updatedShifts);
+    setActiveShifts({ [latestOpen.receptionistId]: latestOpen });
+
+    showToast({
+      title: '¡Turnos Consolidados!',
+      message: `Se cerraron y consolidaron ${orphanShifts.length} turnos huérfanos anteriores. Ahora hay 1 solo turno activo (${latestOpen.receptionistName}).`,
+      type: 'success',
+      durationMs: 5000,
+    });
+
+    return orphanShifts.length;
+  };
+
   const saveProduct = (product: Product) => {
     setProducts((prev) => {
       const exists = prev.some((p) => p.id === product.id);
@@ -2221,6 +2413,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveStaffMember,
         closeCurrentShift,
         cancelStay,
+        updateStay,
+        cleanupOrphanShifts,
         saveProduct,
         deleteProductById,
         updateTariffCatalog,
