@@ -174,4 +174,27 @@ export function getEffective2hPrice(
   );
 }
 
+/**
+ * Calcula el precio con descuento especial para empleados/personal:
+ * - Descuento de 2 Bs en Bebidas (con y sin alcohol: sodas, cervezas, aguas, etc.)
+ * - Descuento de 1 Bs en Galletas y Snacks
+ */
+export function getStaffDiscountedPrice(product: { category?: string; price: number }): {
+  originalPrice: number;
+  staffPrice: number;
+  discount: number;
+} {
+  let discount = 0;
+  if (product.category === 'bebidas_alcohol' || product.category === 'bebidas_sin_alcohol') {
+    discount = 2;
+  } else if (product.category === 'snacks') {
+    discount = 1;
+  }
 
+  const staffPrice = Math.max(0, product.price - discount);
+  return {
+    originalPrice: product.price,
+    staffPrice,
+    discount,
+  };
+}

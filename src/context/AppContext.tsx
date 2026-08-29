@@ -1058,6 +1058,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const registerStay = registerRoomEntry;
 
+  /**
+   * Descuenta stock de forma atómica para uno o varios productos y sincroniza en Firebase
+   */
+  const discountStockForItems = (items: { productId: string; quantity: number }[]) => {
+    if (!items || items.length === 0) return;
+
+    setProducts((prevProducts) => {
+      const updatedProductsMap = new Map(prevProducts.map((p) => [p.id, { ...p }]));
+      const changedProducts: Product[] = [];
+
+      items.forEach((item) => {
+        const prod = updatedProductsMap.get(item.productId);
+        if (prod) {
+          prod.stock = Math.max(0, prod.stock - item.quantity);
+          changedProducts.push(prod);
+        }
+      });
+
+      // Sincronizar todos los productos modificados a Firebase en tiempo real
+      changedProducts.forEach((p) => {
+        syncProductToFirestore(p);
+      });
+
+      return Array.from(updatedProductsMap.values());
+    });
+  };
+
+  /**
+   * Repone stock de forma atómica para uno o varios productos y sincroniza en Firebase
+   */
+  const restoreStockForItems = (items: { productId: string; quantity: number }[]) => {
+    if (!items || items.length === 0) return;
+
+    setProducts((prevProducts) => {
+      const updatedProductsMap = new Map(prevProducts.map((p) => [p.id, { ...p }]));
+      const changedProducts: Product[] = [];
+
+      items.forEach((item) => {
+        const prod = updatedProductsMap.get(item.productId);
+        if (prod) {
+          prod.stock = prod.stock + item.quantity;
+          changedProducts.push(prod);
+        }
+      });
+
+      // Sincronizar todos los productos modificados a Firebase en tiempo real
+      changedProducts.forEach((p) => {
+        syncProductToFirestore(p);
+      });
+
+      return Array.from(updatedProductsMap.values());
+    });
+  };
+
   const addConsumptionToRoom = (
     roomId: string,
     productId: string,
@@ -1088,15 +1142,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Discount stock
-    const updatedProduct = {
-      ...product,
-      stock: product.stock - quantity,
-    };
-    setProducts((prev) => prev.map((p) => (p.id === productId ? updatedProduct : p)));
-    syncProductToFirestore(updatedProduct);
+    // 1. Descontar inventario de forma atómica
+    discountStockForItems([{ productId, quantity }]);
 
-    // 2. Add to room stay
+    // 2. Agregar a la estadía
     const consumptionId = `cons-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
     const subtotal = product.price * quantity;
     const isPaid = paymentOptions?.isPaid ?? false;
@@ -1180,15 +1229,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const item = room.currentStay.consumptions.find((c) => c.id === consumptionId);
     if (!item) return;
 
-    const product = products.find((p) => p.id === item.productId);
-    if (product) {
-      const updatedProduct = {
-        ...product,
-        stock: product.stock + item.quantity,
-      };
-      setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
-      syncProductToFirestore(updatedProduct);
-    }
+    // Reponer stock de forma atómica
+    restoreStockForItems([{ productId: item.productId, quantity: item.quantity }]);
 
     if (item.isPaid && currentUser.role !== 'admin') {
       setActiveShifts((prev) => {
@@ -1622,15 +1664,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncShiftToFirestore(updatedShift);
     }
 
-    consumptionData.items.forEach((item) => {
-      const prod = products.find((p) => p.id === item.productId);
-      if (prod) {
-        const updatedStock = Math.max(0, prod.stock - item.quantity);
-        const updatedProduct = { ...prod, stock: updatedStock };
-        setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
-        syncProductToFirestore(updatedProduct);
-      }
-    });
+    // Descontar inventario de forma atómica
+    discountStockForItems(consumptionData.items);
 
     setStaffConsumptions((prev) => [newConsumption, ...prev]);
     syncStaffConsumptionToFirestore(newConsumption);
@@ -1685,15 +1720,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (restoreInventory) {
-      cons.items.forEach((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        if (prod) {
-          const updatedStock = prod.stock + item.quantity;
-          const updatedProduct = { ...prod, stock: updatedStock };
-          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
-          syncProductToFirestore(updatedProduct);
-        }
-      });
+      restoreStockForItems(cons.items);
     }
 
     setStaffConsumptions((prev) => prev.filter((c) => c.id !== id));
@@ -1783,16 +1810,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncShiftToFirestore(updatedShift);
     }
 
-    // Descontar inventario
-    data.items.forEach((item) => {
-      const prod = products.find((p) => p.id === item.productId);
-      if (prod) {
-        const updatedStock = Math.max(0, prod.stock - item.quantity);
-        const updatedProduct = { ...prod, stock: updatedStock };
-        setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
-        syncProductToFirestore(updatedProduct);
-      }
-    });
+    // Descontar inventario de forma atómica
+    discountStockForItems(data.items);
 
     setExtraConsumptions((prev) => [newExtra, ...prev]);
     syncExtraConsumptionToFirestore(newExtra);
@@ -1845,15 +1864,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (restoreInventory) {
-      extra.items.forEach((item) => {
-        const prod = products.find((p) => p.id === item.productId);
-        if (prod) {
-          const updatedStock = prod.stock + item.quantity;
-          const updatedProduct = { ...prod, stock: updatedStock };
-          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
-          syncProductToFirestore(updatedProduct);
-        }
-      });
+      restoreStockForItems(extra.items);
     }
 
     setExtraConsumptions((prev) => prev.filter((e) => e.id !== id));
@@ -2117,17 +2128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (restoreInventory && targetStay.consumptions && targetStay.consumptions.length > 0) {
-      targetStay.consumptions.forEach((item) => {
-        const product = products.find((p) => p.id === item.productId);
-        if (product) {
-          const updatedProduct = {
-            ...product,
-            stock: product.stock + item.quantity,
-          };
-          setProducts((prev) => prev.map((p) => (p.id === item.productId ? updatedProduct : p)));
-          syncProductToFirestore(updatedProduct);
-        }
-      });
+      restoreStockForItems(targetStay.consumptions);
     }
 
     const cancelledStay: Stay = {

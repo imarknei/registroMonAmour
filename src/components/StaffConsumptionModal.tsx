@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Product, ProductCategory, StaffMember } from '../types';
-import { formatBs, getCategoryLabel } from '../utils/formatUtils';
+import { formatBs, getCategoryLabel, getStaffDiscountedPrice } from '../utils/formatUtils';
 import {
   X,
   Coffee,
@@ -20,6 +20,8 @@ import {
   DollarSign,
   QrCode,
   Wallet,
+  Sparkles,
+  Tag,
 } from 'lucide-react';
 
 interface StaffConsumptionModalProps {
@@ -30,6 +32,9 @@ interface StaffConsumptionModalProps {
 interface CartItem {
   product: Product;
   quantity: number;
+  unitPrice: number;
+  originalPrice: number;
+  discountPerUnit: number;
 }
 
 export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
@@ -55,7 +60,7 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
     { key: 'all', label: 'Todos' },
     { key: 'bebidas_sin_alcohol', label: 'Sodas & Aguas' },
     { key: 'bebidas_alcohol', label: 'Cervezas' },
-    { key: 'snacks', label: 'Snacks' },
+    { key: 'snacks', label: 'Snacks & Galletas' },
     { key: 'higiene_otros', label: 'Otros' },
   ];
 
@@ -73,6 +78,8 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
 
   const handleAddToCart = (product: Product) => {
     if (product.stock <= 0) return;
+    const { originalPrice, staffPrice, discount } = getStaffDiscountedPrice(product);
+
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
@@ -81,7 +88,16 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
           item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
-      return [...prev, { product, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          product,
+          quantity: 1,
+          unitPrice: staffPrice,
+          originalPrice,
+          discountPerUnit: discount,
+        },
+      ];
     });
   };
 
@@ -106,7 +122,12 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
   };
 
   const totalCartAmount = cart.reduce(
-    (sum, item) => sum + item.product.price * item.quantity,
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0
+  );
+
+  const totalSavings = cart.reduce(
+    (sum, item) => sum + item.discountPerUnit * item.quantity,
     0
   );
 
@@ -125,8 +146,8 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
       productId: c.product.id,
       productName: c.product.name,
       quantity: c.quantity,
-      unitPrice: c.product.price,
-      subtotal: c.product.price * c.quantity,
+      unitPrice: c.unitPrice,
+      subtotal: c.unitPrice * c.quantity,
     }));
 
     addStaffConsumption({
@@ -149,144 +170,163 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
-        {/* Top Header */}
-        <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-brand-700 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
+        {/* Modal Top Header */}
+        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-brand-700 px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shrink-0">
-              <Coffee className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+            <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-amber-200 border border-white/30 shrink-0">
+              <Coffee className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-black tracking-tight leading-tight">Consumo de Personal</h2>
-              <p className="text-[11px] sm:text-xs text-rose-100 font-medium">
-                Descuento de minibar para liquidación en el pago semanal
+              <h2 className="text-lg font-black tracking-tight leading-tight">
+                Consumo de Personal / Empleados
+              </h2>
+              <p className="text-xs text-orange-100">
+                Registra productos consumidos con descuento oficial para empleados
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors shrink-0"
+            className="text-white/80 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
+        {/* Modal Scrollable Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          {/* Banner de Descuento de Empleados */}
+          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl flex items-center gap-3 text-emerald-900 shadow-2xs">
+            <div className="w-8 h-8 rounded-xl bg-emerald-200/80 text-emerald-800 flex items-center justify-center shrink-0">
+              <Tag className="w-4 h-4" />
+            </div>
+            <div className="text-xs">
+              <strong className="font-black block text-emerald-950">
+                🏷️ Tarifa Especial de Empleados Aplicada:
+              </strong>
+              <span className="text-[11px] text-emerald-800 font-medium">
+                Descuento de <strong>2 Bs</strong> en Bebidas (sodas, cervezas, aguas) y <strong>1 Bs</strong> en Galletas/Snacks. El stock se descuenta automáticamente.
+              </span>
+            </div>
+          </div>
+
           {/* Selector de Empleado */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
             <label className="block text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <UserCheck className="w-4 h-4 text-brand-600" />
-              ¿Quién es el empleado que consume? <span className="text-rose-500">*</span>
+              1. Selecciona el Personal que Consume
             </label>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {staffMembers.map((staff) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {staffMembers.map((member) => (
                 <button
-                  key={staff.id}
+                  key={member.id}
                   type="button"
-                  onClick={() => setSelectedStaffId(staff.id)}
-                  className={`p-2.5 rounded-xl border-2 text-left transition-all flex items-center justify-between ${
-                    selectedStaffId === staff.id
-                      ? 'border-brand-600 bg-rose-50/80 text-brand-900 font-black shadow-xs'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 font-medium'
+                  onClick={() => {
+                    setSelectedStaffId(member.id);
+                    setCustomStaffName('');
+                  }}
+                  className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    selectedStaffId === member.id
+                      ? 'bg-brand-50 border-brand-500 shadow-xs ring-2 ring-brand-500/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <div>
-                    <span className="text-xs block leading-tight">{staff.name}</span>
-                    <span className="text-[10px] text-slate-400 block">{staff.shiftName || staff.role}</span>
-                  </div>
-                  {selectedStaffId === staff.id && (
-                    <span className="w-2 h-2 rounded-full bg-brand-600 shrink-0" />
-                  )}
+                  <span className="font-bold text-xs text-slate-900 block leading-tight">
+                    {member.name}
+                  </span>
+                  <span className="text-[10px] text-slate-400 mt-1 capitalize font-medium">
+                    {member.role === 'limpieza' ? 'Personal de Limpieza' : 'Recepción / Caja'}
+                  </span>
                 </button>
               ))}
 
               <button
                 type="button"
                 onClick={() => setSelectedStaffId('other')}
-                className={`p-2.5 rounded-xl border-2 text-left transition-all flex items-center justify-between ${
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
                   selectedStaffId === 'other'
-                    ? 'border-brand-600 bg-rose-50/80 text-brand-900 font-black shadow-xs'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 font-medium'
+                    ? 'bg-brand-50 border-brand-500 shadow-xs ring-2 ring-brand-500/20'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
                 }`}
               >
-                <div>
-                  <span className="text-xs block leading-tight">+ Otro Empleado</span>
-                  <span className="text-[10px] text-slate-400 block">Escribir nombre manualmente</span>
-                </div>
-                {selectedStaffId === 'other' && (
-                  <span className="w-2 h-2 rounded-full bg-brand-600 shrink-0" />
-                )}
+                <span className="font-bold text-xs text-slate-900 block leading-tight">
+                  + Otro Empleado
+                </span>
+                <span className="text-[10px] text-slate-400 mt-1 font-medium">
+                  Escribir nombre manual
+                </span>
               </button>
             </div>
 
             {selectedStaffId === 'other' && (
-              <div className="pt-2">
+              <div className="pt-2 animate-fade-in">
                 <input
                   type="text"
-                  required
-                  placeholder="Nombre completo del empleado (Ej. Juan Pérez - Albañil)..."
+                  placeholder="Nombre completo del empleado..."
                   value={customStaffName}
                   onChange={(e) => setCustomStaffName(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>
             )}
           </div>
 
-          {/* Modalidad de Pago / Descuento */}
+          {/* Modalidad de Pago: Descuento Semanal vs Pagado en el Acto */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
             <label className="block text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <DollarSign className="w-4 h-4 text-emerald-600" />
-              ¿Cómo se cancela este consumo? <span className="text-rose-500">*</span>
+              2. Modalidad de Cobro del Consumo
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Opción 1: Descontar de su semana */}
+              {/* Opción 1: Descuento Semanal */}
               <button
                 type="button"
                 onClick={() => setPaymentType('descuento_semanal')}
-                className={`p-3 rounded-2xl border-2 text-left transition-all ${
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                   paymentType === 'descuento_semanal'
-                    ? 'border-amber-500 bg-amber-50/90 text-amber-950 shadow-xs'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    ? 'bg-amber-50/90 border-amber-400 shadow-xs ring-2 ring-amber-500/20 text-amber-950'
+                    : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-black flex items-center gap-1.5 text-amber-900">
-                    ⏳ Descontar de su Semana
+                  <span className="font-black text-xs flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4 text-amber-600" />
+                    Descontar de su Semana (Sueldo)
                   </span>
                   {paymentType === 'descuento_semanal' && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-amber-600" />
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 leading-tight">
-                  Se acumula en su cuenta para <strong>descontarle de su sueldo</strong> al final de la semana.
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Se acumula a su cuenta personal y se descuenta al momento de pagarle su sueldo semanal.
                 </p>
               </button>
 
-              {/* Opción 2: Pagó en el acto */}
+              {/* Opción 2: Pagado en el Acto */}
               <button
                 type="button"
                 onClick={() => setPaymentType('pagado_ahora')}
-                className={`p-3 rounded-2xl border-2 text-left transition-all ${
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                   paymentType === 'pagado_ahora'
-                    ? 'border-emerald-600 bg-emerald-50/90 text-emerald-950 shadow-xs'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    ? 'bg-emerald-50/90 border-emerald-400 shadow-xs ring-2 ring-emerald-500/20 text-emerald-950'
+                    : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-black flex items-center gap-1.5 text-emerald-800">
-                    💵 Pagó en el Acto (Al Contado)
+                  <span className="font-black text-xs flex items-center gap-1.5">
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    Pagó en el Acto (Al Contado)
                   </span>
                   {paymentType === 'pagado_ahora' && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 leading-tight">
+                <p className="text-[11px] text-slate-500 leading-snug">
                   El empleado <strong>pagó ahora mismo</strong>. Ingresa a la caja del turno activo y no se le descuenta de su sueldo.
                 </p>
               </button>
@@ -342,7 +382,7 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
             <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
               <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <Package className="w-4 h-4 text-brand-600" />
-                Seleccionar Productos del Minibar
+                3. Seleccionar Productos del Minibar
               </span>
 
               {/* Categorías */}
@@ -376,10 +416,12 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
               />
             </div>
 
-            {/* Grid de productos */}
+            {/* Grid de productos con precios con descuento de empleado */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
               {filteredProducts.map((p) => {
                 const inCart = cart.find((item) => item.product.id === p.id);
+                const { originalPrice, staffPrice, discount } = getStaffDiscountedPrice(p);
+
                 return (
                   <button
                     key={p.id}
@@ -390,23 +432,37 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
                       p.stock <= 0
                         ? 'opacity-40 bg-slate-100 border-slate-200 cursor-not-allowed'
                         : inCart
-                        ? 'bg-rose-50/80 border-rose-300 shadow-xs'
+                        ? 'bg-amber-50/80 border-amber-300 shadow-xs'
                         : 'bg-white border-slate-200 hover:border-brand-500 hover:shadow-xs active:scale-95'
                     }`}
                   >
                     <div>
-                      <span className="font-bold text-xs text-slate-900 block leading-tight mb-0.5">
-                        {p.name}
-                      </span>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-bold text-xs text-slate-900 truncate leading-tight">
+                          {p.name}
+                        </span>
+                        {discount > 0 && (
+                          <span className="text-[9px] font-black uppercase px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 shrink-0">
+                            -{discount} Bs
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] text-slate-400 block">
                         Stock: {p.stock} unid.
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
-                      <span className="font-extrabold text-xs font-mono text-brand-700">
-                        {formatBs(p.price)}
-                      </span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-extrabold text-xs font-mono text-emerald-700">
+                          {formatBs(staffPrice)}
+                        </span>
+                        {discount > 0 && (
+                          <span className="text-[10px] line-through text-slate-400 font-mono">
+                            {formatBs(originalPrice)}
+                          </span>
+                        )}
+                      </div>
                       <span className="p-1 rounded-md bg-brand-50 text-brand-700">
                         <Plus className="w-3 h-3" />
                       </span>
@@ -431,7 +487,7 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
 
             {cart.length === 0 ? (
               <div className="py-4 text-center text-slate-400 text-xs italic bg-white rounded-xl border border-dashed border-slate-200">
-                Haz clic en los productos arriba para agregarlos al consumo del personal.
+                Haz clic en los productos arriba para agregarlos al consumo del personal con descuento.
               </div>
             ) : (
               <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
@@ -442,9 +498,14 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-800">{item.product.name}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        ({formatBs(item.product.price)} c/u)
+                      <span className="text-[10px] text-emerald-700 font-mono font-bold">
+                        ({formatBs(item.unitPrice)} c/u)
                       </span>
+                      {item.discountPerUnit > 0 && (
+                        <span className="text-[9px] text-emerald-600 font-medium">
+                          (-{formatBs(item.discountPerUnit)} desc.)
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2.5">
@@ -459,23 +520,21 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
                         <span className="font-bold font-mono px-1">{item.quantity}</span>
                         <button
                           type="button"
-                          onClick={() => handleUpdateQuantity(item.product.id, +1)}
-                          disabled={item.quantity >= item.product.stock}
-                          className="text-slate-500 hover:text-slate-800 p-0.5 disabled:opacity-30"
+                          onClick={() => handleUpdateQuantity(item.product.id, 1)}
+                          className="text-slate-500 hover:text-slate-800 p-0.5"
                         >
                           <PlusCircle className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
-                      <span className="font-mono font-black text-slate-900 w-16 text-right">
-                        {formatBs(item.product.price * item.quantity)}
+                      <span className="font-mono font-extrabold text-slate-900 w-16 text-right">
+                        {formatBs(item.unitPrice * item.quantity)}
                       </span>
 
                       <button
                         type="button"
                         onClick={() => handleRemoveFromCart(item.product.id)}
                         className="text-slate-400 hover:text-rose-600 p-1"
-                        title="Quitar"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -484,46 +543,42 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
                 ))}
               </div>
             )}
-
-            {/* Total */}
-            <div className="p-3.5 bg-slate-900 text-white rounded-xl flex items-center justify-between">
-              <div>
-                <span
-                  className={`text-xs font-black uppercase tracking-wider block ${
-                    paymentType === 'pagado_ahora' ? 'text-emerald-300' : 'text-amber-300'
-                  }`}
-                >
-                  {paymentType === 'pagado_ahora'
-                    ? 'TOTAL COBRADO EN EL ACTO:'
-                    : 'TOTAL A DESCONTAR EN PAGO SEMANAL:'}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {paymentType === 'pagado_ahora'
-                    ? `Ingresa a caja del turno activo (${paymentMethod.toUpperCase()})`
-                    : `Se descontará del sueldo semanal de ${effectiveStaffName}`}
-                </span>
-              </div>
-              <span className="text-2xl font-black font-mono text-emerald-400">
-                {formatBs(totalCartAmount)}
-              </span>
-            </div>
           </div>
 
-          {/* Notas / Observaciones */}
+          {/* Notas */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Notas u Observación (Opcional)
+            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+              <FileText className="w-3.5 h-3.5 text-slate-500" />
+              Notas u Observaciones (Opcional)
             </label>
             <input
               type="text"
-              placeholder="Ej. Consumo turno tarde / merienda..."
+              placeholder="Ej. Consumo almuerzo, turno tarde, etc..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500/20"
             />
           </div>
 
-          {/* Action Buttons */}
+          {/* Total Banner */}
+          <div className="p-4 bg-slate-950 text-white rounded-2xl flex items-center justify-between shadow-md">
+            <div>
+              <span className="text-xs font-black uppercase tracking-wider text-amber-300 block">
+                {paymentType === 'descuento_semanal'
+                  ? 'TOTAL A DESCONTAR DE SU SEMANA:'
+                  : 'TOTAL A COBRAR EN EL ACTO:'}
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium">
+                {cart.reduce((sum, i) => sum + i.quantity, 0)} productos en total
+                {totalSavings > 0 && ` • Ahorro empleado aplicado: -${formatBs(totalSavings)}`}
+              </span>
+            </div>
+            <span className="text-2xl font-black font-mono text-emerald-400">
+              {formatBs(totalCartAmount)}
+            </span>
+          </div>
+
+          {/* Submit / Cancel Buttons */}
           <div className="flex items-center gap-3 pt-2">
             <button
               type="button"
@@ -536,16 +591,16 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
             <button
               type="submit"
               disabled={cart.length === 0}
-              className={`w-1/2 py-2.5 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 ${
-                paymentType === 'pagado_ahora'
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : 'bg-brand-600 hover:bg-brand-700'
+              className={`w-1/2 py-2.5 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 ${
+                paymentType === 'descuento_semanal'
+                  ? 'bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white'
               }`}
             >
               <Check className="w-4 h-4" />
-              {paymentType === 'pagado_ahora'
-                ? `Cobrar en el Acto (${formatBs(totalCartAmount)})`
-                : `Registrar p/ Descontar (${formatBs(totalCartAmount)})`}
+              {paymentType === 'descuento_semanal'
+                ? 'Registrar Consumo a Descontar'
+                : 'Cobrar Consumo al Contado'}
             </button>
           </div>
         </form>

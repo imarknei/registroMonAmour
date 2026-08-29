@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Product, ProductCategory } from '../../types';
-import { formatBs, getCategoryLabel } from '../../utils/formatUtils';
+import { formatBs, getCategoryLabel, getStaffDiscountedPrice } from '../../utils/formatUtils';
 import {
   Package,
   Plus,
@@ -283,8 +283,18 @@ export const InventoryManager: React.FC = () => {
                         </span>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-brand-700">
-                        {formatBs(prod.price)}
+                      <td className="py-3.5 px-4 text-right">
+                        <span className="font-mono font-extrabold text-brand-700 block">
+                          {formatBs(prod.price)}
+                        </span>
+                        {(() => {
+                          const { staffPrice, discount } = getStaffDiscountedPrice(prod);
+                          return discount > 0 ? (
+                            <span className="text-[10px] text-emerald-700 font-bold block" title="Precio especial para personal">
+                              Pers: {formatBs(staffPrice)} (-{discount}Bs)
+                            </span>
+                          ) : null;
+                        })()}
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
