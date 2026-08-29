@@ -20,24 +20,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ stay, onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-scale-in my-6">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-sm max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
         {/* Header */}
-        <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+        <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-rose-400" />
             <span className="font-bold text-sm">Comprobante de Estadía</span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+            className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Thermal Ticket Content */}
-        <div className="p-6 bg-slate-50 flex justify-center">
+        <div className="p-4 sm:p-6 bg-slate-50 flex justify-center flex-1 overflow-y-auto">
           <div
             id="printable-receipt"
             className="w-full bg-white p-5 rounded-2xl shadow-sm border border-slate-200 font-mono text-xs text-slate-800 space-y-3"

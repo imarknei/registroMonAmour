@@ -108,33 +108,33 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-scale-in my-6">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-brand-900 via-brand-800 to-rose-800 px-6 py-5 text-white flex items-center justify-between">
+        <div className="bg-gradient-to-r from-brand-900 via-brand-800 to-rose-800 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shadow-inner">
-              <LogOut className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shadow-inner shrink-0">
+              <LogOut className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight leading-tight">
                 Cierre de Caja y Relevo de Turno
               </h2>
-              <p className="text-xs text-rose-200 font-medium">
+              <p className="text-[11px] sm:text-xs text-rose-200 font-medium">
                 {currentShift.receptionistName} • {currentShift.shiftType === 'noche' ? 'Turno Noche' : 'Turno Día'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body Form */}
-        <form onSubmit={handleCloseShift} className="p-6 max-h-[78vh] overflow-y-auto space-y-5">
+        <form onSubmit={handleCloseShift} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Security Banner: Blind Count */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-xs">
             <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />

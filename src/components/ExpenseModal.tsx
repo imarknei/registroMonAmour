@@ -81,33 +81,33 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({ isOpen, onClose }) =
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-scale-in my-6">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-rose-700 via-rose-600 to-amber-600 px-6 py-5 text-white flex items-center justify-between">
+        <div className="bg-gradient-to-r from-rose-700 via-rose-600 to-amber-600 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shadow-inner">
-              <Receipt className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shadow-inner shrink-0">
+              <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight leading-tight">
                 Registrar Pago / Salida de Caja
               </h2>
-              <p className="text-xs text-rose-100 font-medium">
+              <p className="text-[11px] sm:text-xs text-rose-100 font-medium">
                 {currentUser.name} • {currentUser.shiftName}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Quick suggestions */}
           <div>
             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">

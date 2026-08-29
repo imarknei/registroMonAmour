@@ -235,22 +235,22 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-scale-in my-6">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
         {/* Header */}
         <div
-          className={`px-6 py-5 text-white flex items-center justify-between transition-colors ${
+          className={`px-5 sm:px-6 py-4 text-white flex items-center justify-between transition-colors shrink-0 shadow-sm z-10 ${
             timeCalc.isOvertime ? 'bg-brand-700' : 'bg-slate-900'
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center font-bold shrink-0">
-              <BedDouble className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center font-bold shrink-0">
+              <BedDouble className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">{room.name}</h2>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/20 text-white">
+                <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight">{room.name}</h2>
+                <span className="text-[11px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/20 text-white">
                   {room.tag}
                 </span>
                 {isPrepaid && (
@@ -260,7 +260,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-300 font-medium">
+              <p className="text-[11px] sm:text-xs text-slate-300 font-medium">
                 {stay.chosenPlan.toUpperCase()} • Ingreso: {formatTimeOnly(stay.startTime)} • Atendido por: {stay.receptionistName}
               </p>
             </div>
@@ -268,15 +268,15 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 pt-3 bg-slate-50">
-          <div className="flex gap-4">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 pt-3 bg-slate-50 shrink-0">
+          <div className="flex gap-2 sm:gap-4">
             <button
               onClick={() => setActiveTab('checkout')}
               className={`pb-2.5 px-2 text-xs font-extrabold transition-all border-b-2 flex items-center gap-1.5 ${
@@ -291,7 +291,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
             <button
               onClick={() => setActiveTab('consumptions')}
-              className={`pb-2.5 px-4 text-xs font-extrabold transition-all border-b-2 flex items-center gap-1.5 ${
+              className={`pb-2.5 px-2 sm:px-4 text-xs font-extrabold transition-all border-b-2 flex items-center gap-1.5 ${
                 activeTab === 'consumptions'
                   ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -305,16 +305,17 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           <button
             type="button"
             onClick={() => onOpenChangeRoom?.(room)}
-            className="pb-2.5 px-3.5 text-xs font-black text-amber-900 hover:text-amber-950 flex items-center gap-1.5 bg-amber-100/80 hover:bg-amber-200/90 rounded-t-xl transition-all border-t border-x border-amber-300 shadow-xs"
+            className="pb-2 px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-black text-amber-900 hover:text-amber-950 flex items-center gap-1.5 bg-amber-100/80 hover:bg-amber-200/90 rounded-t-xl transition-all border-t border-x border-amber-300 shadow-xs"
             title="Cambiar a otra habitación disponible"
           >
             <ArrowLeftRight className="w-3.5 h-3.5 text-amber-700" />
-            CAMBIO DE HABITACIÓN
+            <span className="hidden sm:inline">CAMBIO DE HABITACIÓN</span>
+            <span className="sm:hidden">CAMBIAR</span>
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 max-h-[75vh] overflow-y-auto space-y-5">
+        <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4 sm:space-y-5">
           {/* TAB 1: COBRO & SALIDA */}
           {activeTab === 'checkout' && (
             <div className="space-y-4">

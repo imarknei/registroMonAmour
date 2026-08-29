@@ -242,34 +242,34 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-scale-in my-8">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-brand-700 to-rose-600 px-6 py-5 text-white flex items-center justify-between">
+        <div className="bg-gradient-to-r from-brand-700 to-rose-600 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shrink-0">
               <BedDouble className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-extrabold tracking-tight">{room.name}</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">
+                <span className="text-lg sm:text-xl font-extrabold tracking-tight">{room.name}</span>
+                <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">
                   {room.tag}
                 </span>
               </div>
-              <p className="text-xs text-rose-100 font-medium">Registro de nueva estadía</p>
+              <p className="text-[11px] sm:text-xs text-rose-100 font-medium">Registro de nueva estadía</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Plan Selector */}
           <div>
             <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2.5">
