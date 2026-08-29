@@ -145,35 +145,36 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-scale-in my-6">
-        {/* Top Header */}
-        <div className="bg-gradient-to-r from-purple-700 via-indigo-600 to-brand-600 px-6 py-5 text-white flex items-center justify-between">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
+        {/* Top Header - Always Fixed at top */}
+        <div className="bg-gradient-to-r from-purple-700 via-indigo-600 to-brand-600 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white border border-white/30 shadow-inner">
+            <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white border border-white/30 shadow-inner shrink-0">
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black tracking-tight leading-tight">
+              <h2 className="text-base sm:text-lg font-black tracking-tight leading-tight">
                 Registrar Consumo Extra / Venta Mostrador
               </h2>
-              <p className="text-xs text-purple-100 font-medium">
+              <p className="text-[11px] sm:text-xs text-purple-100 font-medium">
                 Cobro de minibar de habitación ya cerrada o venta directa en recepción
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-white/80 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors"
+            className="text-white/80 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors shrink-0"
+            title="Cerrar modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        {/* Form Body - Scrollable Area */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Origen del Consumo */}
-          <div className="bg-purple-50/70 p-4 rounded-2xl border border-purple-200/80 space-y-3">
+          <div className="bg-purple-50/70 p-3.5 sm:p-4 rounded-2xl border border-purple-200/80 space-y-3">
             <label className="block text-xs font-black text-purple-950 uppercase tracking-wider flex items-center gap-1.5">
               <Store className="w-4 h-4 text-purple-600" />
               ¿De dónde proviene este consumo? <span className="text-rose-500">*</span>
@@ -183,7 +184,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setOriginType('habitacion_cerrada')}
-                className={`p-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2 ${
+                className={`p-2 sm:p-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2 ${
                   originType === 'habitacion_cerrada'
                     ? 'border-purple-600 bg-white text-purple-950 shadow-xs'
                     : 'border-purple-100 bg-purple-50/50 text-slate-700 hover:bg-white'
@@ -199,7 +200,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setOriginType('mostrador_recepcion')}
-                className={`p-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2 ${
+                className={`p-2 sm:p-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2 ${
                   originType === 'mostrador_recepcion'
                     ? 'border-purple-600 bg-white text-purple-950 shadow-xs'
                     : 'border-purple-100 bg-purple-50/50 text-slate-700 hover:bg-white'
@@ -215,7 +216,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setOriginType('cliente_espera')}
-                className={`p-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2 ${
+                className={`p-2 sm:p-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2 ${
                   originType === 'cliente_espera'
                     ? 'border-purple-600 bg-white text-purple-950 shadow-xs'
                     : 'border-purple-100 bg-purple-50/50 text-slate-700 hover:bg-white'
@@ -256,7 +257,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
           </div>
 
           {/* Forma de Pago Recibido */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2.5">
+          <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-2.5">
             <label className="block text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <DollarSign className="w-4 h-4 text-emerald-600" />
               Método de Pago Recibido <span className="text-rose-500">*</span>
@@ -266,7 +267,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('efectivo')}
-                className={`py-2.5 px-3 rounded-xl border-2 text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 px-2.5 sm:px-3 rounded-xl border-2 text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                   paymentMethod === 'efectivo'
                     ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-xs'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -277,7 +278,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('qr_vendis')}
-                className={`py-2.5 px-3 rounded-xl border-2 text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 px-2.5 sm:px-3 rounded-xl border-2 text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                   paymentMethod === 'qr_vendis'
                     ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-xs'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -288,7 +289,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('qr_union')}
-                className={`py-2.5 px-3 rounded-xl border-2 text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 px-2.5 sm:px-3 rounded-xl border-2 text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                   paymentMethod === 'qr_union'
                     ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-xs'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -301,14 +302,14 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
 
           {/* Selector de Productos */}
           <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
+            <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between">
               <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <ShoppingBag className="w-4 h-4 text-purple-600" />
                 Seleccionar Productos del Inventario
               </span>
 
               {/* Categorías */}
-              <div className="flex gap-1 overflow-x-auto w-full sm:w-auto no-scrollbar">
+              <div className="flex gap-1 overflow-x-auto w-full sm:w-auto no-scrollbar pb-1 sm:pb-0">
                 {categories.map((cat) => (
                   <button
                     key={cat.key}
@@ -339,7 +340,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
             </div>
 
             {/* Grid de productos */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-44 sm:max-h-48 overflow-y-auto p-1 bg-slate-50/50 rounded-2xl border border-slate-200/60">
               {filteredProducts.map((p) => {
                 const inCart = cart.find((item) => item.product.id === p.id);
                 return (
@@ -380,36 +381,36 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
           </div>
 
           {/* Carrito de Productos Seleccionados */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2.5">
+          <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <ShoppingBag className="w-4 h-4 text-purple-600" />
                 Detalle del Consumo Extra ({cart.length} productos)
               </span>
-              <span className="text-xs font-bold text-slate-500">
+              <span className="text-xs font-bold text-slate-500 truncate max-w-[200px]">
                 {getEffectiveDescription()}
               </span>
             </div>
 
             {cart.length === 0 ? (
-              <div className="py-4 text-center text-slate-400 text-xs italic bg-white rounded-xl border border-dashed border-slate-200">
+              <div className="py-3 text-center text-slate-400 text-xs italic bg-white rounded-xl border border-dashed border-slate-200">
                 Haz clic en los productos de arriba para añadirlos a este cobro extra.
               </div>
             ) : (
-              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-32 sm:max-h-36 overflow-y-auto pr-1">
                 {cart.map((item) => (
                   <div
                     key={item.product.id}
-                    className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 text-xs"
+                    className="flex items-center justify-between bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200 text-xs"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-800">{item.product.name}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        ({formatBs(item.product.price)} c/u)
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <span className="font-bold text-slate-800 truncate">{item.product.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                        ({formatBs(item.product.price)})
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2 shrink-0">
                       <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded-lg border border-slate-200">
                         <button
                           type="button"
@@ -429,7 +430,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
                         </button>
                       </div>
 
-                      <span className="font-mono font-black text-slate-900 w-16 text-right">
+                      <span className="font-mono font-black text-slate-900 w-14 sm:w-16 text-right">
                         {formatBs(item.product.price * item.quantity)}
                       </span>
 
@@ -447,17 +448,17 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               </div>
             )}
 
-            {/* Total */}
-            <div className="p-3.5 bg-slate-900 text-white rounded-xl flex items-center justify-between">
+            {/* Total Banner */}
+            <div className="p-3 bg-slate-900 text-white rounded-xl flex items-center justify-between">
               <div>
                 <span className="text-xs font-black uppercase tracking-wider text-emerald-300 block">
-                  TOTAL A COBRAR E INGRESAR A CAJA:
+                  TOTAL A COBRAR EN CAJA:
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Ingresa a la caja activa en {getPaymentMethodLabel(paymentMethod)}
+                  Ingresa en {getPaymentMethodLabel(paymentMethod)}
                 </span>
               </div>
-              <span className="text-2xl font-black font-mono text-emerald-400">
+              <span className="text-xl sm:text-2xl font-black font-mono text-emerald-400">
                 {formatBs(totalCartAmount)}
               </span>
             </div>
@@ -478,7 +479,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center gap-3 pt-2 pb-1">
             <button
               type="button"
               onClick={onClose}

@@ -149,17 +149,17 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-scale-in my-6">
+    <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in my-auto">
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-brand-700 px-6 py-5 text-white flex items-center justify-between">
+        <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-brand-700 px-5 sm:px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold">
-              <Coffee className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-bold shrink-0">
+              <Coffee className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-black tracking-tight">Consumo de Personal</h2>
-              <p className="text-xs text-rose-100 font-medium">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight leading-tight">Consumo de Personal</h2>
+              <p className="text-[11px] sm:text-xs text-rose-100 font-medium">
                 Descuento de minibar para liquidación en el pago semanal
               </p>
             </div>
@@ -167,14 +167,14 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="p-6 max-h-[78vh] overflow-y-auto space-y-5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Selector de Empleado */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
             <label className="block text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
