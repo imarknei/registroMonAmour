@@ -6,7 +6,7 @@ import {
   formatTimerDisplay,
   formatTimeOnly,
 } from '../utils/timeUtils';
-import { formatBs, getRoomTypeBadge, getRoomTypeLabel } from '../utils/formatUtils';
+import { formatBs, getRoomTypeBadge, getRoomTypeLabel, getEffective2hPrice, isWeekendTariffDay } from '../utils/formatUtils';
 import {
   Clock,
   AlertCircle,
@@ -107,9 +107,16 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               </strong>
             </div>
             <div className="flex justify-between items-center">
-              <span>2 Horas:</span>
+              <span className="flex items-center gap-1">
+                2 Horas:
+                {isWeekendTariffDay() && (
+                  <span className="text-[9px] font-black uppercase text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                    Vie-Dom
+                  </span>
+                )}
+              </span>
               <strong className="font-bold text-slate-800">
-                {roomTariff?.price2h ? formatBs(roomTariff.price2h) : 'No disp.'}
+                {formatBs(getEffective2hPrice(room.type, roomTariff))}
               </strong>
             </div>
             <div className="flex justify-between items-center text-brand-700 font-semibold pt-1 border-t border-slate-200/60">

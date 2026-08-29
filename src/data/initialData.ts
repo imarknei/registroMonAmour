@@ -4,18 +4,21 @@ export const INITIAL_TARIFFS: TariffCatalog = {
   ventilador: {
     price1h: 45,
     price2h: 70,
+    price2hWeekend: 75, // Viernes, Sábado y Domingo: 75 Bs
     priceNight: 140, // 12 horas / noche
     extraHourPrice: 30,
   },
   aire: {
     price1h: 55,
     price2h: 80,
+    price2hWeekend: 85, // Viernes, Sábado y Domingo: 85 Bs
     priceNight: 150,
     extraHourPrice: 30,
   },
   suite: {
     price1h: 65,
     price2h: 80,
+    price2hWeekend: 95, // Viernes, Sábado y Domingo: 95 Bs (Suite Tantra)
     price2hNight: 100, // Paquete 2 Horas Suite Noche en 100 Bs
     bonflix2hPrice: 150, // Promo 2 Horas Bonflix en 150 Bs
     bonflix4hPrice: 190, // Promo 4 Horas Bonflix en 190 Bs
@@ -24,6 +27,7 @@ export const INITIAL_TARIFFS: TariffCatalog = {
   },
   jacuzzi: {
     price2h: 180,
+    price2hWeekend: 180,
     price3h: 220,
     priceNight: 220,
     extraHourPrice: 40,
@@ -31,6 +35,7 @@ export const INITIAL_TARIFFS: TariffCatalog = {
   golden_suite: {
     price1h: 85,
     price2h: 140,
+    price2hWeekend: 140,
     priceNight: 230,
     extraHourPrice: 40,
   },

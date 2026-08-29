@@ -15,6 +15,7 @@ export const TariffManager: React.FC = () => {
     field:
       | 'price1h'
       | 'price2h'
+      | 'price2hWeekend'
       | 'price3h'
       | 'price2hNight'
       | 'bonflix2hPrice'
@@ -179,10 +180,10 @@ export const TariffManager: React.FC = () => {
                     />
                   </div>
 
-                  {/* 2 Hours */}
+                  {/* 2 Hours Regular */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                      2 Horas (Bs)
+                      2 Horas (Lun-Jue)
                     </label>
                     <input
                       type="number"
@@ -191,6 +192,22 @@ export const TariffManager: React.FC = () => {
                       onChange={(e) => handleUpdateField(type.key, 'price2h', e.target.value)}
                       placeholder="-"
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                    />
+                  </div>
+
+                  {/* 2 Hours Weekend (Vie, Sab, Dom) */}
+                  <div className="bg-amber-50/70 p-2 rounded-xl border border-amber-200/80">
+                    <label className="block text-[11px] font-black text-amber-950 mb-1 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-600" />
+                      2h Fin de Sem. (Vie-Dom)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={config.price2hWeekend ?? ''}
+                      onChange={(e) => handleUpdateField(type.key, 'price2hWeekend', e.target.value)}
+                      placeholder={type.key === 'ventilador' ? '75' : type.key === 'aire' ? '85' : type.key === 'suite' ? '95' : '-'}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 font-mono font-black text-amber-950 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
                   </div>
 

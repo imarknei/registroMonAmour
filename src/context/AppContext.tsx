@@ -283,7 +283,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [tariffs, setTariffs] = useState<TariffCatalog>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.TARIFFS);
-      return saved ? JSON.parse(saved) : INITIAL_TARIFFS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...INITIAL_TARIFFS,
+          ...parsed,
+          ventilador: { ...INITIAL_TARIFFS.ventilador, ...(parsed.ventilador || {}) },
+          aire: { ...INITIAL_TARIFFS.aire, ...(parsed.aire || {}) },
+          suite: { ...INITIAL_TARIFFS.suite, ...(parsed.suite || {}) },
+          jacuzzi: { ...INITIAL_TARIFFS.jacuzzi, ...(parsed.jacuzzi || {}) },
+          golden_suite: { ...INITIAL_TARIFFS.golden_suite, ...(parsed.golden_suite || {}) },
+        };
+      }
+      return INITIAL_TARIFFS;
     } catch {
       return INITIAL_TARIFFS;
     }

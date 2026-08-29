@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Room, PlanType, PaymentMethod } from '../types';
-import { formatBs, getRoomTypeBadge } from '../utils/formatUtils';
+import { formatBs, getRoomTypeBadge, getEffective2hPrice, isWeekendTariffDay } from '../utils/formatUtils';
 import {
   X,
   Clock,
@@ -33,6 +33,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
 
   const roomTariff = tariffs[room.type];
   const badge = getRoomTypeBadge(room.type);
+  const isWeekend = isWeekendTariffDay();
+  const effective2hPrice = getEffective2hPrice(room.type, roomTariff);
 
   // Available plans for this room
   type PlanOption = {
@@ -59,14 +61,15 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     });
   }
 
-  if (roomTariff?.price2h) {
+  if (roomTariff?.price2h || roomTariff?.price2hWeekend || effective2hPrice) {
     planOptions.push({
       key: '2h',
-      title: '2 Horas',
-      subtitle: 'Estadía Estándar (120 min)',
+      title: isWeekend ? '2 Horas (Fin de Semana)' : '2 Horas',
+      subtitle: isWeekend ? `Estadía 2h (Vie, Sáb y Dom • ${formatBs(effective2hPrice)})` : 'Estadía Estándar (120 min)',
       durationMinutes: 120,
-      price: roomTariff.price2h,
+      price: effective2hPrice,
       icon: <Clock className="w-4 h-4 text-brand-600" />,
+      isPromo: isWeekend,
     });
   }
 

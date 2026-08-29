@@ -5,6 +5,7 @@ export type RoomStatus = 'disponible' | 'ocupada' | 'limpieza';
 export interface RoomTariffConfig {
   price1h?: number;
   price2h?: number;
+  price2hWeekend?: number; // Tarifa 2 Horas Fin de Semana (Viernes, Sábado y Domingo)
   price3h?: number;
   price2hNight?: number; // Paquete 2 Horas Suite Noche (100 Bs)
   bonflix2hPrice?: number; // Promoción 2 Horas con Bonflix (150 Bs)

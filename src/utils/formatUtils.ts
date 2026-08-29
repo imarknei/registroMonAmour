@@ -138,3 +138,40 @@ export function getPaymentMethodLabel(method: string): string {
   }
 }
 
+/**
+ * Determina si la fecha corresponde a Fin de Semana (Viernes, Sábado o Domingo)
+ */
+export function isWeekendTariffDay(date = new Date()): boolean {
+  const day = date.getDay(); // 0 = Domingo, 5 = Viernes, 6 = Sábado
+  return day === 0 || day === 5 || day === 6;
+}
+
+/**
+ * Obtiene el precio efectivo de 2 horas según el día de la semana
+ * - Viernes, Sábados y Domingos: Ventilador 75 Bs, Aire 85 Bs, Suite Tantra 95 Bs
+ * - Lunes a Jueves: Tarifas regulares estándar (Ventilador 70 Bs, Aire 80 Bs, Suite 80 Bs)
+ */
+export function getEffective2hPrice(
+  roomType: string,
+  roomTariff?: { price2h?: number; price2hWeekend?: number },
+  date = new Date()
+): number {
+  const isWeekend = isWeekendTariffDay(date);
+
+  if (isWeekend) {
+    if (roomTariff?.price2hWeekend !== undefined) return roomTariff.price2hWeekend;
+    if (roomType === 'ventilador') return 75;
+    if (roomType === 'aire') return 85;
+    if (roomType === 'suite') return 95;
+    if (roomTariff?.price2h !== undefined) return roomTariff.price2h;
+    if (roomType === 'jacuzzi') return 180;
+    if (roomType === 'golden_suite') return 140;
+  }
+
+  return (
+    roomTariff?.price2h ??
+    (roomType === 'ventilador' ? 70 : roomType === 'aire' ? 80 : roomType === 'suite' ? 80 : 80)
+  );
+}
+
+
