@@ -30,9 +30,18 @@ import {
   FileText,
   Clock,
   Sliders,
+  Lock,
 } from 'lucide-react';
 
-export const InventoryManager: React.FC = () => {
+interface InventoryManagerProps {
+  onBackToRooms?: () => void;
+  onLockInventory?: () => void;
+}
+
+export const InventoryManager: React.FC<InventoryManagerProps> = ({
+  onBackToRooms,
+  onLockInventory,
+}) => {
   const { products, saveProduct, deleteProductById, inventoryLogs, deleteInventoryLogById, currentUser } = useApp();
 
   // Pestaña activa: 'catalog' (Gestión de Stock) o 'reports' (Informe de Ingresos y Movimientos)
@@ -278,6 +287,13 @@ export const InventoryManager: React.FC = () => {
             Producto Eliminado
           </span>
         );
+      case 'inventory_access_login':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-cyan-100 text-cyan-800 border border-cyan-300">
+            <Lock className="w-3 h-3 text-cyan-600" />
+            Acceso Autorizado
+          </span>
+        );
       default:
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
@@ -309,13 +325,38 @@ export const InventoryManager: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {onBackToRooms && (
+              <button
+                type="button"
+                onClick={onBackToRooms}
+                className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5"
+                title="Volver a la vista de Recepción"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Volver a Recepción</span>
+                <span className="sm:hidden">Volver</span>
+              </button>
+            )}
+
+            {onLockInventory && (
+              <button
+                type="button"
+                onClick={onLockInventory}
+                className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-all flex items-center gap-1.5"
+                title="Cerrar y bloquear acceso a inventario"
+              >
+                <Lock className="w-4 h-4" />
+                <span className="hidden md:inline">Bloquear</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleOpenCreate}
               className="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-brand-600/20 transition-all flex items-center justify-center gap-2"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
-              Nuevo Producto
+              <span>Nuevo Producto</span>
             </button>
           </div>
         </div>
@@ -705,6 +746,7 @@ export const InventoryManager: React.FC = () => {
                   <option value="manual_adjustment">Ajustes Manuales</option>
                   <option value="price_change">Cambios de Precio</option>
                   <option value="delete_product">Productos Eliminados</option>
+                  <option value="inventory_access_login">Accesos con Contraseña</option>
                 </select>
               </div>
 

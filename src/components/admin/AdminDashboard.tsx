@@ -11,14 +11,20 @@ export type AdminSubView = 'registered_rooms' | 'inventory' | 'tariffs' | 'shift
 
 interface AdminDashboardProps {
   currentView: AdminSubView;
+  onBackToRooms?: () => void;
+  onLockInventory?: () => void;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentView }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  currentView,
+  onBackToRooms,
+  onLockInventory,
+}) => {
   switch (currentView) {
     case 'registered_rooms':
       return <RegisteredRoomsView />;
     case 'inventory':
-      return <InventoryManager />;
+      return <InventoryManager onBackToRooms={onBackToRooms} onLockInventory={onLockInventory} />;
     case 'tariffs':
       return <TariffManager />;
     case 'shifts':

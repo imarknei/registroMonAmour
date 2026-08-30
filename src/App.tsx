@@ -11,22 +11,36 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { ExpenseModal } from './components/ExpenseModal';
 import { StaffConsumptionModal } from './components/StaffConsumptionModal';
 import { ExtraConsumptionModal } from './components/ExtraConsumptionModal';
-import { AdminLoginModal } from './components/AdminLoginModal';
+import { AdminLoginModal, AccessLevel } from './components/AdminLoginModal';
 import { ToastContainer } from './components/Toast';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { Room, Stay } from './types';
 import { Flame, ShieldCheck } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const { rooms, currentUser, setCurrentUserById, toasts, dismissToast, showToast } = useApp();
+  const {
+    rooms,
+    currentUser,
+    setCurrentUserById,
+    toasts,
+    dismissToast,
+    showToast,
+    addInventoryLog,
+  } = useApp();
 
   // Navigation state
   const [currentView, setCurrentView] = useState<AdminViewType>('rooms');
 
-  // Admin authentication state
+  // Admin authentication state (Full Admin Access)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('mon_amour_admin_auth') === 'true';
   });
+
+  // Inventory-only unlocked state (Receptionist access via amour23)
+  const [isInventoryUnlocked, setIsInventoryUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('mon_amour_inventory_unlocked') === 'true';
+  });
+
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
 
   // Modal states
@@ -51,7 +65,7 @@ export const App: React.FC = () => {
         } else {
           setCurrentUserById('user-admin');
           if (currentView === 'rooms') {
-            setCurrentView('inventory');
+            setCurrentView('registered_rooms');
           }
         }
       }
@@ -65,6 +79,18 @@ export const App: React.FC = () => {
       window.removeEventListener('hashchange', handleUrlRouting);
     };
   }, [isAdminAuthenticated]);
+
+  // Protección de rutas: Si no es Admin Global, NO puede acceder a vistas de administración salvo Inventario
+  useEffect(() => {
+    if (
+      currentView !== 'rooms' &&
+      currentView !== 'inventory' &&
+      !isAdminAuthenticated &&
+      currentUser.role !== 'admin'
+    ) {
+      setCurrentView('rooms');
+    }
+  }, [currentView, isAdminAuthenticated, currentUser.role]);
 
   // Modal handlers
   const handleOpenRegister = (room: Room) => {
@@ -91,32 +117,92 @@ export const App: React.FC = () => {
     setReceiptStay(stay);
   };
 
-  // Admin Login success handler
-  const handleAdminLoginSuccess = () => {
-    setIsAdminAuthenticated(true);
-    sessionStorage.setItem('mon_amour_admin_auth', 'true');
+  // Login success handler (Diferencia acceso exclusivo a Inventario vs Admin General)
+  const handleAdminLoginSuccess = (accessLevel: AccessLevel) => {
     setIsAdminLoginModalOpen(false);
-    setCurrentView('inventory');
-    showToast({
-      title: '¡Acceso Concedido!',
-      message: 'Panel de control e inventario habilitado.',
-      type: 'success',
-      durationMs: 4000,
-    });
+
+    if (accessLevel === 'full_admin') {
+      setIsAdminAuthenticated(true);
+      setIsInventoryUnlocked(true);
+      sessionStorage.setItem('mon_amour_admin_auth', 'true');
+      sessionStorage.setItem('mon_amour_inventory_unlocked', 'true');
+      setCurrentUserById('user-admin');
+      setCurrentView('registered_rooms');
+
+      addInventoryLog({
+        productId: 'auth-login-admin',
+        productName: 'Acceso Administrador General',
+        category: 'higiene_otros',
+        action: 'inventory_access_login',
+        previousStock: 0,
+        newStock: 0,
+        quantityAdded: 0,
+        responsibleId: 'user-admin',
+        responsibleName: 'Administrador General',
+        notes: 'Inicio de sesión con contraseña Master (Acceso completo a todo el sistema)',
+      });
+
+      showToast({
+        title: '¡Acceso de Administrador Total!',
+        message: 'Panel de control y administración global habilitado.',
+        type: 'success',
+        durationMs: 4000,
+      });
+    } else {
+      // accessLevel === 'inventory_only' (Clave de recepcionista para inventario)
+      setIsInventoryUnlocked(true);
+      sessionStorage.setItem('mon_amour_inventory_unlocked', 'true');
+      setCurrentView('inventory');
+
+      addInventoryLog({
+        productId: 'auth-login-inventory',
+        productName: 'Acceso a Inventario',
+        category: 'higiene_otros',
+        action: 'inventory_access_login',
+        previousStock: 0,
+        newStock: 0,
+        quantityAdded: 0,
+        responsibleId: currentUser.id,
+        responsibleName: currentUser.name,
+        notes: `Desbloqueo de módulo de inventario por ${currentUser.name} (${currentUser.shiftName || 'Turno Activo'}).`,
+      });
+
+      showToast({
+        title: '¡Acceso a Inventario Concedido!',
+        message: `Módulo de inventario habilitado para ${currentUser.name}.`,
+        type: 'success',
+        durationMs: 4000,
+      });
+    }
   };
 
   // Lock / Logout Admin
   const handleLockAdmin = () => {
     setIsAdminAuthenticated(false);
+    setIsInventoryUnlocked(false);
     sessionStorage.removeItem('mon_amour_admin_auth');
+    sessionStorage.removeItem('mon_amour_inventory_unlocked');
     setCurrentUserById('user-recep-dia');
     setCurrentView('rooms');
     window.history.pushState({}, '', '/');
     showToast({
-      title: 'Sesión de Administrador Bloqueada',
+      title: 'Sesión Bloqueada',
       message: 'Regresando a la vista de Recepción.',
       type: 'info',
       durationMs: 4000,
+    });
+  };
+
+  // Lock Inventory (para volver a bloquear solo inventario)
+  const handleLockInventory = () => {
+    setIsInventoryUnlocked(false);
+    sessionStorage.removeItem('mon_amour_inventory_unlocked');
+    setCurrentView('rooms');
+    showToast({
+      title: 'Inventario Bloqueado',
+      message: 'Regresando a la vista de Recepción.',
+      type: 'info',
+      durationMs: 3000,
     });
   };
 
@@ -133,6 +219,8 @@ export const App: React.FC = () => {
         onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
         onLockAdmin={handleLockAdmin}
         isAdminAuthenticated={isAdminAuthenticated}
+        isInventoryUnlocked={isInventoryUnlocked}
+        onLockInventory={handleLockInventory}
       />
 
       {/* Main Content Area */}
@@ -151,7 +239,11 @@ export const App: React.FC = () => {
             onOpenChangeRoom={handleOpenChangeRoom}
           />
         ) : (
-          <AdminDashboard currentView={currentView} />
+          <AdminDashboard
+            currentView={currentView}
+            onBackToRooms={() => setCurrentView('rooms')}
+            onLockInventory={handleLockInventory}
+          />
         )}
       </main>
 

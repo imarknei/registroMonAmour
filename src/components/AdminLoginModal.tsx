@@ -1,18 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Lock, Eye, EyeOff, X, AlertCircle, Sparkles } from 'lucide-react';
 
+export type AccessLevel = 'inventory_only' | 'full_admin';
+
 interface AdminLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (accessLevel: AccessLevel) => void;
+  title?: string;
+  subtitle?: string;
 }
 
-export const ADMIN_PASSWORDS = ['amour23', 'Imark133', 'amour2023'];
+export const ADMIN_MASTER_PASSWORD = 'Imark133';
+export const INVENTORY_PASSWORD = 'amour23';
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  title,
+  subtitle,
 }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -35,9 +42,12 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPass = password.trim();
-    if (ADMIN_PASSWORDS.includes(cleanPass) || cleanPass.toLowerCase() === 'amour23') {
+    if (cleanPass === ADMIN_MASTER_PASSWORD) {
       setError(false);
-      onSuccess();
+      onSuccess('full_admin');
+    } else if (cleanPass.toLowerCase() === 'amour23' || cleanPass === 'amour2023') {
+      setError(false);
+      onSuccess('inventory_only');
     } else {
       setError(true);
       inputRef.current?.select();
@@ -61,10 +71,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           </div>
 
           <h2 className="text-xl font-black tracking-tight text-white">
-            Acceso a Inventario y Administración
+            {title || 'Acceso de Seguridad'}
           </h2>
           <p className="text-xs text-slate-300 mt-1">
-            Control de inventario, productos, reabastecimiento y reportes
+            {subtitle || 'Ingrese la contraseña autorizada para continuar'}
           </p>
         </div>
 

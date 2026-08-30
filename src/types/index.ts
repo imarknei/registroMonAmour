@@ -335,7 +335,8 @@ export type InventoryActionType =
   | 'manual_adjustment'
   | 'create_product'
   | 'price_change'
-  | 'delete_product';
+  | 'delete_product'
+  | 'inventory_access_login';
 
 export interface InventoryMovementLog {
   id: string;

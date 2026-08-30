@@ -41,6 +41,8 @@ interface NavbarProps {
   onOpenAdminLogin: () => void;
   onLockAdmin: () => void;
   isAdminAuthenticated: boolean;
+  isInventoryUnlocked?: boolean;
+  onLockInventory?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -53,6 +55,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdminLogin,
   onLockAdmin,
   isAdminAuthenticated,
+  isInventoryUnlocked,
+  onLockInventory,
 }) => {
   const {
     currentUser,
@@ -199,11 +203,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action Tools: Inventory, Extra Consumptions, Staff, Expenses, Sound Toggle, Shift Close & User Dropdown */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* BOTÓN INVENTARIO (Acceso para recepcionistas con contraseña amour23 y administradores) */}
+            {/* BOTÓN INVENTARIO */}
             <button
               onClick={() => {
-                if (isAdminAuthenticated || currentUser.role === 'admin') {
-                  setCurrentView('inventory');
+                if (isAdminAuthenticated || currentUser.role === 'admin' || isInventoryUnlocked) {
+                  setCurrentView(currentView === 'inventory' ? 'rooms' : 'inventory');
                 } else {
                   onOpenAdminLogin();
                 }
@@ -216,7 +220,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="Acceso a Control de Inventario y Productos"
             >
               <Package className={`w-3.5 h-3.5 ${currentView === 'inventory' ? 'text-white' : 'text-emerald-700'}`} />
-              <span>INVENTARIO</span>
+              <span>{currentView === 'inventory' ? '← HABITACIONES' : 'INVENTARIO'}</span>
             </button>
 
             {/* BOTÓN CONSUMO EXTRA / VENTA DIRECTA */}
