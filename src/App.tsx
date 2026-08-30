@@ -98,8 +98,8 @@ export const App: React.FC = () => {
     setIsAdminLoginModalOpen(false);
     setCurrentView('inventory');
     showToast({
-      title: '¡Acceso a Inventario Concedido (amour23)!',
-      message: 'Ahora puede agregar productos, reabastecer stock y consultar el informe de movimientos.',
+      title: '¡Acceso Concedido!',
+      message: 'Panel de control e inventario habilitado.',
       type: 'success',
       durationMs: 4000,
     });

@@ -213,7 +213,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-brand-600 text-white shadow-brand-500/20'
                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-300'
               }`}
-              title="Acceso a Control de Inventario y Productos (Requiere contraseña amour23)"
+              title="Acceso a Control de Inventario y Productos"
             >
               <Package className={`w-3.5 h-3.5 ${currentView === 'inventory' ? 'text-white' : 'text-emerald-700'}`} />
               <span>INVENTARIO</span>

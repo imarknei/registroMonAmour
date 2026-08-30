@@ -300,9 +300,6 @@ export const InventoryManager: React.FC = () => {
               <div>
                 <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                   <span>Control de Inventario y Minibar</span>
-                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    amour23
-                  </span>
                 </h2>
                 <p className="text-xs text-slate-500">
                   Agregue productos, modifique precios, aumente stock y consulte el informe de auditoría por fecha.

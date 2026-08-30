@@ -72,7 +72,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-2">
-              Ingresa la Contraseña (amour23)
+              Ingresa la Contraseña de Acceso
             </label>
             <div className="relative">
               <input
@@ -84,7 +84,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                   setPassword(e.target.value);
                   if (error) setError(false);
                 }}
-                placeholder="Contraseña (amour23)"
+                placeholder="••••••••"
                 className={`w-full pl-4 pr-11 py-3 rounded-2xl border-2 font-mono text-base font-bold transition-all focus:outline-none ${
                   error
                     ? 'border-brand-500 bg-rose-50/50 text-brand-900 focus:ring-2 focus:ring-brand-500/20'
