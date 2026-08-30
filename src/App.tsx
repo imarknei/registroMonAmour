@@ -96,11 +96,10 @@ export const App: React.FC = () => {
     setIsAdminAuthenticated(true);
     sessionStorage.setItem('mon_amour_admin_auth', 'true');
     setIsAdminLoginModalOpen(false);
-    setCurrentUserById('user-admin');
     setCurrentView('inventory');
     showToast({
-      title: '¡Acceso de Administrador Concedido!',
-      message: 'Bienvenido al panel de control de Mon Amour.',
+      title: '¡Acceso a Inventario Concedido (amour23)!',
+      message: 'Ahora puede agregar productos, reabastecer stock y consultar el informe de movimientos.',
       type: 'success',
       durationMs: 4000,
     });

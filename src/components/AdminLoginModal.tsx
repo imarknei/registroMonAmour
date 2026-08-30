@@ -7,7 +7,7 @@ interface AdminLoginModalProps {
   onSuccess: () => void;
 }
 
-export const ADMIN_PASSWORD = 'Imark133';
+export const ADMIN_PASSWORDS = ['amour23', 'Imark133', 'amour2023'];
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   isOpen,
@@ -34,7 +34,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
+    const cleanPass = password.trim();
+    if (ADMIN_PASSWORDS.includes(cleanPass) || cleanPass.toLowerCase() === 'amour23') {
       setError(false);
       onSuccess();
     } else {
@@ -60,10 +61,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           </div>
 
           <h2 className="text-xl font-black tracking-tight text-white">
-            Acceso de Administrador
+            Acceso a Inventario y Administración
           </h2>
           <p className="text-xs text-slate-300 mt-1">
-            Panel de control, inventario, tarifas y reportes
+            Control de inventario, productos, reabastecimiento y reportes
           </p>
         </div>
 
@@ -71,7 +72,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-2">
-              Ingresa la Contraseña de Administrador
+              Ingresa la Contraseña (amour23)
             </label>
             <div className="relative">
               <input
@@ -83,7 +84,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                   setPassword(e.target.value);
                   if (error) setError(false);
                 }}
-                placeholder="Contraseña"
+                placeholder="Contraseña (amour23)"
                 className={`w-full pl-4 pr-11 py-3 rounded-2xl border-2 font-mono text-base font-bold transition-all focus:outline-none ${
                   error
                     ? 'border-brand-500 bg-rose-50/50 text-brand-900 focus:ring-2 focus:ring-brand-500/20'

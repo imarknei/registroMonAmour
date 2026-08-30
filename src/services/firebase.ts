@@ -5,7 +5,7 @@
  * Sincronización en vivo ultra-rápida (en milisegundos) entre todos los dispositivos (Recepción, Celulares, Administrador global)
  */
 
-import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement, ExtraConsumption } from '../types';
+import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement, ExtraConsumption, InventoryMovementLog } from '../types';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -720,4 +720,70 @@ export const deleteExtraConsumptionFromFirebase = async (id: string): Promise<vo
     console.error(`Error eliminando extra_consumption ${id} en Firebase:`, err);
   }
 };
+
+// ==========================================
+// 📦 SINCRONIZACIÓN DE HISTORIAL DE MOVIMIENTOS DE INVENTARIO
+// ==========================================
+
+export const subscribeToInventoryLogs = async (
+  onData: (logs: InventoryMovementLog[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const logsRef = ref(db, 'inventory_logs');
+
+    const listener = onValue(
+      logsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const list: InventoryMovementLog[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          list.sort((a, b) => b.timestamp - a.timestamp);
+          onData(list);
+        } else {
+          onData([]);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de inventory_logs:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(logsRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a inventory_logs:', err);
+    return null;
+  }
+};
+
+export const syncInventoryLogToFirestore = async (log: InventoryMovementLog): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, set } = await import('firebase/database');
+    const clean = sanitizeForFirebase(log);
+    await set(ref(db, `inventory_logs/${log.id}`), clean);
+  } catch (err) {
+    console.error(`Error guardando inventory_log ${log.id} en Firebase:`, err);
+  }
+};
+
+export const deleteInventoryLogFromFirebase = async (id: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, `inventory_logs/${id}`));
+  } catch (err) {
+    console.error(`Error eliminando inventory_log ${id} en Firebase:`, err);
+  }
+};
+
 

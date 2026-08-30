@@ -197,8 +197,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Right Action Tools: Expense Modal, Sound Toggle, Shift Close & User Dropdown */}
+          {/* Right Action Tools: Inventory, Extra Consumptions, Staff, Expenses, Sound Toggle, Shift Close & User Dropdown */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* BOTÓN INVENTARIO (Acceso para recepcionistas con contraseña amour23 y administradores) */}
+            <button
+              onClick={() => {
+                if (isAdminAuthenticated || currentUser.role === 'admin') {
+                  setCurrentView('inventory');
+                } else {
+                  onOpenAdminLogin();
+                }
+              }}
+              className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                currentView === 'inventory'
+                  ? 'bg-brand-600 text-white shadow-brand-500/20'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-300'
+              }`}
+              title="Acceso a Control de Inventario y Productos (Requiere contraseña amour23)"
+            >
+              <Package className={`w-3.5 h-3.5 ${currentView === 'inventory' ? 'text-white' : 'text-emerald-700'}`} />
+              <span>INVENTARIO</span>
+            </button>
+
             {/* BOTÓN CONSUMO EXTRA / VENTA DIRECTA */}
             <button
               onClick={onOpenExtraConsumptionModal}
@@ -349,7 +369,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Admin Navigation Tabs */}
-        {currentUser.role === 'admin' && (
+        {(currentUser.role === 'admin' || isAdminAuthenticated) && (
           <nav className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 border-t border-slate-100 no-scrollbar">
             <button
               onClick={() => setCurrentView('rooms')}

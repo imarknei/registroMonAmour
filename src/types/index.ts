@@ -326,3 +326,33 @@ export interface ExtraConsumption {
   notes?: string;
 }
 
+// ----------------------------------------------------
+// MODELO DE HISTORIAL / AUDITORÍA DE INVENTARIO
+// ----------------------------------------------------
+
+export type InventoryActionType =
+  | 'restock'
+  | 'manual_adjustment'
+  | 'create_product'
+  | 'price_change'
+  | 'delete_product';
+
+export interface InventoryMovementLog {
+  id: string;
+  productId: string;
+  productName: string;
+  category?: ProductCategory;
+  action: InventoryActionType;
+  previousStock: number;
+  newStock: number;
+  quantityAdded: number; // Positivo si aumentó, negativo si disminuyó
+  previousPrice?: number;
+  newPrice?: number;
+  responsibleId: string;
+  responsibleName: string;
+  date: string; // ISO String
+  timestamp: number;
+  notes?: string;
+}
+
+

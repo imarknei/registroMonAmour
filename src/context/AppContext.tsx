@@ -25,6 +25,8 @@ import {
   StaffSettlement,
   StaffSettlementDiscountItem,
   ExtraConsumption,
+  InventoryMovementLog,
+  InventoryActionType,
 } from '../types';
 import {
   INITIAL_ROOMS,
@@ -58,6 +60,9 @@ import {
   subscribeToExtraConsumptions,
   syncExtraConsumptionToFirestore,
   deleteExtraConsumptionFromFirebase,
+  subscribeToInventoryLogs,
+  syncInventoryLogToFirestore,
+  deleteInventoryLogFromFirebase,
   syncRoomToFirestore,
   syncProductToFirestore,
   deleteProductFromFirestore,
@@ -84,6 +89,7 @@ interface AppContextType {
   staffSettlements: StaffSettlement[];
   staffMembers: StaffMember[];
   extraConsumptions: ExtraConsumption[];
+  inventoryLogs: InventoryMovementLog[];
   soundAlertsEnabled: boolean;
   toasts: ToastMessage[];
   nowTimestamp: number;
@@ -252,8 +258,13 @@ interface AppContextType {
     options?: { previousConsumptions?: ConsumptionItem[]; restoreStockDiff?: boolean }
   ) => boolean;
   cleanupOrphanShifts: () => Promise<number>;
-  saveProduct: (product: Product) => void;
+  saveProduct: (
+    product: Product,
+    options?: { logAction?: InventoryActionType; quantityAdded?: number; notes?: string }
+  ) => void;
   deleteProductById: (productId: string) => void;
+  addInventoryLog: (log: Omit<InventoryMovementLog, 'id' | 'timestamp' | 'date'> & { date?: string }) => void;
+  deleteInventoryLogById: (logId: string) => void;
   updateTariffCatalog: (tariffs: TariffCatalog) => void;
   resetAllDataToDefaults: () => void;
   exportDatabaseJson: () => void;
@@ -276,6 +287,7 @@ const STORAGE_KEYS = {
   STAFF_SETTLEMENTS: 'mon_amour_staff_settlements_v1',
   STAFF_MEMBERS: 'mon_amour_staff_members_v1',
   EXTRA_CONSUMPTIONS: 'mon_amour_extra_consumptions_v1',
+  INVENTORY_LOGS: 'mon_amour_inventory_logs_v1',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -414,6 +426,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [inventoryLogs, setInventoryLogs] = useState<InventoryMovementLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.INVENTORY_LOGS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED);
@@ -475,6 +496,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.EXTRA_CONSUMPTIONS, JSON.stringify(extraConsumptions));
   }, [extraConsumptions]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(inventoryLogs));
+  }, [inventoryLogs]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, JSON.stringify(soundAlertsEnabled));
@@ -649,6 +674,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       if (unsubExtraCons) unsubs.push(unsubExtraCons);
+
+      // Inventory Movement Logs
+      const unsubInventoryLogs = await subscribeToInventoryLogs((firestoreLogs) => {
+        if (firestoreLogs) {
+          setInventoryLogs(firestoreLogs);
+        }
+      });
+      if (unsubInventoryLogs) unsubs.push(unsubInventoryLogs);
     };
 
     setupFirebaseSync();
@@ -2312,7 +2345,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return orphanShifts.length;
   };
 
-  const saveProduct = (product: Product) => {
+  const addInventoryLog = useCallback(
+    (logData: Omit<InventoryMovementLog, 'id' | 'timestamp' | 'date'> & { date?: string }) => {
+      const newLog: InventoryMovementLog = {
+        ...logData,
+        id: `inv-log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        date: logData.date || new Date().toISOString(),
+        timestamp: Date.now(),
+      };
+      setInventoryLogs((prev) => [newLog, ...prev]);
+      syncInventoryLogToFirestore(newLog);
+    },
+    []
+  );
+
+  const deleteInventoryLogById = useCallback((logId: string) => {
+    setInventoryLogs((prev) => prev.filter((l) => l.id !== logId));
+    deleteInventoryLogFromFirebase(logId);
+  }, []);
+
+  const saveProduct = (
+    product: Product,
+    options?: { logAction?: InventoryActionType; quantityAdded?: number; notes?: string }
+  ) => {
+    const existing = products.find((p) => p.id === product.id);
+
     setProducts((prev) => {
       const exists = prev.some((p) => p.id === product.id);
       if (exists) {
@@ -2321,9 +2378,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [...prev, product];
     });
     syncProductToFirestore(product);
+
+    // Auditoría de movimientos de stock
+    if (!existing) {
+      addInventoryLog({
+        productId: product.id,
+        productName: product.name,
+        category: product.category,
+        action: 'create_product',
+        previousStock: 0,
+        newStock: product.stock,
+        quantityAdded: product.stock,
+        previousPrice: undefined,
+        newPrice: product.price,
+        responsibleId: currentUser.id,
+        responsibleName: currentUser.name,
+        notes: options?.notes || `Creación inicial de producto con ${product.stock} unid. a ${formatBs(product.price)}`,
+      });
+    } else {
+      const diff = options?.quantityAdded !== undefined ? options.quantityAdded : (product.stock - existing.stock);
+      const priceChanged = existing.price !== product.price;
+
+      if (diff !== 0 || priceChanged || options?.logAction) {
+        const action: InventoryActionType =
+          options?.logAction || (diff > 0 ? 'restock' : diff < 0 ? 'manual_adjustment' : 'price_change');
+
+        addInventoryLog({
+          productId: product.id,
+          productName: product.name,
+          category: product.category,
+          action,
+          previousStock: existing.stock,
+          newStock: product.stock,
+          quantityAdded: diff,
+          previousPrice: existing.price,
+          newPrice: product.price,
+          responsibleId: currentUser.id,
+          responsibleName: currentUser.name,
+          notes:
+            options?.notes ||
+            (diff > 0
+              ? `Reabastecimiento de +${diff} unidades (de ${existing.stock} a ${product.stock} unid.)`
+              : diff < 0
+              ? `Ajuste manual de ${diff} unidades (de ${existing.stock} a ${product.stock} unid.)`
+              : `Cambio de precio de ${formatBs(existing.price)} a ${formatBs(product.price)}`),
+        });
+      }
+    }
   };
 
   const deleteProductById = (productId: string) => {
+    const existing = products.find((p) => p.id === productId);
+    if (existing) {
+      addInventoryLog({
+        productId: existing.id,
+        productName: existing.name,
+        category: existing.category,
+        action: 'delete_product',
+        previousStock: existing.stock,
+        newStock: 0,
+        quantityAdded: -existing.stock,
+        previousPrice: existing.price,
+        newPrice: undefined,
+        responsibleId: currentUser.id,
+        responsibleName: currentUser.name,
+        notes: `Eliminación de producto (${existing.stock} unidades descartadas)`,
+      });
+    }
     setProducts((prev) => prev.filter((p) => p.id !== productId));
     deleteProductFromFirestore(productId);
   };
@@ -2398,6 +2519,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         staffSettlements,
         staffMembers,
         extraConsumptions,
+        inventoryLogs,
         soundAlertsEnabled,
         toasts,
         nowTimestamp,
@@ -2426,6 +2548,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cleanupOrphanShifts,
         saveProduct,
         deleteProductById,
+        addInventoryLog,
+        deleteInventoryLogById,
         updateTariffCatalog,
         resetAllDataToDefaults,
         exportDatabaseJson,
