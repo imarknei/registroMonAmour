@@ -80,7 +80,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ stay, onClose }) => 
             {/* Breakdown List */}
             <div className="space-y-1.5 pb-3 border-b border-dashed border-slate-300">
               <div className="flex justify-between font-bold">
-                <span>Estadía ({stay.chosenPlan.toUpperCase()}):</span>
+                <span>
+                  Estadía ({stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+                    ? (stay.customPackageName || 'PAQUETE PERSONALIZADO').toUpperCase()
+                    : stay.chosenPlan.toUpperCase()}):
+                </span>
                 <span>{formatBs(stay.baseRoomPrice)}</span>
               </div>
 

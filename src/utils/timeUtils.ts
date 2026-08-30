@@ -49,6 +49,10 @@ export function calculateStayTime(
   const totalElapsedMinutes = Math.floor(elapsedMs / (60 * 1000));
 
   const isAlreadyNightPlan = options?.chosenPlan === 'noche' || durationMinutes >= 720;
+  const isCustomPlan =
+    options?.chosenPlan === 'personalizado' ||
+    options?.chosenPlan === 'custom' ||
+    Boolean(options?.chosenPlan?.toLowerCase().includes('personalizado'));
   const isBonflixPlan =
     options?.chosenPlan === 'bonflix_2h' ||
     options?.chosenPlan === 'bonflix_4h' ||
@@ -127,9 +131,9 @@ export function calculateStayTime(
     }
   }
 
-  // CASO 2: PROMO BONFLIX (2h o 4h)
-  // No aplica pasar automáticamente al precio de noche. Se cobran 30 Bs adicionales por cada hora extra (+10 Bs c/20 min).
-  if (isBonflixPlan) {
+  // CASO 2: PLAN PERSONALIZADO O PROMO BONFLIX (Tiempo acordado fijo)
+  // No aplica pasar automáticamente al precio de noche. Se respeta el tiempo pactado y se cobra sobretiempo con tolerancia de 10 min.
+  if (isCustomPlan || isBonflixPlan) {
     const totalAllocatedMs = durationMinutes * 60 * 1000;
     const diffMs = totalAllocatedMs - elapsedMs;
     const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);

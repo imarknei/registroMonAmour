@@ -821,6 +821,12 @@ export const RegisteredRoomsView: React.FC = () => {
                       <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${badge.bg}`}>
                         {getRoomTypeLabel(stay.roomType)}
                       </span>
+                      {stay.isCustomPackage || stay.chosenPlan === 'personalizado' ? (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-fuchsia-600 text-white flex items-center gap-1 shadow-xs">
+                          <Sparkles className="w-3 h-3" />
+                          {stay.customPackageName || 'Personalizada'}
+                        </span>
+                      ) : null}
                       {isCancelled ? (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white flex items-center gap-1">
                           <Ban className="w-3 h-3" />
@@ -864,7 +870,11 @@ export const RegisteredRoomsView: React.FC = () => {
                 <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-2xl text-center text-xs">
                   <div>
                     <span className="text-[10px] text-slate-400 block font-semibold">Plan</span>
-                    <strong className="text-slate-800 font-extrabold">{getPlanLabel(stay.chosenPlan)}</strong>
+                    <strong className="text-slate-800 font-extrabold truncate block">
+                      {stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+                        ? `✨ ${stay.customPackageName || 'Personalizado'}`
+                        : getPlanLabel(stay.chosenPlan)}
+                    </strong>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 block font-semibold">Base Habitación</span>

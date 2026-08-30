@@ -95,6 +95,8 @@ export interface Stay {
   consumptions: ConsumptionItem[];
   vehiclePlate?: string;
   notes?: string;
+  isCustomPackage?: boolean; // Verdadero si se registró con tarifa y tiempo personalizado
+  customPackageName?: string; // Nombre o descripción del paquete personalizado (ej. "3h x 290 Bs", "Promoción Especial")
   overtimeMinutes?: number;
   overtimeCharge?: number;
   totalAmount?: number;

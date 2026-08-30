@@ -253,6 +253,12 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 <span className="text-[11px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/20 text-white">
                   {room.tag}
                 </span>
+                {stay.isCustomPackage || stay.chosenPlan === 'personalizado' ? (
+                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-fuchsia-600 text-white flex items-center gap-1 shadow-xs">
+                    <Sparkles className="w-3 h-3" />
+                    {stay.customPackageName || 'Paquete Personalizado'}
+                  </span>
+                ) : null}
                 {isPrepaid && (
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
@@ -261,7 +267,9 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 )}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-300 font-medium">
-                {stay.chosenPlan.toUpperCase()} • Ingreso: {formatTimeOnly(stay.startTime)} • Atendido por: {stay.receptionistName}
+                {stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+                  ? `✨ ${stay.customPackageName || 'PAQUETE PERSONALIZADO'} (${stay.chosenDurationMinutes} min)`
+                  : stay.chosenPlan.toUpperCase()} • Ingreso: {formatTimeOnly(stay.startTime)} • Atendido por: {stay.receptionistName}
               </p>
             </div>
           </div>

@@ -116,6 +116,9 @@ export function getPlanLabel(plan: string): string {
     case 'noche':
     case 'noche12h':
       return 'Noche (12h)';
+    case 'personalizado':
+    case 'custom':
+      return '✨ Paquete Personalizado';
     default:
       return plan.toUpperCase();
   }

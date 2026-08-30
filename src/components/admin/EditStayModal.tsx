@@ -57,6 +57,8 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
   const [qrUnionPaid, setQrUnionPaid] = useState<number>(0);
   const [vehiclePlate, setVehiclePlate] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [isCustomPackage, setIsCustomPackage] = useState<boolean>(false);
+  const [customPackageName, setCustomPackageName] = useState<string>('');
   const [consumptions, setConsumptions] = useState<ConsumptionItem[]>([]);
 
   // Para agregar nuevo producto
@@ -104,6 +106,8 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
       setQrUnionPaid(stay.qrUnionPaid || 0);
       setVehiclePlate(stay.vehiclePlate || '');
       setNotes(stay.notes || '');
+      setIsCustomPackage(stay.isCustomPackage || stay.chosenPlan === 'personalizado');
+      setCustomPackageName(stay.customPackageName || '');
       setConsumptions(stay.consumptions ? JSON.parse(JSON.stringify(stay.consumptions)) : []);
     }
   }, [stay, isOpen]);
@@ -235,6 +239,8 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
       qrPaid: Number(qrVendisPaid) + Number(qrUnionPaid),
       vehiclePlate: vehiclePlate.trim() || undefined,
       notes: notes.trim() || undefined,
+      isCustomPackage: isCustomPackage || chosenPlan === 'personalizado',
+      customPackageName: customPackageName.trim() || undefined,
       consumptions,
     };
 
@@ -307,7 +313,14 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">Plan / Modalidad</label>
                 <select
                   value={chosenPlan}
-                  onChange={(e) => setChosenPlan(e.target.value as PlanType)}
+                  onChange={(e) => {
+                    const newPlan = e.target.value as PlanType;
+                    setChosenPlan(newPlan);
+                    if (newPlan === 'personalizado') {
+                      setIsCustomPackage(true);
+                      if (!customPackageName) setCustomPackageName('Promoción Especial');
+                    }
+                  }}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/20"
                 >
                   <option value="1h">1 Hora (60 min)</option>
@@ -318,6 +331,7 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                   <option value="3h">3 Horas (180 min)</option>
                   <option value="promo3h">Promo 3 Horas (180 min)</option>
                   <option value="noche">Noche Completa (12 Horas)</option>
+                  <option value="personalizado">✨ Paquete Personalizado (Libre)</option>
                 </select>
               </div>
 
@@ -332,6 +346,36 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                 />
               </div>
             </div>
+
+            {(chosenPlan === 'personalizado' || isCustomPackage) && (
+              <div className="pt-2 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+                <div>
+                  <label className="block text-[11px] font-bold text-fuchsia-900 mb-1">
+                    ✨ Nombre / Motivo del Paquete Especial
+                  </label>
+                  <input
+                    type="text"
+                    value={customPackageName}
+                    onChange={(e) => setCustomPackageName(e.target.value)}
+                    placeholder="Ej. Promo Especial 3h x 290 Bs"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-fuchsia-200 bg-fuchsia-50/50 text-fuchsia-950 font-bold focus:ring-2 focus:ring-fuchsia-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-fuchsia-900 mb-1">
+                    Duración Contratada (Minutos)
+                  </label>
+                  <input
+                    type="number"
+                    min="15"
+                    step="15"
+                    value={chosenDurationMinutes}
+                    onChange={(e) => setChosenDurationMinutes(parseInt(e.target.value, 10) || 60)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-fuchsia-200 bg-fuchsia-50/50 text-fuchsia-950 font-bold focus:ring-2 focus:ring-fuchsia-500/20"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 2. Tiempos, Fechas y Horas Extras */}

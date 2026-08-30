@@ -247,7 +247,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           <div className="flex flex-col items-end gap-1">
             <span
               className={`inline-flex items-center gap-1 text-xs font-extrabold px-2.5 py-1 rounded-full border ${
-                timeCalc.autoNightConverted && !timeCalc.isOvertime
+                stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+                  ? 'bg-fuchsia-600 text-white border-fuchsia-700 shadow-xs'
+                  : timeCalc.autoNightConverted && !timeCalc.isOvertime
                   ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
                   : timeCalc.isOvertime
                   ? timeCalc.gracePeriodActive
@@ -258,7 +260,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
                   : 'bg-brand-50 text-brand-700 border-brand-200'
               }`}
             >
-              {timeCalc.autoNightConverted && !timeCalc.isOvertime
+              {stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+                ? '✨ Personalizada'
+                : timeCalc.autoNightConverted && !timeCalc.isOvertime
                 ? '🌙 Noche 12h (Auto)'
                 : timeCalc.isOvertime
                 ? timeCalc.gracePeriodActive
@@ -285,7 +289,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         {/* Live Timer Display */}
         <div
           className={`rounded-2xl p-3.5 mb-3 border text-center relative overflow-hidden ${
-            timeCalc.autoNightConverted && !timeCalc.isOvertime
+            stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+              ? 'bg-gradient-to-br from-slate-950 via-purple-950 to-fuchsia-950 text-white border-fuchsia-900'
+              : timeCalc.autoNightConverted && !timeCalc.isOvertime
               ? 'bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 text-white border-indigo-900'
               : timeCalc.isOvertime
               ? timeCalc.gracePeriodActive
@@ -298,7 +304,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
         >
           <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-widest opacity-90 mb-0.5">
             <Clock className="w-3.5 h-3.5" />
-            {timeCalc.autoNightConverted && !timeCalc.isOvertime
+            {stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+              ? `Paquete: ${stay.customPackageName || 'Personalizado'}`
+              : timeCalc.autoNightConverted && !timeCalc.isOvertime
               ? 'Tiempo Restante Noche (12h)'
               : timeCalc.isOvertime
               ? timeCalc.gracePeriodActive
@@ -333,7 +341,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
             <div className="w-full bg-white/20 rounded-full h-1.5 mt-2 overflow-hidden">
               <div
                 className={`h-full transition-all duration-1000 ${
-                  timeCalc.autoNightConverted
+                  stay.isCustomPackage || stay.chosenPlan === 'personalizado'
+                    ? 'bg-fuchsia-400'
+                    : timeCalc.autoNightConverted
                     ? 'bg-indigo-400'
                     : timeCalc.isWarning
                     ? 'bg-amber-200'
@@ -354,7 +364,11 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           <div className="flex justify-between text-slate-600">
             <span>Plan:</span>
             <span className="font-bold text-slate-800 uppercase">
-              {timeCalc.autoNightConverted ? (
+              {stay.isCustomPackage || stay.chosenPlan === 'personalizado' ? (
+                <span className="text-fuchsia-800 font-black bg-fuchsia-100 px-2 py-0.5 rounded-md border border-fuchsia-200">
+                  ✨ {stay.customPackageName || 'PAQUETE PERSONALIZADO'} ({formatBs(stay.baseRoomPrice)})
+                </span>
+              ) : timeCalc.autoNightConverted ? (
                 <span className="text-indigo-700 font-extrabold">{stay.chosenPlan} ➔ NOCHE (12h)</span>
               ) : (
                 `${stay.chosenPlan} (${formatBs(stay.baseRoomPrice)})`

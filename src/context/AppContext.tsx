@@ -114,6 +114,8 @@ interface AppContextType {
     qrPaid?: number;
     vehiclePlate?: string;
     notes?: string;
+    isCustomPackage?: boolean;
+    customPackageName?: string;
   }) => void;
   registerRoomEntry: (entryData: {
     roomId: string;
@@ -134,6 +136,8 @@ interface AppContextType {
     qrPaid?: number;
     vehiclePlate?: string;
     notes?: string;
+    isCustomPackage?: boolean;
+    customPackageName?: string;
   }) => void;
   addConsumptionToRoom: (
     roomId: string,
@@ -974,6 +978,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     qrPaid?: number;
     vehiclePlate?: string;
     notes?: string;
+    isCustomPackage?: boolean;
+    customPackageName?: string;
   }) => {
     const room = rooms.find((r) => r.id === entryData.roomId);
     if (!room) return;
@@ -1014,6 +1020,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       receptionistName: currentUser.name,
       consumptions: [],
       notes: entryData.notes,
+      isCustomPackage: entryData.isCustomPackage || entryData.chosenPlan === 'personalizado',
+      customPackageName: entryData.customPackageName,
       status: 'active',
     };
 
