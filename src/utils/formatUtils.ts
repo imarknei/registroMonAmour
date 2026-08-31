@@ -89,6 +89,8 @@ export function getCategoryLabel(category: string): string {
       return 'Snacks y Chocolates';
     case 'higiene_otros':
       return 'Higiene y Otros';
+    case 'limpieza_utensilios':
+      return 'Utensilios de Limpieza';
     default:
       return category;
   }

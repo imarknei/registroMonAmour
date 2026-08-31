@@ -52,6 +52,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
     { key: 'bebidas_alcohol', label: 'Cervezas' },
     { key: 'snacks', label: 'Snacks' },
     { key: 'higiene_otros', label: 'Otros' },
+    { key: 'limpieza_utensilios', label: 'Limpieza' },
   ];
 
   const filteredProducts = products.filter((p) => {

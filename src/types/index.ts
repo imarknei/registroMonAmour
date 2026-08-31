@@ -124,7 +124,8 @@ export type ProductCategory =
   | 'bebidas_alcohol' 
   | 'bebidas_sin_alcohol' 
   | 'snacks' 
-  | 'higiene_otros';
+  | 'higiene_otros'
+  | 'limpieza_utensilios';
 
 export interface Product {
   id: string;

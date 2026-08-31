@@ -790,6 +790,8 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                     { key: 'bebidas_alcohol', label: 'Licores' },
                     { key: 'bebidas_sin_alcohol', label: 'Sodas' },
                     { key: 'snacks', label: 'Snacks' },
+                    { key: 'higiene_otros', label: 'Higiene' },
+                    { key: 'limpieza_utensilios', label: 'Limpieza' },
                   ].map((cat) => (
                     <button
                       key={cat.key}

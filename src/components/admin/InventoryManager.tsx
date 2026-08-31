@@ -83,6 +83,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     { key: 'bebidas_sin_alcohol', label: 'Gaseosas & Bebidas' },
     { key: 'snacks', label: 'Snacks & Chocolates' },
     { key: 'higiene_otros', label: 'Higiene & Otros' },
+    { key: 'limpieza_utensilios', label: 'Utensilios de Limpieza' },
   ];
 
   // Filtrado de productos en catálogo
@@ -98,8 +99,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setFormData({
       id: `prod-${Date.now()}`,
       name: '',
-      category: 'preservativos',
-      price: 20,
+      category: selectedCategory !== 'all' ? selectedCategory : 'preservativos',
+      price: selectedCategory === 'limpieza_utensilios' ? 0 : 20,
       stock: 20,
       minStockAlert: 5,
       description: '',
@@ -124,19 +125,26 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name?.trim() || formData.price === undefined || formData.stock === undefined) {
+    if (
+      !formData.name?.trim() ||
+      formData.price === undefined ||
+      formData.price === null ||
+      formData.price === ('' as any) ||
+      formData.stock === undefined
+    ) {
       return;
     }
 
     const additionalStock = parseInt(formAddStock, 10) || 0;
     const baseStock = Number(formData.stock) || 0;
     const finalStock = isCreating ? baseStock : Math.max(0, baseStock + additionalStock);
+    const parsedPrice = !isNaN(Number(formData.price)) ? Math.max(0, Number(formData.price)) : 0;
 
     const productToSave: Product = {
       id: formData.id || `prod-${Date.now()}`,
       name: formData.name.trim(),
       category: (formData.category as ProductCategory) || 'preservativos',
-      price: Number(formData.price),
+      price: parsedPrice,
       stock: finalStock,
       minStockAlert: Number(formData.minStockAlert) || 5,
       description: formData.description?.trim() || undefined,
@@ -528,20 +536,33 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
-                            <span className="font-mono font-extrabold text-brand-700 block text-sm">
-                              {formatBs(prod.price)}
-                            </span>
-                            {(() => {
-                              const { staffPrice, discount } = getStaffDiscountedPrice(prod);
-                              return discount > 0 ? (
-                                <span
-                                  className="text-[10px] text-emerald-700 font-bold block"
-                                  title="Precio especial para personal"
-                                >
-                                  Pers: {formatBs(staffPrice)} (-{discount}Bs)
+                            {prod.price === 0 ? (
+                              <div>
+                                <span className="font-mono font-black text-slate-600 block text-xs">
+                                  0 Bs
                                 </span>
-                              ) : null;
-                            })()}
+                                <span className="inline-block text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.2 rounded mt-0.5">
+                                  Insumo Interno
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="font-mono font-extrabold text-brand-700 block text-sm">
+                                  {formatBs(prod.price)}
+                                </span>
+                                {(() => {
+                                  const { staffPrice, discount } = getStaffDiscountedPrice(prod);
+                                  return discount > 0 ? (
+                                    <span
+                                      className="text-[10px] text-emerald-700 font-bold block"
+                                      title="Precio especial para personal"
+                                    >
+                                      Pers: {formatBs(staffPrice)} (-{discount}Bs)
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </>
+                            )}
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
@@ -960,9 +981,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   </label>
                   <select
                     value={formData.category || 'preservativos'}
-                    onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value as ProductCategory })
-                    }
+                    onChange={(e) => {
+                      const newCat = e.target.value as ProductCategory;
+                      setFormData({
+                        ...formData,
+                        category: newCat,
+                        price: newCat === 'limpieza_utensilios' && (formData.price === 20 || formData.price === undefined) ? 0 : formData.price,
+                      });
+                    }}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 font-bold"
                   >
                     <option value="preservativos">Preservativos e Íntimo</option>
@@ -970,22 +996,32 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                     <option value="bebidas_sin_alcohol">Gaseosas & Bebidas</option>
                     <option value="snacks">Snacks & Chocolates</option>
                     <option value="higiene_otros">Higiene & Otros</option>
+                    <option value="limpieza_utensilios">Utensilios de Limpieza</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">
-                    Precio de Venta (Bs) *
+                    Precio (Bs) *
                   </label>
                   <input
                     type="number"
                     min="0"
-                    step="1"
+                    step="any"
                     required
-                    value={formData.price || ''}
-                    onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                    value={formData.price !== undefined && formData.price !== null ? formData.price : ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        price: e.target.value === '' ? ('' as any) : Number(e.target.value),
+                      })
+                    }
+                    placeholder="0"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono font-black text-brand-700 focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                   />
+                  <span className="text-[10px] text-slate-400 block mt-1">
+                    (Coloque 0 Bs para insumos de limpieza)
+                  </span>
                 </div>
               </div>
 

@@ -62,6 +62,7 @@ export const StaffConsumptionModal: React.FC<StaffConsumptionModalProps> = ({
     { key: 'bebidas_alcohol', label: 'Cervezas' },
     { key: 'snacks', label: 'Snacks & Galletas' },
     { key: 'higiene_otros', label: 'Otros' },
+    { key: 'limpieza_utensilios', label: 'Limpieza' },
   ];
 
   const filteredProducts = products.filter((p) => {

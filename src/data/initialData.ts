@@ -369,6 +369,53 @@ export const INITIAL_PRODUCTS: Product[] = [
     minStockAlert: 8,
     description: 'Toallitas antibacteriales refrescantes',
   },
+
+  // Utensilios e Insumos de Limpieza (Uso interno con precio 0 Bs)
+  {
+    id: 'prod-25',
+    name: 'Lavandina / Desinfectante Clorado 1L',
+    category: 'limpieza_utensilios',
+    price: 0,
+    stock: 25,
+    minStockAlert: 5,
+    description: 'Insumo de limpieza profunda para habitaciones y baños',
+  },
+  {
+    id: 'prod-26',
+    name: 'Detergente Multiuso / Desengrasante 1L',
+    category: 'limpieza_utensilios',
+    price: 0,
+    stock: 20,
+    minStockAlert: 4,
+    description: 'Limpieza de pisos y superficies',
+  },
+  {
+    id: 'prod-27',
+    name: 'Paños de Microfibra / Franelas (Pack x3)',
+    category: 'limpieza_utensilios',
+    price: 0,
+    stock: 30,
+    minStockAlert: 6,
+    description: 'Secado y pulido de muebles y cristales',
+  },
+  {
+    id: 'prod-28',
+    name: 'Bolsas de Basura Negras Medianas (Paquete x50)',
+    category: 'limpieza_utensilios',
+    price: 0,
+    stock: 15,
+    minStockAlert: 3,
+    description: 'Reposición de basureros de habitaciones',
+  },
+  {
+    id: 'prod-29',
+    name: 'Aromatizante Ambiental / Spray Lavanda 400ml',
+    category: 'limpieza_utensilios',
+    price: 0,
+    stock: 18,
+    minStockAlert: 4,
+    description: 'Aromatización de habitaciones tras limpieza',
+  },
 ];
 
 export const SYSTEM_USERS: User[] = [
