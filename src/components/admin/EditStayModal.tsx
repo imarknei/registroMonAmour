@@ -62,7 +62,10 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
   const [consumptions, setConsumptions] = useState<ConsumptionItem[]>([]);
 
   // Para agregar nuevo producto
+  const [addMode, setAddMode] = useState<'catalog' | 'custom'>('catalog');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [customProdName, setCustomProdName] = useState<string>('');
+  const [customProdPrice, setCustomProdPrice] = useState<string>('');
   const [newProductQty, setNewProductQty] = useState<number>(1);
   const [newProductPaidDirectly, setNewProductPaidDirectly] = useState<boolean>(false);
 
@@ -126,6 +129,38 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
 
   // Manejar consumos
   const handleAddConsumption = () => {
+    if (addMode === 'custom') {
+      if (!customProdName.trim()) {
+        alert('Por favor ingrese el nombre del consumo personalizado.');
+        return;
+      }
+      const priceNum = parseFloat(customProdPrice);
+      if (isNaN(priceNum) || priceNum < 0) {
+        alert('Por favor ingrese un precio válido.');
+        return;
+      }
+
+      const qty = Math.max(1, newProductQty || 1);
+      const newItem: ConsumptionItem = {
+        id: `cons-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        productId: 'custom-item',
+        productName: customProdName.trim(),
+        quantity: qty,
+        unitPrice: priceNum,
+        subtotal: priceNum * qty,
+        isPaid: newProductPaidDirectly,
+        timestamp: new Date().toISOString(),
+        isCustom: true,
+      };
+
+      setConsumptions((prev) => [...prev, newItem]);
+      setCustomProdName('');
+      setCustomProdPrice('');
+      setNewProductQty(1);
+      setNewProductPaidDirectly(false);
+      return;
+    }
+
     if (!selectedProductId) return;
     const prod = products.find((p) => p.id === selectedProductId);
     if (!prod) return;
@@ -449,22 +484,69 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                 <ShoppingBag className="w-4 h-4 text-brand-600" />
                 3. Consumos de Minibar ({consumptions.length} items • {formatBs(consumptionsTotal)})
               </h3>
+
+              <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setAddMode('catalog')}
+                  className={`px-2 py-0.5 rounded-md transition-all ${
+                    addMode === 'catalog'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Catálogo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMode('custom')}
+                  className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 ${
+                    addMode === 'custom'
+                      ? 'bg-purple-600 text-white shadow-2xs'
+                      : 'text-purple-700 hover:text-purple-900'
+                  }`}
+                >
+                  <Sparkles className="w-2.5 h-2.5" />
+                  Personalizado
+                </button>
+              </div>
             </div>
 
             {/* Agregar nuevo consumo */}
             <div className="p-3 bg-white rounded-xl border border-dashed border-slate-300 flex flex-col sm:flex-row items-center gap-2">
-              <select
-                value={selectedProductId}
-                onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full sm:w-1/2 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 font-bold"
-              >
-                <option value="">-- Seleccionar producto para añadir --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({formatBs(p.price)} - Stock: {p.stock})
-                  </option>
-                ))}
-              </select>
+              {addMode === 'catalog' ? (
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full sm:w-1/2 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 font-bold"
+                >
+                  <option value="">-- Seleccionar producto para añadir --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({formatBs(p.price)} - Stock: {p.stock})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-1/2">
+                  <input
+                    type="text"
+                    placeholder="Nombre del consumo (ej. Whisky Red Label)"
+                    value={customProdName}
+                    onChange={(e) => setCustomProdName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-purple-300 bg-purple-50/50 font-bold"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="Precio Bs"
+                    value={customProdPrice}
+                    onChange={(e) => setCustomProdPrice(e.target.value)}
+                    className="w-24 px-2 py-1.5 text-xs rounded-lg border border-purple-300 bg-purple-50/50 font-mono font-black text-purple-900"
+                  />
+                </div>
+              )}
 
               <div className="flex items-center gap-1 w-full sm:w-auto">
                 <span className="text-xs text-slate-500 font-bold">Cant:</span>
@@ -489,7 +571,7 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
 
               <button
                 type="button"
-                disabled={!selectedProductId}
+                disabled={addMode === 'catalog' ? !selectedProductId : (!customProdName.trim() || !customProdPrice)}
                 onClick={handleAddConsumption}
                 className="w-full sm:w-auto px-3 py-1.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1"
               >
@@ -510,8 +592,14 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                     key={idx}
                     className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 text-xs"
                   >
-                    <div className="flex items-center gap-2 truncate pr-2">
+                    <div className="flex items-center gap-1.5 truncate pr-2">
                       <span className="font-bold text-slate-800 truncate">{item.productName}</span>
+                      {item.isCustom && (
+                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 shrink-0 flex items-center gap-0.5">
+                          <Sparkles className="w-2.5 h-2.5 text-purple-600" />
+                          Personalizado
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400 font-mono">
                         ({formatBs(item.unitPrice)} c/u)
                       </span>

@@ -17,6 +17,7 @@ import {
   DoorClosed,
   User,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 
 interface ExtraConsumptionModalProps {
@@ -43,6 +44,12 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState<string>('');
+
+  // Estado para Consumo Personalizado con Precio Manual
+  const [showCustomForm, setShowCustomForm] = useState<boolean>(false);
+  const [customItemName, setCustomItemName] = useState<string>('');
+  const [customItemPrice, setCustomItemPrice] = useState<string>('');
+  const [customItemQty, setCustomItemQty] = useState<number>(1);
 
   if (!isOpen) return null;
 
@@ -73,6 +80,35 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
       }
       return [...prev, { product, quantity: 1 }];
     });
+  };
+
+  const handleAddCustomToCart = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!customItemName.trim()) {
+      alert('Por favor ingrese el nombre del producto o consumo personalizado.');
+      return;
+    }
+    const priceNum = parseFloat(customItemPrice);
+    if (isNaN(priceNum) || priceNum < 0) {
+      alert('Por favor ingrese un precio válido (número mayor o igual a 0).');
+      return;
+    }
+    const qty = Math.max(1, customItemQty || 1);
+    const customProd: Product = {
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: customItemName.trim(),
+      category: 'higiene_otros',
+      price: priceNum,
+      stock: 9999,
+      minStockAlert: 0,
+      description: 'Consumo personalizado',
+    };
+
+    setCart((prev) => [...prev, { product: customProd, quantity: qty }]);
+    setCustomItemName('');
+    setCustomItemPrice('');
+    setCustomItemQty(1);
+    setShowCustomForm(false);
   };
 
   const handleUpdateQuantity = (productId: string, delta: number) => {
@@ -126,6 +162,7 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
       quantity: c.quantity,
       unitPrice: c.product.price,
       subtotal: c.product.price * c.quantity,
+      isCustom: c.product.id.startsWith('custom-'),
     }));
 
     addExtraConsumption({
@@ -301,6 +338,114 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
             </div>
           </div>
 
+          {/* BOTÓN Y FORMULARIO DE CONSUMO PERSONALIZADO (PRECIO MANUAL) */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowCustomForm(!showCustomForm)}
+              className={`w-full p-2.5 sm:p-3 rounded-2xl border-2 transition-all flex items-center justify-between shadow-xs ${
+                showCustomForm
+                  ? 'bg-purple-900 text-white border-purple-900 shadow-md'
+                  : 'bg-linear-to-r from-purple-50 via-fuchsia-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-950 border-purple-300 font-extrabold'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className={`w-7 h-7 rounded-xl flex items-center justify-center shadow-xs ${showCustomForm ? 'bg-purple-700 text-white' : 'bg-purple-600 text-white'}`}>
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-left">
+                  <span className="block text-xs font-black">
+                    {showCustomForm ? 'Ocultar Formulario de Consumo Personalizado' : '✨ Consumo Personalizado / Precio Manual'}
+                  </span>
+                  <span className={`text-[10px] block ${showCustomForm ? 'text-purple-200' : 'text-purple-700'}`}>
+                    Ingresar producto o servicio indicando concepto y precio libre
+                  </span>
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 transition-transform ${showCustomForm ? 'rotate-180 text-white' : 'text-purple-700'}`} />
+            </button>
+
+            {showCustomForm && (
+              <form onSubmit={handleAddCustomToCart} className="p-3.5 bg-purple-50/90 border-2 border-purple-300 rounded-2xl space-y-2.5 animate-fade-in shadow-sm">
+                <span className="text-xs font-black text-purple-950 flex items-center gap-1.5 border-b border-purple-200 pb-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  Agregar Ítem Personalizado al Cobro
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                  <div className="sm:col-span-6">
+                    <label className="block text-[10px] font-black text-purple-950 uppercase tracking-wider mb-0.5">
+                      ¿Qué producto / consumo es? *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Whisky Red Label, Bebida preparada..."
+                      value={customItemName}
+                      onChange={(e) => setCustomItemName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-purple-300 text-xs font-bold bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3">
+                    <label className="block text-[10px] font-black text-purple-950 uppercase tracking-wider mb-0.5">
+                      Precio (Bs) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      placeholder="0"
+                      value={customItemPrice}
+                      onChange={(e) => setCustomItemPrice(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-purple-300 text-xs font-mono font-black text-purple-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3">
+                    <label className="block text-[10px] font-black text-purple-950 uppercase tracking-wider mb-0.5">
+                      Cantidad
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={customItemQty}
+                      onChange={(e) => setCustomItemQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-purple-300 text-xs font-mono font-black text-purple-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-purple-200/60">
+                  <span className="text-[11px] font-bold text-purple-900">
+                    Subtotal:{' '}
+                    <strong className="text-purple-700 font-black">
+                      {formatBs((parseFloat(customItemPrice) || 0) * (customItemQty || 1))}
+                    </strong>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomForm(false)}
+                      className="px-2.5 py-1 rounded-xl border border-purple-200 text-purple-900 text-xs font-bold bg-white hover:bg-purple-100"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black shadow-xs flex items-center gap-1 active:scale-95"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      + Agregar al Cobro
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+
           {/* Selector de Productos */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between">
@@ -342,6 +487,32 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
 
             {/* Grid de productos */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-44 sm:max-h-48 overflow-y-auto p-1 bg-slate-50/50 rounded-2xl border border-slate-200/60">
+              {/* Tarjeta de acceso directo a consumo personalizado */}
+              <button
+                type="button"
+                onClick={() => setShowCustomForm(true)}
+                className="p-2.5 rounded-xl border-2 border-dashed border-purple-400 bg-purple-50/70 hover:bg-purple-100 hover:border-purple-600 text-left transition-all flex flex-col justify-between active:scale-95 group shadow-2xs"
+              >
+                <div>
+                  <div className="flex items-center gap-1 text-purple-900 font-black text-xs mb-0.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Personalizado</span>
+                  </div>
+                  <span className="text-[10px] text-purple-700 block font-medium">
+                    Precio y nombre manual
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between mt-2 pt-1 border-t border-purple-200">
+                  <span className="font-extrabold text-xs font-mono text-purple-800">
+                    Precio libre
+                  </span>
+                  <span className="p-1 rounded-md bg-purple-600 text-white group-hover:scale-110 transition-transform">
+                    <Plus className="w-3 h-3" />
+                  </span>
+                </div>
+              </button>
+
               {filteredProducts.map((p) => {
                 const inCart = cart.find((item) => item.product.id === p.id);
                 return (
@@ -399,53 +570,62 @@ export const ExtraConsumptionModal: React.FC<ExtraConsumptionModalProps> = ({
               </div>
             ) : (
               <div className="space-y-1.5 max-h-32 sm:max-h-36 overflow-y-auto pr-1">
-                {cart.map((item) => (
-                  <div
-                    key={item.product.id}
-                    className="flex items-center justify-between bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200 text-xs"
-                  >
-                    <div className="flex items-center gap-2 truncate pr-2">
-                      <span className="font-bold text-slate-800 truncate">{item.product.name}</span>
-                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
-                        ({formatBs(item.product.price)})
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded-lg border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                          className="text-slate-500 hover:text-slate-800 p-0.5"
-                        >
-                          <MinusCircle className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="font-bold font-mono px-1">{item.quantity}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQuantity(item.product.id, +1)}
-                          disabled={item.quantity >= item.product.stock}
-                          className="text-slate-500 hover:text-slate-800 p-0.5 disabled:opacity-30"
-                        >
-                          <PlusCircle className="w-3.5 h-3.5" />
-                        </button>
+                {cart.map((item) => {
+                  const isCustom = item.product.id.startsWith('custom-');
+                  return (
+                    <div
+                      key={item.product.id}
+                      className="flex items-center justify-between bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200 text-xs"
+                    >
+                      <div className="flex items-center gap-1.5 truncate pr-2">
+                        <span className="font-bold text-slate-800 truncate">{item.product.name}</span>
+                        {isCustom && (
+                          <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 shrink-0 flex items-center gap-0.5">
+                            <Sparkles className="w-2.5 h-2.5 text-purple-600" />
+                            Personalizado
+                          </span>
+                        )}
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                          ({formatBs(item.product.price)})
+                        </span>
                       </div>
 
-                      <span className="font-mono font-black text-slate-900 w-14 sm:w-16 text-right">
-                        {formatBs(item.product.price * item.quantity)}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded-lg border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuantity(item.product.id, -1)}
+                            className="text-slate-500 hover:text-slate-800 p-0.5"
+                          >
+                            <MinusCircle className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="font-bold font-mono px-1">{item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuantity(item.product.id, +1)}
+                            disabled={!isCustom && item.quantity >= item.product.stock}
+                            className="text-slate-500 hover:text-slate-800 p-0.5 disabled:opacity-30"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFromCart(item.product.id)}
-                        className="text-slate-400 hover:text-rose-600 p-1"
-                        title="Quitar"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        <span className="font-mono font-black text-slate-900 w-14 sm:w-16 text-right">
+                          {formatBs(item.product.price * item.quantity)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromCart(item.product.id)}
+                          className="text-slate-400 hover:text-rose-600 p-1"
+                          title="Quitar"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

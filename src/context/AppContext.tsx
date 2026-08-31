@@ -154,6 +154,17 @@ interface AppContextType {
       paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
     }
   ) => boolean;
+  addCustomConsumptionToRoom: (
+    roomId: string,
+    customData: {
+      name: string;
+      unitPrice: number;
+      quantity?: number;
+      isPaid?: boolean;
+      paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+      notes?: string;
+    }
+  ) => boolean;
   removeConsumptionFromRoom: (roomId: string, consumptionId: string, silent?: boolean) => void;
   closeStayAndCheckout: (
     roomId: string,
@@ -1254,6 +1265,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : `Se añadió ${quantity}x ${product.name} (+${formatBs(subtotal)}) a la cuenta de ${room.name} (Paga al desocupar).`,
       type: 'success',
       undoLabel: 'Deshacer (reponer stock)',
+      undoAction: () => {
+        removeConsumptionFromRoom(roomId, consumptionId, false);
+      },
+      durationMs: 7000,
+    });
+
+    return true;
+  };
+
+  const addCustomConsumptionToRoom = (
+    roomId: string,
+    customData: {
+      name: string;
+      unitPrice: number;
+      quantity?: number;
+      isPaid?: boolean;
+      paymentMethod?: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+      notes?: string;
+    }
+  ): boolean => {
+    const room = rooms.find((r) => r.id === roomId);
+
+    if (!room || !room.currentStay) {
+      showToast({
+        title: 'Error al agregar consumo personalizado',
+        message: 'No se encontró la habitación activa.',
+        type: 'error',
+      });
+      return false;
+    }
+
+    const name = customData.name?.trim() || 'Consumo Personalizado';
+    const quantity = Math.max(1, customData.quantity || 1);
+    const unitPrice = Math.max(0, customData.unitPrice || 0);
+    const subtotal = unitPrice * quantity;
+    const isPaid = customData.isPaid ?? false;
+    const paymentMethod = isPaid ? (customData.paymentMethod || 'efectivo') : undefined;
+    const consumptionId = `cons-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+    const consumptionItem: ConsumptionItem = {
+      id: consumptionId,
+      productId: 'custom-item',
+      productName: name,
+      unitPrice,
+      quantity,
+      subtotal,
+      timestamp: new Date().toISOString(),
+      isPaid,
+      paymentMethod,
+      paidAt: isPaid ? new Date().toISOString() : undefined,
+      paidShiftId: isPaid && currentShift ? currentShift.id : undefined,
+      paidReceptionistId: isPaid ? currentUser.id : undefined,
+      paidReceptionistName: isPaid ? currentUser.name : undefined,
+      isCustom: true,
+      customNotes: customData.notes?.trim() || undefined,
+    };
+
+    const updatedStay: Stay = {
+      ...room.currentStay,
+      consumptions: [...room.currentStay.consumptions, consumptionItem],
+    };
+
+    const updatedRoom: Room = {
+      ...room,
+      currentStay: updatedStay,
+    };
+
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
+    syncRoomToFirestore(updatedRoom);
+    syncStayToFirebase(updatedStay);
+    setCompletedStays((prev) => prev.map((s) => (s.id === updatedStay.id ? updatedStay : s)));
+
+    // Si se pagó al contado en el momento, sumar a la caja del turno activo inmediatamente
+    if (isPaid && currentUser.role !== 'admin') {
+      setActiveShifts((prev) => {
+        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
+        const addCash = paymentMethod === 'efectivo' ? subtotal : 0;
+        const addVendis = paymentMethod === 'qr_vendis' ? subtotal : 0;
+        const addUnion = paymentMethod === 'qr_union' ? subtotal : 0;
+        const addQr = paymentMethod === 'qr' ? subtotal : (addVendis + addUnion);
+        const updatedShift: Shift = {
+          ...active,
+          expectedCash: active.expectedCash + addCash,
+          expectedQrVendis: (active.expectedQrVendis || 0) + addVendis,
+          expectedQrUnion: (active.expectedQrUnion || 0) + addUnion,
+          expectedQr: active.expectedQr + addQr,
+        };
+        syncShiftToFirestore(updatedShift);
+        return {
+          ...prev,
+          [currentUser.id]: updatedShift,
+        };
+      });
+    }
+
+    playAddConsumptionSound();
+    showToast({
+      title: isPaid ? '¡Consumo Personalizado Cobrado!' : '¡Consumo Personalizado Cargado!',
+      message: isPaid
+        ? `Se cobró ${formatBs(subtotal)} en ${getPaymentMethodLabel(paymentMethod || 'efectivo')} por "${name}" (${quantity}x ${formatBs(unitPrice)}).`
+        : `Se añadió "${name}" (${quantity}x ${formatBs(unitPrice)} = +${formatBs(subtotal)}) a la cuenta de ${room.name}.`,
+      type: 'success',
+      undoLabel: 'Deshacer consumo',
       undoAction: () => {
         removeConsumptionFromRoom(roomId, consumptionId, false);
       },
@@ -2531,6 +2645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registerStay,
         registerRoomEntry,
         addConsumptionToRoom,
+        addCustomConsumptionToRoom,
         removeConsumptionFromRoom,
         closeStayAndCheckout,
         changeRoomStatus,

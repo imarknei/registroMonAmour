@@ -27,13 +27,14 @@ import {
   Check,
   AlertCircle,
   Coins,
+  ChevronDown,
 } from 'lucide-react';
 
 interface RoomDetailModalProps {
   room: Room | null;
   onClose: () => void;
   onOpenReceipt: (stay: Stay) => void;
-  onOpenChangeRoom?: (room: Room) => void;
+  onOpenChangeRoom: (room: Room) => void;
 }
 
 export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
@@ -42,7 +43,14 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   onOpenReceipt,
   onOpenChangeRoom,
 }) => {
-  const { tariffs, products, addConsumptionToRoom, removeConsumptionFromRoom, closeStayAndCheckout } = useApp();
+  const {
+    tariffs,
+    products,
+    addConsumptionToRoom,
+    addCustomConsumptionToRoom,
+    removeConsumptionFromRoom,
+    closeStayAndCheckout,
+  } = useApp();
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -62,6 +70,13 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
   // Modo de pago para consumos agregados: 'later' (Cargar a la cuenta) o al contado ('efectivo', 'qr_vendis', 'qr_union')
   const [consumptionPayMode, setConsumptionPayMode] = useState<'later' | 'efectivo' | 'qr_vendis' | 'qr_union'>('later');
+
+  // Estado para Consumo Personalizado con Precio Manual
+  const [showCustomConsumption, setShowCustomConsumption] = useState<boolean>(false);
+  const [customName, setCustomName] = useState<string>('');
+  const [customPrice, setCustomPrice] = useState<string>('');
+  const [customQty, setCustomQty] = useState<number>(1);
+  const [customNotes, setCustomNotes] = useState<string>('');
 
   if (!room || !room.currentStay) return null;
 
@@ -131,6 +146,37 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
       isPaid,
       paymentMethod,
     });
+  };
+
+  const handleAddCustomProduct = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!customName.trim()) {
+      alert('Por favor ingrese el nombre o concepto del consumo personalizado.');
+      return;
+    }
+    const priceNum = parseFloat(customPrice);
+    if (isNaN(priceNum) || priceNum < 0) {
+      alert('Por favor ingrese un precio válido (número mayor o igual a 0).');
+      return;
+    }
+    const qty = Math.max(1, customQty || 1);
+    const isPaid = consumptionPayMode !== 'later';
+    const paymentMethod = isPaid ? consumptionPayMode : undefined;
+
+    addCustomConsumptionToRoom(room.id, {
+      name: customName.trim(),
+      unitPrice: priceNum,
+      quantity: qty,
+      isPaid,
+      paymentMethod,
+      notes: customNotes.trim() || undefined,
+    });
+
+    setCustomName('');
+    setCustomPrice('');
+    setCustomQty(1);
+    setCustomNotes('');
+    setShowCustomConsumption(false);
   };
 
   const handleCheckout = () => {
@@ -411,8 +457,14 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                             {item.quantity}x
                           </span>
                           <div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-semibold text-slate-800 block">{item.productName}</span>
+                              {item.isCustom && (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-0.5 shadow-2xs">
+                                  <Sparkles className="w-2.5 h-2.5 text-purple-600" />
+                                  Personalizado
+                                </span>
+                              )}
                               {item.isPaid ? (
                                 <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
                                   ✓ PAGADO EN EL ACTO ({getPaymentMethodLabel(item.paymentMethod || 'efectivo')})
@@ -773,6 +825,120 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 </div>
               </div>
 
+              {/* BOTÓN Y FORMULARIO DE CONSUMO PERSONALIZADO (PRECIO MANUAL) */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomConsumption(!showCustomConsumption)}
+                  className={`w-full p-3 rounded-2xl border-2 transition-all flex items-center justify-between shadow-xs ${
+                    showCustomConsumption
+                      ? 'bg-purple-900 text-white border-purple-900 shadow-md'
+                      : 'bg-linear-to-r from-purple-50 via-fuchsia-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-950 border-purple-300 font-extrabold'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shadow-xs ${showCustomConsumption ? 'bg-purple-700 text-white' : 'bg-purple-600 text-white'}`}>
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block text-xs font-black">
+                        {showCustomConsumption ? 'Ocultar Formulario de Consumo Personalizado' : '✨ Consumo Personalizado / Precio Manual'}
+                      </span>
+                      <span className={`text-[10px] block ${showCustomConsumption ? 'text-purple-200' : 'text-purple-700'}`}>
+                        Registrar producto, bebida especial o servicio indicando nombre y precio manual
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showCustomConsumption ? 'rotate-180 text-white' : 'text-purple-700'}`} />
+                </button>
+
+                {/* Formulario Desplegable */}
+                {showCustomConsumption && (
+                  <form onSubmit={handleAddCustomProduct} className="p-4 bg-purple-50/90 border-2 border-purple-300 rounded-2xl space-y-3 animate-fade-in shadow-sm">
+                    <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+                      <span className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                        Detalles del Consumo Personalizado
+                      </span>
+                      <span className="text-[10px] font-bold text-purple-900 bg-purple-200/70 px-2 py-0.5 rounded-md">
+                        {consumptionPayMode === 'later' ? '⏳ Paga al Salir' : `✓ Cobrado ahora (${getPaymentMethodLabel(consumptionPayMode)})`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div className="sm:col-span-6">
+                        <label className="block text-[11px] font-black text-purple-950 uppercase tracking-wider mb-1">
+                          ¿Qué es el consumo? (Nombre / Concepto) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ej: Whisky Red Label, Decoración con rosas, Cena..."
+                          value={customName}
+                          onChange={(e) => setCustomName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-purple-300 text-xs font-bold bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className="block text-[11px] font-black text-purple-950 uppercase tracking-wider mb-1">
+                          Precio Unitario (Bs) *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          required
+                          placeholder="0 Bs"
+                          value={customPrice}
+                          onChange={(e) => setCustomPrice(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-purple-300 text-xs font-mono font-black text-purple-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className="block text-[11px] font-black text-purple-950 uppercase tracking-wider mb-1">
+                          Cantidad
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={customQty}
+                          onChange={(e) => setCustomQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          className="w-full px-3 py-2 rounded-xl border border-purple-300 text-xs font-mono font-black text-purple-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1 border-t border-purple-200/60">
+                      <span className="text-[11px] font-bold text-purple-900">
+                        Subtotal a registrar:{' '}
+                        <strong className="text-purple-700 font-black text-sm">
+                          {formatBs((parseFloat(customPrice) || 0) * (customQty || 1))}
+                        </strong>
+                      </span>
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomConsumption(false)}
+                          className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl border border-purple-200 text-purple-900 text-xs font-bold bg-white hover:bg-purple-100 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          + Añadir a la Habitación
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
+              </div>
+
               {/* Barra de Filtros y Búsqueda */}
               <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between">
                 <input
@@ -810,6 +976,33 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
               {/* Product Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto p-1">
+                {/* Botón especial dentro del Grid para Consumo Personalizado */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCustomConsumption(true);
+                  }}
+                  className="p-3 rounded-2xl border-2 border-dashed border-purple-400 bg-purple-50/60 hover:bg-purple-100 hover:border-purple-600 text-left transition-all flex flex-col justify-between active:scale-95 group shadow-2xs"
+                >
+                  <div>
+                    <div className="flex items-center gap-1 text-purple-900 font-black text-xs mb-1">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Personalizado</span>
+                    </div>
+                    <span className="text-[10px] text-purple-700 block font-medium">
+                      Nombre y precio manual
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-2 pt-1 border-t border-purple-200">
+                    <span className="font-extrabold text-xs font-mono text-purple-800">
+                      Precio libre
+                    </span>
+                    <span className="p-1 rounded-lg bg-purple-600 text-white group-hover:scale-110 transition-transform">
+                      <PlusCircle className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </button>
                 {filteredProducts.map((p) => (
                   <button
                     key={p.id}

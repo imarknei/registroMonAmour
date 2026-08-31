@@ -60,6 +60,8 @@ export interface ConsumptionItem {
   paidShiftId?: string;
   paidReceptionistId?: string;
   paidReceptionistName?: string;
+  isCustom?: boolean; // True si es un consumo personalizado con descripción y precio manual
+  customNotes?: string;
 }
 
 export interface Stay {
@@ -310,6 +312,8 @@ export interface ExtraConsumptionItem {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  isCustom?: boolean;
+  customNotes?: string;
 }
 
 export interface ExtraConsumption {

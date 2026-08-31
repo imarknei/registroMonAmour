@@ -899,6 +899,12 @@ export const RegisteredRoomsView: React.FC = () => {
                           key={idx}
                           className="text-[10px] bg-white px-2 py-1 rounded-lg border border-rose-200 font-semibold text-slate-800 flex items-center gap-1"
                         >
+                          {c.isCustom && (
+                            <span className="text-[8px] font-black px-1 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-200 flex items-center gap-0.5">
+                              <Sparkles className="w-2 h-2 text-purple-600" />
+                              Pers
+                            </span>
+                          )}
                           <span>{c.quantity}x {c.productName} (+{formatBs(c.subtotal)})</span>
                           {c.isPaid ? (
                             <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-black">

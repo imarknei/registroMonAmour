@@ -102,8 +102,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ stay, onClose }) => 
                     <div key={c.id} className="flex justify-between text-[11px] pl-1">
                       <span className="truncate pr-2">
                         {c.quantity}x {c.productName}
+                        {c.isCustom ? ' (Personalizado)' : ''}
                       </span>
-                      <span className="shrink-0">{formatBs(c.subtotal)}</span>
+                      <span className="shrink-0 font-mono font-bold">{formatBs(c.subtotal)}</span>
                     </div>
                   ))}
                 </div>
