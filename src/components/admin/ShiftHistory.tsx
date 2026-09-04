@@ -28,11 +28,13 @@ import {
   Coins,
   ArrowRightLeft,
   Check,
+  Edit3,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../../data/initialData';
+import { ShiftAdjustmentModal } from './ShiftAdjustmentModal';
 
 export const ShiftHistory: React.FC = () => {
-  const { shiftsHistory, completedStays, rooms, expenses, cleanupOrphanShifts } = useApp();
+  const { shiftsHistory, completedStays, rooms, expenses, cleanupOrphanShifts, updateShiftInHistory } = useApp();
 
   // Filtros
   const [selectedDateMode, setSelectedDateMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'custom'>('all');
@@ -41,10 +43,41 @@ export const ShiftHistory: React.FC = () => {
   const [filterDiscrepancy, setFilterDiscrepancy] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedShiftId, setExpandedShiftId] = useState<string | null>(null);
+  const [adjustingShift, setAdjustingShift] = useState<Shift | null>(null);
 
   // Turnos abiertos (en vivo) vs turnos cerrados (historial)
   const activeOpenShifts = shiftsHistory.filter((s) => s.status === 'open');
   const closedShifts = shiftsHistory.filter((s) => s.status === 'closed');
+
+  // Detección de turnos cerrados con faltante sospechoso por retiro de ventas no asentado
+  const suspiciousShifts = useMemo(() => {
+    return closedShifts.filter((s) => {
+      const hasDeficit = (s.discountAmount || 0) > 0 || (s.totalDifference && s.totalDifference < -0.01);
+      const noDeliveredRecorded = !s.cashDeliveredAtClose || s.cashDeliveredAtClose === 0;
+      const hasCashSales = (s.expectedCash || 0) > 0;
+      const floatOnly = s.totalPhysicalCashInDrawer === s.handoverCashFloat || (s.declaredCash || 0) === 0;
+      const deficitMatchesSales = (s.discountAmount || 0) >= (s.expectedCash || 0) * 0.8;
+      return hasDeficit && noDeliveredRecorded && hasCashSales && (floatOnly || deficitMatchesSales);
+    });
+  }, [closedShifts]);
+
+  const handleAutoRepairAllSuspicious = () => {
+    if (suspiciousShifts.length === 0) return;
+    const confirm = window.confirm(
+      `¿Deseas asentar automáticamente el retiro de ventas en los ${suspiciousShifts.length} turnos detectados para cuadrarlos a 0.00 Bs?`
+    );
+    if (!confirm) return;
+
+    suspiciousShifts.forEach((s) => {
+      updateShiftInHistory(s.id, {
+        cashDeliveredAtClose: s.expectedCash,
+        totalPhysicalCashInDrawer: s.handoverCashFloat ?? (s.initialCashFloat || 100),
+        declaredQrVendis: s.declaredQrVendis || s.expectedQrVendis || 0,
+        declaredQrUnion: s.declaredQrUnion || s.expectedQrUnion || 0,
+        notes: (s.notes ? s.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
+      });
+    });
+  };
 
   // Rango de fechas seleccionado
   const dateRangeBounds = useMemo(() => {
@@ -484,6 +517,33 @@ export const ShiftHistory: React.FC = () => {
           </span>
         </div>
 
+        {/* Alerta de Retiros No Asentados en Turnos Históricos */}
+        {suspiciousShifts.length > 0 && (
+          <div className="bg-amber-50 rounded-3xl p-4 sm:p-5 border-2 border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-950 shadow-sm animate-fade-in">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-200 text-amber-900 flex items-center justify-center font-bold shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <strong className="text-xs sm:text-sm font-black block">
+                  Se detectaron {suspiciousShifts.length} turnos con faltantes por retiros de ventas no asentados
+                </strong>
+                <p className="text-[11px] text-amber-800 font-medium">
+                  El recepcionista entregó el efectivo de ventas en sobre o a administración sin registrar el retiro, generando falsos faltantes. Puedes cuadrarlos todos con un solo clic.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleAutoRepairAllSuspicious}
+              className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 shrink-0"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>⚡ Auto-Cuadrar ({suspiciousShifts.length}) Turnos</span>
+            </button>
+          </div>
+        )}
+
         {filteredClosedShifts.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm space-y-3">
             <div className="w-16 h-16 rounded-3xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
@@ -499,7 +559,19 @@ export const ShiftHistory: React.FC = () => {
             {filteredClosedShifts.map((shift) => {
               const isExpanded = expandedShiftId === shift.id;
               const shiftStays = getStaysForShift(shift);
-              const shiftExpensesList = shift.expenses || [];
+              const isSuspicious = suspiciousShifts.some((susp) => susp.id === shift.id);
+
+              // Cargar egresos asociados al turno de forma reactiva
+              const shiftExpensesList =
+                shift.expenses && shift.expenses.length > 0
+                  ? shift.expenses
+                  : expenses.filter((e) => {
+                      if (e.shiftId === shift.id) return true;
+                      const t = new Date(e.timestamp).getTime();
+                      const start = new Date(shift.startTime).getTime();
+                      const end = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
+                      return t >= start && t <= end;
+                    });
 
               const startingFloat = shift.initialCashFloat || 100;
               const handoverFloat = shift.handoverCashFloat !== undefined ? shift.handoverCashFloat : 100;
@@ -508,13 +580,19 @@ export const ShiftHistory: React.FC = () => {
               const expectedSalesQrUnion = shift.expectedQrUnion || 0;
               const expectedSalesQrTotal = shift.expectedQr || (expectedSalesQrVendis + expectedSalesQrUnion);
 
-              const expCash = shift.totalExpensesCash || 0;
+              // Separar egresos operativos de retiros de administración
+              const deliveredAtClose = shift.cashDeliveredAtClose || 0;
+              let operationalExpensesCash = shift.totalExpensesCash || 0;
+              if (deliveredAtClose > 0 && operationalExpensesCash >= deliveredAtClose) {
+                operationalExpensesCash -= deliveredAtClose;
+              }
+
               const expQrVendis = shift.totalExpensesQrVendis || 0;
               const expQrUnion = shift.totalExpensesQrUnion || 0;
               const expQrTotal = shift.totalExpensesQr || (expQrVendis + expQrUnion);
 
-              // Lo que DEBÍA haber físicamente en gaveta = Caja Chica Inicial + Ventas Efectivo - Gastos Efectivo
-              const expectedCashInDrawer = Math.max(0, startingFloat + expectedSalesCash - expCash);
+              // Lo que DEBÍA haber físicamente en gaveta antes del retiro
+              const expectedCashInDrawer = Math.max(0, startingFloat + expectedSalesCash - operationalExpensesCash);
 
               // Lo declarado por el recepcionista
               const declaredCashInDrawer = shift.totalPhysicalCashInDrawer || 0;
@@ -523,13 +601,13 @@ export const ShiftHistory: React.FC = () => {
               const declaredQrTotal = shift.declaredQr || (declaredQrVendis + declaredQrUnion);
 
               // Diferencias exactas
-              const diffCash = shift.differenceCash !== undefined ? shift.differenceCash : (declaredCashInDrawer - expectedCashInDrawer);
+              const diffCash = shift.differenceCash !== undefined ? shift.differenceCash : (declaredCashInDrawer + deliveredAtClose - expectedCashInDrawer);
               const diffQrVendis = shift.differenceQrVendis !== undefined ? shift.differenceQrVendis : (declaredQrVendis - (expectedSalesQrVendis - expQrVendis));
               const diffQrUnion = shift.differenceQrUnion !== undefined ? shift.differenceQrUnion : (declaredQrUnion - (expectedSalesQrUnion - expQrUnion));
               const totalDiff = shift.totalDifference !== undefined ? shift.totalDifference : (diffCash + (declaredQrTotal - (expectedSalesQrTotal - expQrTotal)));
 
-              const hasDeficit = totalDiff < 0 || (shift.discountAmount || 0) > 0;
-              const hasSurplus = totalDiff > 0 || (shift.surplusAmount || 0) > 0;
+              const hasDeficit = totalDiff < -0.01 || (shift.discountAmount || 0) > 0.01;
+              const hasSurplus = totalDiff > 0.01 || (shift.surplusAmount || 0) > 0.01;
               const discountAmt = shift.discountAmount || (hasDeficit ? Math.abs(totalDiff) : 0);
               const surplusAmt = shift.surplusAmount || (hasSurplus ? totalDiff : 0);
 
@@ -569,26 +647,82 @@ export const ShiftHistory: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* BADGE DE ESTADO DE CUADRE */}
-                      <div className="text-right">
+                      {/* BADGE DE ESTADO DE CUADRE Y BOTONES DE AJUSTE */}
+                      <div className="flex flex-wrap items-center justify-end gap-2 text-right">
+                        {isSuspicious && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateShiftInHistory(shift.id, {
+                                cashDeliveredAtClose: shift.expectedCash,
+                                totalPhysicalCashInDrawer: shift.handoverCashFloat ?? (shift.initialCashFloat || 100),
+                                declaredQrVendis: shift.declaredQrVendis || shift.expectedQrVendis || 0,
+                                declaredQrUnion: shift.declaredQrUnion || shift.expectedQrUnion || 0,
+                                notes: (shift.notes ? shift.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black text-xs shadow-sm flex items-center gap-1.5 transition-all"
+                            title="Asentar retiro por el total de ventas en efectivo y cuadrar turno a 0.00 Bs"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>⚡ Cuadrar Retiro ({formatBs(shift.expectedCash)})</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setAdjustingShift(shift)}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold text-xs border border-slate-300 flex items-center gap-1.5 transition-colors shadow-sm"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+                          <span>⚙️ Ajustar Arqueo</span>
+                        </button>
+
                         {hasDeficit ? (
-                          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-black text-xs shadow-md shadow-rose-600/20">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 text-white font-black text-xs shadow-md shadow-rose-600/20">
                             <AlertTriangle className="w-4 h-4" />
                             <span>FALTANTE: -{formatBs(discountAmt)} (DESCUENTO)</span>
                           </div>
                         ) : hasSurplus ? (
-                          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-md shadow-emerald-600/20">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-md shadow-emerald-600/20">
                             <Sparkles className="w-4 h-4" />
                             <span>DEMASÍA: +{formatBs(surplusAmt)} (SOBRANTE)</span>
                           </div>
                         ) : (
-                          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-xs">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-xs">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                             <span>CUADRADO EXACTO (0.00 Bs)</span>
                           </div>
                         )}
                       </div>
                     </div>
+
+                    {/* ALERTA DE RETIRO NO ASENTADO DENTRO DE LA TARJETA */}
+                    {isSuspicious && (
+                      <div className="bg-amber-50 p-3 rounded-2xl border border-amber-300 text-amber-950 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>
+                            <strong>Retiro no registrado:</strong> Este turno tiene un faltante falso porque el efectivo de ventas ({formatBs(shift.expectedCash)}) fue retirado/entregado en sobre sin asentarse al cierre.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateShiftInHistory(shift.id, {
+                              cashDeliveredAtClose: shift.expectedCash,
+                              totalPhysicalCashInDrawer: shift.handoverCashFloat ?? (shift.initialCashFloat || 100),
+                              declaredQrVendis: shift.declaredQrVendis || shift.expectedQrVendis || 0,
+                              declaredQrUnion: shift.declaredQrUnion || shift.expectedQrUnion || 0,
+                              notes: (shift.notes ? shift.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
+                            })
+                          }
+                          className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shrink-0 shadow-sm"
+                        >
+                          ⚡ Cuadrar Turno a 0.00 Bs
+                        </button>
+                      </div>
+                    )}
 
                     {/* COMPARADOR AUDITOR LADO A LADO: SISTEMA (ESPERADO) VS DECLARADO A CIEGAS */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -617,10 +751,16 @@ export const ShiftHistory: React.FC = () => {
                             <span>Ventas QR Banco Unión:</span>
                             <strong className="font-mono text-indigo-700">+{formatBs(expectedSalesQrUnion)}</strong>
                           </div>
-                          {expCash + expQrTotal > 0 && (
+                          {operationalExpensesCash > 0 && (
                             <div className="flex items-center justify-between text-rose-600 font-semibold">
-                              <span>Gastos/Pagos Restados:</span>
-                              <strong className="font-mono">-{formatBs(expCash + expQrTotal)}</strong>
+                              <span>Gastos Operativos Efectivo:</span>
+                              <strong className="font-mono">-{formatBs(operationalExpensesCash)}</strong>
+                            </div>
+                          )}
+                          {deliveredAtClose > 0 && (
+                            <div className="flex items-center justify-between text-amber-700 font-semibold">
+                              <span>Retiro a Administración / Dueño:</span>
+                              <strong className="font-mono">+{formatBs(deliveredAtClose)}</strong>
                             </div>
                           )}
                         </div>
@@ -642,7 +782,7 @@ export const ShiftHistory: React.FC = () => {
                         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                           <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                             <Coins className="w-4 h-4 text-emerald-600" />
-                            2. Declarado en Arqueo Ciego:
+                            2. Declarado en Arqueo:
                           </span>
                           <span className="font-mono font-bold text-slate-500">
                             Dejó Caja Chica: {formatBs(handoverFloat)}
@@ -651,9 +791,15 @@ export const ShiftHistory: React.FC = () => {
 
                         <div className="space-y-1.5 text-slate-600">
                           <div className="flex items-center justify-between">
-                            <span>Efectivo Total Contado en Gaveta:</span>
+                            <span>Efectivo Quedado en Gaveta:</span>
                             <strong className="font-mono text-emerald-700">{formatBs(declaredCashInDrawer)}</strong>
                           </div>
+                          {deliveredAtClose > 0 && (
+                            <div className="flex items-center justify-between text-amber-800 font-bold">
+                              <span>Retiro Entregado a Adm. (Sobre/Dueño):</span>
+                              <strong className="font-mono text-amber-700">+{formatBs(deliveredAtClose)}</strong>
+                            </div>
+                          )}
                           <div className="flex items-center justify-between">
                             <span>QR Vendis Declarado:</span>
                             <strong className="font-mono text-sky-700">{formatBs(declaredQrVendis)}</strong>
@@ -663,8 +809,8 @@ export const ShiftHistory: React.FC = () => {
                             <strong className="font-mono text-indigo-700">{formatBs(declaredQrUnion)}</strong>
                           </div>
                           <div className="flex items-center justify-between text-slate-500">
-                            <span>Efectivo Neto Retirado / Entregado:</span>
-                            <strong className="font-mono text-slate-800">{formatBs(Math.max(0, declaredCashInDrawer - handoverFloat))}</strong>
+                            <span>Total Efectivo Justificado:</span>
+                            <strong className="font-mono text-slate-800">{formatBs(declaredCashInDrawer + deliveredAtClose + operationalExpensesCash)}</strong>
                           </div>
                         </div>
 
@@ -774,6 +920,13 @@ export const ShiftHistory: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* MODAL DE AUDITORÍA Y AJUSTE DE ARQUEO / RETIROS */}
+      <ShiftAdjustmentModal
+        shift={adjustingShift}
+        isOpen={!!adjustingShift}
+        onClose={() => setAdjustingShift(null)}
+      />
     </div>
   );
 };

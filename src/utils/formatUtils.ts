@@ -96,6 +96,28 @@ export function getCategoryLabel(category: string): string {
   }
 }
 
+export function getExpenseCategoryLabel(category: string): string {
+  switch (category) {
+    case 'proveedores':
+      return 'Proveedores / Mercadería';
+    case 'mantenimiento':
+      return 'Mantenimiento / Reparaciones';
+    case 'servicios':
+      return 'Servicios Básicos';
+    case 'limpieza_insumos':
+      return 'Insumos de Limpieza';
+    case 'personal_adelanto':
+      return 'Adelanto / Jornal Personal';
+    case 'retiro_administracion':
+      return 'Retiro de Efectivo (Administración / Dueño)';
+    case 'otros':
+      return 'Otros Pagos';
+    default:
+      return category;
+  }
+}
+
+
 export function getPlanLabel(plan: string): string {
   switch (plan) {
     case '1h':

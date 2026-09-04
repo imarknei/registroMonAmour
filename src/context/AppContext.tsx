@@ -259,8 +259,10 @@ interface AppContextType {
     declaredQrVendis: number,
     declaredQrUnion: number,
     handoverCashFloat: number,
-    notes?: string
+    notes?: string,
+    cashDeliveredAtClose?: number
   ) => Shift | null;
+  updateShiftInHistory: (shiftId: string, updatedData: Partial<Shift>) => boolean;
 
   // Admin functions
   cancelStay: (stayId: string, reason: string, restoreInventory?: boolean) => boolean;
@@ -939,16 +941,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const expectedQr = Math.max(rawTargetShift.expectedQr || 0, liveQrSales, expectedQrVendis + expectedQrUnion);
     const salesCount = Math.max(rawTargetShift.salesCount || 0, liveSalesCount);
 
-    // Sumar egresos / pagos de este turno
+    // Sumar egresos / pagos y retiros de este turno
     const shiftExpenses = expenses.filter((e) => {
       if (e.shiftId === rawTargetShift.id) return true;
       const expTime = new Date(e.timestamp).getTime();
-      return (
-        e.registeredById === rawTargetShift.receptionistId &&
-        expTime >= shiftStartTime &&
-        expTime <= shiftEndTime
-      );
+      return expTime >= shiftStartTime && expTime <= shiftEndTime;
     });
+
+    const cashWithdrawals = shiftExpenses
+      .filter((e) => e.paymentMethod === 'efectivo' && e.category === 'retiro_administracion')
+      .reduce((sum, e) => sum + e.amount, 0);
 
     const totalExpensesCash = shiftExpenses
       .filter((e) => e.paymentMethod === 'efectivo')
@@ -975,6 +977,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       salesCount,
       stayIds: Array.from(trackedStayIds),
       expenses: shiftExpenses,
+      cashWithdrawals,
       totalExpensesCash,
       totalExpensesQrVendis,
       totalExpensesQrUnion,
@@ -2137,28 +2140,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     declaredQrVendis: number,
     declaredQrUnion: number,
     handoverCashFloat: number,
-    notes?: string
+    notes?: string,
+    cashDeliveredAtClose?: number
   ): Shift | null => {
     const shift = currentShift;
     if (!shift) return null;
 
     const startingCashFloat = shift.initialCashFloat || 100;
     const floatLeftForNext = handoverCashFloat !== undefined ? handoverCashFloat : startingCashFloat;
-    const totalExpensesCash = shift.totalExpensesCash || 0;
+    const deliveredAtClose = cashDeliveredAtClose && cashDeliveredAtClose > 0 ? cashDeliveredAtClose : 0;
+
+    // Si se entregó/retiró efectivo al momento del cierre, registrar automáticamente el comprobante de retiro
+    if (deliveredAtClose > 0) {
+      const withdrawalExpense: Expense = {
+        id: `exp-ret-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        description: `Retiro / Entrega de efectivo a administración al cierre de turno (Entregó: ${responsiblePersonName.trim()})`,
+        category: 'retiro_administracion',
+        amount: deliveredAtClose,
+        paymentMethod: 'efectivo',
+        timestamp: new Date().toISOString(),
+        shiftId: shift.id,
+        registeredById: currentUser.id,
+        registeredByName: currentUser.name,
+        notes: notes ? `Cierre de turno: ${notes}` : 'Retiro registrado automáticamente al cierre de turno',
+      };
+      setExpenses((prev) => [withdrawalExpense, ...prev]);
+      syncExpenseToFirestore(withdrawalExpense);
+    }
+
+    // Total de egresos en efectivo = los previos del turno + el retiro entregado al cierre
+    const prevExpensesCash = shift.totalExpensesCash || 0;
+    const allExpensesCash = prevExpensesCash + deliveredAtClose;
+    const cashWithdrawalsTotal = (shift.cashWithdrawals || 0) + deliveredAtClose;
+
     const totalExpensesQrVendis = shift.totalExpensesQrVendis || 0;
     const totalExpensesQrUnion = shift.totalExpensesQrUnion || 0;
     const totalExpensesQr = shift.totalExpensesQr || (totalExpensesQrVendis + totalExpensesQrUnion);
 
-    // Ventas netas declaradas
-    const declaredSalesCash = Math.max(0, totalPhysicalCashInDrawer - floatLeftForNext + totalExpensesCash);
-    const declaredQrTotal = declaredQrVendis + declaredQrUnion;
+    // Total justificado en efectivo = Dinero en gaveta + Egresos previos + Retiro entregado al cierre
+    const totalAccountedCash = totalPhysicalCashInDrawer + allExpensesCash;
+    const expectedRequiredCash = startingCashFloat + shift.expectedCash;
+    const diffCash = totalAccountedCash - expectedRequiredCash;
+    const declaredSalesCash = Math.max(0, shift.expectedCash + diffCash);
 
-    const expectedNetCash = shift.expectedCash;
+    const declaredQrTotal = declaredQrVendis + declaredQrUnion;
     const expectedNetQrVendis = shift.expectedQrVendis || 0;
     const expectedNetQrUnion = shift.expectedQrUnion || 0;
     const expectedNetQrTotal = shift.expectedQr;
 
-    const diffCash = declaredSalesCash - expectedNetCash;
     const diffQrVendis = declaredQrVendis - expectedNetQrVendis;
     const diffQrUnion = declaredQrUnion - expectedNetQrUnion;
     const diffQr = declaredQrTotal - expectedNetQrTotal;
@@ -2178,7 +2207,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       handedOverTo: nextReceptionistName.trim(),
       initialCashFloat: startingCashFloat,
       handoverCashFloat: floatLeftForNext,
-      totalExpensesCash,
+      totalExpensesCash: allExpensesCash,
+      cashWithdrawals: cashWithdrawalsTotal,
+      cashDeliveredAtClose: deliveredAtClose,
       totalExpensesQrVendis,
       totalExpensesQrUnion,
       totalExpensesQr,
@@ -2245,6 +2276,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return closedShift;
+  };
+
+  // AUDITORÍA Y AJUSTE DE TURNOS POR ADMINISTRADOR
+  const updateShiftInHistory = (
+    shiftId: string,
+    updatedData: Partial<Shift>
+  ): boolean => {
+    const existing = shiftsHistory.find((s) => s.id === shiftId);
+    if (!existing) return false;
+
+    const initialCashFloat = updatedData.initialCashFloat !== undefined ? updatedData.initialCashFloat : (existing.initialCashFloat || 100);
+    const handoverCashFloat = updatedData.handoverCashFloat !== undefined ? updatedData.handoverCashFloat : (existing.handoverCashFloat ?? 100);
+    const totalPhysicalCashInDrawer = updatedData.totalPhysicalCashInDrawer !== undefined ? updatedData.totalPhysicalCashInDrawer : (existing.totalPhysicalCashInDrawer ?? 0);
+    const cashDeliveredAtClose = updatedData.cashDeliveredAtClose !== undefined ? updatedData.cashDeliveredAtClose : (existing.cashDeliveredAtClose || 0);
+    const totalExpensesCash = updatedData.totalExpensesCash !== undefined ? updatedData.totalExpensesCash : (existing.totalExpensesCash || 0);
+
+    const expectedCash = updatedData.expectedCash !== undefined ? updatedData.expectedCash : (existing.expectedCash || 0);
+    const expectedQrVendis = updatedData.expectedQrVendis !== undefined ? updatedData.expectedQrVendis : (existing.expectedQrVendis || 0);
+    const expectedQrUnion = updatedData.expectedQrUnion !== undefined ? updatedData.expectedQrUnion : (existing.expectedQrUnion || 0);
+    const expectedQr = updatedData.expectedQr !== undefined ? updatedData.expectedQr : (existing.expectedQr || (expectedQrVendis + expectedQrUnion));
+
+    const declaredQrVendis = updatedData.declaredQrVendis !== undefined ? updatedData.declaredQrVendis : (existing.declaredQrVendis || 0);
+    const declaredQrUnion = updatedData.declaredQrUnion !== undefined ? updatedData.declaredQrUnion : (existing.declaredQrUnion || 0);
+    const declaredQr = updatedData.declaredQr !== undefined ? updatedData.declaredQr : (declaredQrVendis + declaredQrUnion);
+
+    // Determinar egresos operativos vs retiros para evitar doble conteo
+    let operationalExpensesCash = totalExpensesCash;
+    if (existing.cashDeliveredAtClose && operationalExpensesCash >= existing.cashDeliveredAtClose) {
+      operationalExpensesCash -= existing.cashDeliveredAtClose;
+    }
+    const allExpensesCash = operationalExpensesCash + cashDeliveredAtClose;
+
+    // Total efectivo que ingresó y se justifica = Lo que quedó en gaveta + Egresos operativos + Retiro entregado
+    const totalAccountedCash = totalPhysicalCashInDrawer + operationalExpensesCash + cashDeliveredAtClose;
+    const expectedRequiredCash = initialCashFloat + expectedCash;
+    const diffCash = totalAccountedCash - expectedRequiredCash;
+    const declaredCash = Math.max(0, expectedCash + diffCash);
+
+    const diffQrVendis = declaredQrVendis - expectedQrVendis;
+    const diffQrUnion = declaredQrUnion - expectedQrUnion;
+    const diffQr = declaredQr - expectedQr;
+    const totalDiff = diffCash + (diffQrVendis !== 0 || diffQrUnion !== 0 ? (diffQrVendis + diffQrUnion) : diffQr);
+
+    const discountAmount = totalDiff < -0.01 ? Math.abs(totalDiff) : 0;
+    const surplusAmount = totalDiff > 0.01 ? totalDiff : 0;
+
+    const mergedShift: Shift = {
+      ...existing,
+      ...updatedData,
+      initialCashFloat,
+      handoverCashFloat,
+      totalPhysicalCashInDrawer,
+      cashDeliveredAtClose,
+      cashWithdrawals: (existing.cashWithdrawals ? Math.max(0, existing.cashWithdrawals - (existing.cashDeliveredAtClose || 0)) : 0) + cashDeliveredAtClose,
+      totalExpensesCash: allExpensesCash,
+      declaredCash,
+      declaredQrVendis,
+      declaredQrUnion,
+      declaredQr,
+      differenceCash: diffCash,
+      differenceQrVendis: diffQrVendis,
+      differenceQrUnion: diffQrUnion,
+      differenceQr: diffQr,
+      totalDifference: totalDiff,
+      discountAmount,
+      surplusAmount,
+    };
+
+    // Si se especificó retiro a administración, asentar comprobante en expenses si no existe
+    if (cashDeliveredAtClose > 0) {
+      const existingWithdrawal = expenses.find(
+        (e) => (e.shiftId === shiftId || e.id.includes(shiftId)) && e.category === 'retiro_administracion'
+      );
+      if (existingWithdrawal) {
+        if (existingWithdrawal.amount !== cashDeliveredAtClose) {
+          const updatedExp: Expense = {
+            ...existingWithdrawal,
+            amount: cashDeliveredAtClose,
+          };
+          setExpenses((prev) => prev.map((e) => (e.id === existingWithdrawal.id ? updatedExp : e)));
+          syncExpenseToFirestore(updatedExp);
+        }
+      } else {
+        const newWithdrawal: Expense = {
+          id: `exp-ret-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          description: `Retiro de ventas a administración / dueño (${existing.receptionistName})`,
+          category: 'retiro_administracion',
+          amount: cashDeliveredAtClose,
+          paymentMethod: 'efectivo',
+          timestamp: existing.endTime || existing.startTime || new Date().toISOString(),
+          shiftId: shiftId,
+          registeredById: currentUser.id,
+          registeredByName: currentUser.name,
+          notes: `Retiro asentado por auditoría de turno`,
+        };
+        setExpenses((prev) => [newWithdrawal, ...prev]);
+        syncExpenseToFirestore(newWithdrawal);
+      }
+    }
+
+    setShiftsHistory((prev) => prev.map((s) => (s.id === shiftId ? mergedShift : s)));
+    syncShiftToFirestore(mergedShift);
+
+    showToast({
+      title: '¡Turno Actualizado y Cuadrado!',
+      message: `Se actualizaron los datos del turno de ${mergedShift.receptionistName}. Diferencia ajustada: ${formatBs(totalDiff)}.`,
+      type: 'success',
+    });
+
+    return true;
   };
 
   // ADMIN ACTIONS
@@ -2658,6 +2799,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recordStaffSettlement,
         saveStaffMember,
         closeCurrentShift,
+        updateShiftInHistory,
         cancelStay,
         updateStay,
         cleanupOrphanShifts,

@@ -245,17 +245,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="sm:hidden">Personal</span>
             </button>
 
-            {/* BOTÓN HACER PAGOS / SALIDA DE CAJA */}
-            {currentUser.role !== 'admin' && (
-              <button
-                onClick={onOpenExpenseModal}
-                className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/20 active:scale-95 transition-all flex items-center gap-1.5 border border-amber-600"
-                title="Registrar pagos de turno (Coca-cola, albañil, insumos, jornales)"
-              >
-                <Receipt className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Hacer Pagos</span>
-              </button>
-            )}
+            {/* BOTÓN HACER PAGOS / RETIRO DE CAJA */}
+            <button
+              onClick={onOpenExpenseModal}
+              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/20 active:scale-95 transition-all flex items-center gap-1.5 border border-amber-600"
+              title="Registrar pagos y salidas de turno o retiros de efectivo a administración"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">Pagos / Retiros</span>
+              <span className="xs:hidden">Pagos</span>
+            </button>
 
             {/* Sound Toggle */}
             <button

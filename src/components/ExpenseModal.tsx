@@ -25,6 +25,8 @@ interface ExpenseModalProps {
 }
 
 const QUICK_SUGGESTIONS = [
+  { label: 'Retiro de Efectivo a Marco (Dueño)', category: 'retiro_administracion' as ExpenseCategory },
+  { label: 'Entrega de Turno en Sobre / Administración', category: 'retiro_administracion' as ExpenseCategory },
   { label: 'Coca-Cola (Sodas/Bebidas)', category: 'proveedores' as ExpenseCategory },
   { label: 'Cerveza / Licores', category: 'proveedores' as ExpenseCategory },
   { label: 'Preservativos / Minibar', category: 'proveedores' as ExpenseCategory },
@@ -224,6 +226,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({ isOpen, onClose }) =
               onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
               className="w-full px-3.5 py-2 rounded-xl border border-slate-200 font-bold text-xs bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
             >
+              <option value="retiro_administracion">💰 Retiro de Efectivo (Marco / Dueño / Administración)</option>
               <option value="proveedores">📦 Proveedores (Coca-Cola, Bebidas, Insumos)</option>
               <option value="mantenimiento">🔧 Mantenimiento / Reparaciones (Albañil, Plomería)</option>
               <option value="servicios">⚡ Servicios Básicos (Luz, Agua, Internet, Gas)</option>

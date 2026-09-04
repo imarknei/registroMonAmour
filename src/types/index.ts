@@ -153,16 +153,17 @@ export interface User {
 export type ShiftType = 'dia' | 'noche';
 
 export type ExpenseCategory =
-  | 'proveedores'       // Ej: Coca-Cola, Cerveza, Bebidas, Preservativos
-  | 'mantenimiento'     // Ej: Albañil, Plomero, Electricista, Reparaciones
-  | 'servicios'         // Ej: Luz, Agua, Internet, Gas
-  | 'limpieza_insumos'  // Ej: Detergentes, Papel higiénico, Jabón
-  | 'personal_adelanto' // Ej: Pago de jornales, adelanto de sueldo
+  | 'proveedores'           // Ej: Coca-Cola, Cerveza, Bebidas, Preservativos
+  | 'mantenimiento'         // Ej: Albañil, Plomero, Electricista, Reparaciones
+  | 'servicios'             // Ej: Luz, Agua, Internet, Gas
+  | 'limpieza_insumos'      // Ej: Detergentes, Papel higiénico, Jabón
+  | 'personal_adelanto'     // Ej: Pago de jornales, adelanto de sueldo
+  | 'retiro_administracion' // Ej: Retiro de efectivo a Marco / Dueño / Entrega a Administración
   | 'otros';
 
 export interface Expense {
   id: string;
-  description: string; // Ej: "Coca-Cola (packs de mini sodas)", "Albañil reparación hab 3"
+  description: string; // Ej: "Coca-Cola (packs de mini sodas)", "Albañil reparación hab 3", "Retiro Marco"
   category: ExpenseCategory;
   amount: number;
   paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
@@ -190,12 +191,14 @@ export interface Shift {
   expectedQrUnion?: number; // Ventas esperadas en QR Banco Unión
   expectedQr: number;   // Ventas esperadas en QR total
   expenses?: Expense[]; // Lista de pagos/egresos registrados durante el turno
-  totalExpensesCash?: number; // Total egresos pagados en efectivo
+  totalExpensesCash?: number; // Total egresos y retiros pagados en efectivo
+  cashWithdrawals?: number; // Total de retiros entregados a administración durante el turno
+  cashDeliveredAtClose?: number; // Efectivo retirado/entregado a administración al momento del cierre de turno
   totalExpensesQrVendis?: number; // Total egresos pagados en QR Vendis
   totalExpensesQrUnion?: number; // Total egresos pagados en QR Banco Unión
   totalExpensesQr?: number;   // Total egresos pagados en QR total
   totalPhysicalCashInDrawer?: number; // Total físico contado en gaveta por el recepcionista
-  declaredCash?: number; // Ventas netas declaradas en efectivo (Total contado - Fondo + Egresos)
+  declaredCash?: number; // Ventas netas declaradas en efectivo (Total contado - Fondo + Egresos + Retiros)
   declaredQrVendis?: number; // Ventas declaradas en QR Vendis
   declaredQrUnion?: number; // Ventas declaradas en QR Banco Unión
   declaredQr?: number;   // Ventas declaradas en QR total

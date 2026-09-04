@@ -26,8 +26,10 @@ import {
   X,
   History,
   CreditCard,
+  Edit3,
 } from 'lucide-react';
 import { StaffSettlementReceiptModal } from '../StaffSettlementReceiptModal';
+import { ShiftAdjustmentModal } from './ShiftAdjustmentModal';
 
 export const WeeklyDiscounts: React.FC = () => {
   const {
@@ -38,6 +40,7 @@ export const WeeklyDiscounts: React.FC = () => {
     recordStaffSettlement,
     removeStaffConsumption,
     currentUser,
+    updateShiftInHistory,
   } = useApp();
 
   const currentWeekInfo = getWeekRange(new Date());
@@ -49,6 +52,7 @@ export const WeeklyDiscounts: React.FC = () => {
   const [baseSalaryInput, setBaseSalaryInput] = useState<string>('700');
   const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'transferencia' | 'qr'>('efectivo');
   const [notes, setNotes] = useState<string>('');
+  const [adjustingShift, setAdjustingShift] = useState<Shift | null>(null);
 
   // Selected discounts toggles (IDs of shifts & consumptions to include in deduction)
   const [selectedShiftShortageIds, setSelectedShiftShortageIds] = useState<Record<string, boolean>>({});
@@ -97,6 +101,32 @@ export const WeeklyDiscounts: React.FC = () => {
     return isStaff && !c.isSettled && !c.isPaid;
   });
 
+  // Detección de posibles retiros no anotados al cierre
+  const isSuspiciousWithdrawal = (s: Shift) => {
+    const hasDeficit = (s.discountAmount || 0) > 0 || (s.totalDifference && s.totalDifference < -0.01);
+    const noDelivered = !s.cashDeliveredAtClose || s.cashDeliveredAtClose === 0;
+    const hasCashSales = (s.expectedCash || 0) > 0;
+    const floatOnly = s.totalPhysicalCashInDrawer === s.handoverCashFloat || (s.declaredCash || 0) === 0;
+    const deficitMatchesSales = (s.discountAmount || 0) >= (s.expectedCash || 0) * 0.8;
+    return hasDeficit && noDelivered && hasCashSales && (floatOnly || deficitMatchesSales);
+  };
+
+  const handleQuickRepairShift = (s: Shift) => {
+    updateShiftInHistory(s.id, {
+      cashDeliveredAtClose: s.expectedCash,
+      totalPhysicalCashInDrawer: s.handoverCashFloat ?? (s.initialCashFloat || 100),
+      declaredQrVendis: s.declaredQrVendis || s.expectedQrVendis || 0,
+      declaredQrUnion: s.declaredQrUnion || s.expectedQrUnion || 0,
+      notes: (s.notes ? s.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
+    });
+  };
+
+  const handleQuickRepairAllWeekShifts = () => {
+    const suspicious = shiftsWithShortage.filter(isSuspiciousWithdrawal);
+    if (suspicious.length === 0) return;
+    suspicious.forEach((s) => handleQuickRepairShift(s));
+  };
+
   // Auto-initialize selected discounts checkboxes when staff or week changes
   React.useEffect(() => {
     if (currentStaff?.defaultWeeklySalary) {
@@ -105,7 +135,10 @@ export const WeeklyDiscounts: React.FC = () => {
 
     const initShifts: Record<string, boolean> = {};
     shiftsWithShortage.forEach((s) => {
-      if (!s.isSettled) initShifts[s.id] = true;
+      if (!s.isSettled) {
+        // Desmarcar por defecto si es un posible retiro de ventas no anotado para no castigar sueldo injustamente
+        initShifts[s.id] = !isSuspiciousWithdrawal(s);
+      }
     });
     setSelectedShiftShortageIds(initShifts);
 
@@ -380,57 +413,113 @@ export const WeeklyDiscounts: React.FC = () => {
                   ¡Excelente! Este empleado no tiene ningún faltante de caja registrado en esta semana.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {shiftsWithShortage.map((shift) => {
-                    const isChecked = selectedShiftShortageIds[shift.id] ?? true;
-                    return (
-                      <label
-                        key={shift.id}
-                        className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                          shift.isSettled
-                            ? 'bg-slate-50 border-slate-200 opacity-60'
-                            : isChecked
-                            ? 'bg-rose-50/70 border-rose-300'
-                            : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
+                <div className="space-y-2.5">
+                  {shiftsWithShortage.some(isSuspiciousWithdrawal) && (
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-amber-950 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          Se detectaron <strong>{shiftsWithShortage.filter(isSuspiciousWithdrawal).length} turnos</strong> con posibles retiros de ventas no anotados. Se han <strong>desmarcado automáticamente</strong> para no descontarlos del sueldo.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleQuickRepairAllWeekShifts}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-black shrink-0 shadow-sm transition-all"
                       >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            disabled={shift.isSettled}
-                            checked={shift.isSettled ? false : isChecked}
-                            onChange={(e) =>
-                              setSelectedShiftShortageIds((prev) => ({
-                                ...prev,
-                                [shift.id]: e.target.checked,
-                              }))
-                            }
-                            className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
-                          />
-                          <div>
-                            <span className="text-xs font-bold text-slate-900 block">
-                              Turno {shift.shiftType === 'noche' ? 'Noche' : 'Día'} • {formatDateTime(shift.endTime || shift.startTime)}
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              Entregado por: {shift.responsiblePersonName || shift.receptionistName} | Faltante: {formatBs(shift.discountAmount || 0)}
-                            </span>
+                        ⚡ Asentar Retiros y Cuadrar
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {shiftsWithShortage.map((shift) => {
+                      const isChecked = selectedShiftShortageIds[shift.id] ?? true;
+                      const isSuspicious = isSuspiciousWithdrawal(shift);
+                      return (
+                        <div
+                          key={shift.id}
+                          className={`p-3 rounded-xl border transition-all ${
+                            shift.isSettled
+                              ? 'bg-slate-50 border-slate-200 opacity-60'
+                              : isChecked
+                              ? 'bg-rose-50/70 border-rose-300'
+                              : isSuspicious
+                              ? 'bg-amber-50/50 border-amber-300'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <label className="flex items-center gap-3 cursor-pointer flex-1">
+                              <input
+                                type="checkbox"
+                                disabled={shift.isSettled}
+                                checked={shift.isSettled ? false : isChecked}
+                                onChange={(e) =>
+                                  setSelectedShiftShortageIds((prev) => ({
+                                    ...prev,
+                                    [shift.id]: e.target.checked,
+                                  }))
+                                }
+                                className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
+                              />
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-slate-900">
+                                    Turno {shift.shiftType === 'noche' ? 'Noche' : 'Día'} • {formatDateTime(shift.endTime || shift.startTime)}
+                                  </span>
+                                  {isSuspicious && (
+                                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                                      ⚠️ Retiro no anotado
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-500">
+                                  Entregado por: {shift.responsiblePersonName || shift.receptionistName} | Ventas Efectivo: {formatBs(shift.expectedCash)}
+                                </span>
+                              </div>
+                            </label>
+
+                            <div className="flex items-center gap-2 self-end sm:self-center">
+                              {isSuspicious && !shift.isSettled && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickRepairShift(shift)}
+                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-lg text-[10px] font-black flex items-center gap-1 shadow-sm transition-all"
+                                  title="Asentar retiro de ventas en efectivo y cuadrar turno a 0.00 Bs"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  <span>⚡ Cuadrar</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => setAdjustingShift(shift)}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-300 flex items-center gap-1 transition-colors"
+                                title="Editar arqueo y retiros"
+                              >
+                                <Edit3 className="w-3 h-3 text-slate-500" />
+                                <span>Ajustar</span>
+                              </button>
+
+                              <div>
+                                {shift.isSettled ? (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                    ✓ Ya Liquidado
+                                  </span>
+                                ) : (
+                                  <span className="font-mono font-black text-xs text-rose-700">
+                                    -{formatBs(shift.discountAmount || 0)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
-
-                        <div>
-                          {shift.isSettled ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                              ✓ Ya Liquidado
-                            </span>
-                          ) : (
-                            <span className="font-mono font-black text-xs text-rose-700">
-                              -{formatBs(shift.discountAmount || 0)}
-                            </span>
-                          )}
-                        </div>
-                      </label>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -808,6 +897,13 @@ export const WeeklyDiscounts: React.FC = () => {
           onClose={() => setViewingSettlement(null)}
         />
       )}
+
+      {/* MODAL DE AJUSTE DE ARQUEO Y RETIROS */}
+      <ShiftAdjustmentModal
+        shift={adjustingShift}
+        isOpen={!!adjustingShift}
+        onClose={() => setAdjustingShift(null)}
+      />
     </div>
   );
 };
