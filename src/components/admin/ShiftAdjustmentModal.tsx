@@ -85,10 +85,15 @@ export const ShiftAdjustmentModal: React.FC<ShiftAdjustmentModalProps> = ({
   const numQrUnion = parseFloat(declaredQrUnion) || 0;
   const numQrTotal = numQrVendis + numQrUnion;
 
-  // Cotejo de efectivo
-  const totalAccountedCash = numPhysicalInDrawer + operationalExpensesCash + numCashDelivered;
-  const expectedRequiredCash = startingFloat + expectedSalesCash;
-  const diffCash = totalAccountedCash - expectedRequiredCash;
+  // Efectivo que DEBERÍA haber en caja antes de apartar el sobre
+  const expectedCashInDrawer = Math.max(0, startingFloat + expectedSalesCash - operationalExpensesCash);
+
+  // Efectivo físico contado (si totalPhysicalCashInDrawer ya incluye todo el dinero, o si se sumó caja chica + sobre):
+  const effectiveCountedCash = Math.max(
+    numPhysicalInDrawer,
+    numHandoverFloat + numCashDelivered
+  );
+  const diffCash = effectiveCountedCash - expectedCashInDrawer;
 
   // Cotejo de QR
   const diffQrVendis = numQrVendis - expectedSalesQrVendis;
@@ -102,9 +107,9 @@ export const ShiftAdjustmentModal: React.FC<ShiftAdjustmentModalProps> = ({
 
   // Acciones Rápidas
   const handleQuickBalanceSales = () => {
-    // Asentar retiro igual a las ventas en efectivo y dejar gaveta con la caja chica
+    // Asentar retiro igual a las ventas en efectivo y total contado = caja chica + sobre
     setCashDeliveredAtClose(expectedSalesCash.toString());
-    setTotalPhysicalCashInDrawer(numHandoverFloat.toString());
+    setTotalPhysicalCashInDrawer((numHandoverFloat + expectedSalesCash).toString());
   };
 
   const handleQuickBalanceQR = () => {
@@ -403,12 +408,12 @@ export const ShiftAdjustmentModal: React.FC<ShiftAdjustmentModalProps> = ({
 
             <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-current/10">
               <div className="flex justify-between">
-                <span>Total Justificado (Gaveta + Retiro + Gastos):</span>
-                <strong className="font-mono">{formatBs(totalAccountedCash)}</strong>
+                <span>Total Efectivo Contado (Gaveta + Sobre):</span>
+                <strong className="font-mono">{formatBs(effectiveCountedCash)}</strong>
               </div>
               <div className="flex justify-between">
-                <span>Total Requerido (Fondo + Ventas):</span>
-                <strong className="font-mono">{formatBs(expectedRequiredCash)}</strong>
+                <span>Efectivo que debía haber en gaveta:</span>
+                <strong className="font-mono">{formatBs(expectedCashInDrawer)}</strong>
               </div>
               <div className="flex justify-between">
                 <span>Diferencia Efectivo:</span>

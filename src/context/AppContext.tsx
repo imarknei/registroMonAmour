@@ -2168,7 +2168,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncExpenseToFirestore(withdrawalExpense);
     }
 
-    // Total de egresos en efectivo = los previos del turno + el retiro entregado al cierre
+    // Total de egresos operativos en efectivo registrados antes del cierre
     const prevExpensesCash = shift.totalExpensesCash || 0;
     const allExpensesCash = prevExpensesCash + deliveredAtClose;
     const cashWithdrawalsTotal = (shift.cashWithdrawals || 0) + deliveredAtClose;
@@ -2177,10 +2177,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const totalExpensesQrUnion = shift.totalExpensesQrUnion || 0;
     const totalExpensesQr = shift.totalExpensesQr || (totalExpensesQrVendis + totalExpensesQrUnion);
 
-    // Total justificado en efectivo = Dinero en gaveta + Egresos previos + Retiro entregado al cierre
-    const totalAccountedCash = totalPhysicalCashInDrawer + allExpensesCash;
-    const expectedRequiredCash = startingCashFloat + shift.expectedCash;
-    const diffCash = totalAccountedCash - expectedRequiredCash;
+    // Efectivo que DEBERÍA haber en la gaveta antes de separar el sobre:
+    // Fondo Inicial + Ventas Efectivo - Egresos Operativos en Efectivo
+    const expectedCashInDrawer = Math.max(0, startingCashFloat + shift.expectedCash - prevExpensesCash);
+
+    // Diferencia en Efectivo = Lo que contó en gaveta - Lo que debía haber
+    const diffCash = totalPhysicalCashInDrawer - expectedCashInDrawer;
     const declaredSalesCash = Math.max(0, shift.expectedCash + diffCash);
 
     const declaredQrTotal = declaredQrVendis + declaredQrUnion;
@@ -2193,8 +2195,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const diffQr = declaredQrTotal - expectedNetQrTotal;
     const totalDiff = diffCash + (diffQrVendis !== 0 || diffQrUnion !== 0 ? (diffQrVendis + diffQrUnion) : diffQr);
 
-    const discountAmount = totalDiff < 0 ? Math.abs(totalDiff) : 0;
-    const surplusAmount = totalDiff > 0 ? totalDiff : 0;
+    const discountAmount = totalDiff < -0.01 ? Math.abs(totalDiff) : 0;
+    const surplusAmount = totalDiff > 0.01 ? totalDiff : 0;
 
     const handoverActiveRoomsCount = rooms.filter((r) => r.status === 'ocupada').length;
 
@@ -2240,7 +2242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? SYSTEM_USERS.find((u) => u.id === 'user-recep-noche') || SYSTEM_USERS[2]
         : SYSTEM_USERS.find((u) => u.id === 'user-recep-dia') || SYSTEM_USERS[1]);
 
-    // 3. Crear UN SOLO nuevo turno abierto para el recepcionista entrante
+    // 3. Crear UN SOLO nuevo turno abierto para el recepcionista entrante con la caja chica dejada
     const newShiftForNext: Shift = {
       id: `shift-${nextUser.id}-${Date.now()}`,
       receptionistId: nextUser.id,
@@ -2270,7 +2272,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     playSuccessChime();
     showToast({
       title: '¡Cambio de Turno Realizado con Éxito!',
-      message: `Turno entregado por "${responsiblePersonName}" a "${nextReceptionistName || nextUser.name}". Caja Chica de ${formatBs(floatLeftForNext)} (${handoverActiveRoomsCount} habitación/es activa/s traspasadas).`,
+      message: `Turno entregado por "${responsiblePersonName}" a "${nextReceptionistName || nextUser.name}". Caja Chica de ${formatBs(floatLeftForNext)}. Diferencia: ${formatBs(totalDiff)}.`,
       type: discountAmount > 0 ? 'warning' : 'success',
       durationMs: 8500,
     });
@@ -2308,10 +2310,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const allExpensesCash = operationalExpensesCash + cashDeliveredAtClose;
 
-    // Total efectivo que ingresó y se justifica = Lo que quedó en gaveta + Egresos operativos + Retiro entregado
-    const totalAccountedCash = totalPhysicalCashInDrawer + operationalExpensesCash + cashDeliveredAtClose;
-    const expectedRequiredCash = initialCashFloat + expectedCash;
-    const diffCash = totalAccountedCash - expectedRequiredCash;
+    // Efectivo esperado en gaveta = Fondo Inicial + Ventas Efectivo - Egresos Operativos
+    const expectedCashInDrawer = Math.max(0, initialCashFloat + expectedCash - operationalExpensesCash);
+
+    // Efectivo físico total contado (si totalPhysicalCashInDrawer ya incluye todo, o si se especificó caja chica + sobre):
+    const effectivePhysicalCash = Math.max(
+      totalPhysicalCashInDrawer,
+      handoverCashFloat + cashDeliveredAtClose
+    );
+
+    const diffCash = effectivePhysicalCash - expectedCashInDrawer;
     const declaredCash = Math.max(0, expectedCash + diffCash);
 
     const diffQrVendis = declaredQrVendis - expectedQrVendis;

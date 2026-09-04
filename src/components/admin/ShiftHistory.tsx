@@ -69,9 +69,10 @@ export const ShiftHistory: React.FC = () => {
     if (!confirm) return;
 
     suspiciousShifts.forEach((s) => {
+      const floatLeft = s.handoverCashFloat !== undefined ? s.handoverCashFloat : (s.initialCashFloat || 100);
       updateShiftInHistory(s.id, {
         cashDeliveredAtClose: s.expectedCash,
-        totalPhysicalCashInDrawer: s.handoverCashFloat ?? (s.initialCashFloat || 100),
+        totalPhysicalCashInDrawer: floatLeft + (s.expectedCash || 0),
         declaredQrVendis: s.declaredQrVendis || s.expectedQrVendis || 0,
         declaredQrUnion: s.declaredQrUnion || s.expectedQrUnion || 0,
         notes: (s.notes ? s.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
@@ -600,8 +601,14 @@ export const ShiftHistory: React.FC = () => {
               const declaredQrUnion = shift.declaredQrUnion || 0;
               const declaredQrTotal = shift.declaredQr || (declaredQrVendis + declaredQrUnion);
 
+              // Efectivo físico contado (si totalPhysicalCashInDrawer ya incluye todo, o si se anotó por separado):
+              const effectiveCountedCash = Math.max(
+                declaredCashInDrawer,
+                handoverFloat + deliveredAtClose
+              );
+
               // Diferencias exactas
-              const diffCash = shift.differenceCash !== undefined ? shift.differenceCash : (declaredCashInDrawer + deliveredAtClose - expectedCashInDrawer);
+              const diffCash = shift.differenceCash !== undefined ? shift.differenceCash : (effectiveCountedCash - expectedCashInDrawer);
               const diffQrVendis = shift.differenceQrVendis !== undefined ? shift.differenceQrVendis : (declaredQrVendis - (expectedSalesQrVendis - expQrVendis));
               const diffQrUnion = shift.differenceQrUnion !== undefined ? shift.differenceQrUnion : (declaredQrUnion - (expectedSalesQrUnion - expQrUnion));
               const totalDiff = shift.totalDifference !== undefined ? shift.totalDifference : (diffCash + (declaredQrTotal - (expectedSalesQrTotal - expQrTotal)));
@@ -655,7 +662,7 @@ export const ShiftHistory: React.FC = () => {
                             onClick={() =>
                               updateShiftInHistory(shift.id, {
                                 cashDeliveredAtClose: shift.expectedCash,
-                                totalPhysicalCashInDrawer: shift.handoverCashFloat ?? (shift.initialCashFloat || 100),
+                                totalPhysicalCashInDrawer: (shift.handoverCashFloat ?? (shift.initialCashFloat || 100)) + (shift.expectedCash || 0),
                                 declaredQrVendis: shift.declaredQrVendis || shift.expectedQrVendis || 0,
                                 declaredQrUnion: shift.declaredQrUnion || shift.expectedQrUnion || 0,
                                 notes: (shift.notes ? shift.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
@@ -711,7 +718,7 @@ export const ShiftHistory: React.FC = () => {
                           onClick={() =>
                             updateShiftInHistory(shift.id, {
                               cashDeliveredAtClose: shift.expectedCash,
-                              totalPhysicalCashInDrawer: shift.handoverCashFloat ?? (shift.initialCashFloat || 100),
+                              totalPhysicalCashInDrawer: (shift.handoverCashFloat ?? (shift.initialCashFloat || 100)) + (shift.expectedCash || 0),
                               declaredQrVendis: shift.declaredQrVendis || shift.expectedQrVendis || 0,
                               declaredQrUnion: shift.declaredQrUnion || shift.expectedQrUnion || 0,
                               notes: (shift.notes ? shift.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
@@ -757,17 +764,11 @@ export const ShiftHistory: React.FC = () => {
                               <strong className="font-mono">-{formatBs(operationalExpensesCash)}</strong>
                             </div>
                           )}
-                          {deliveredAtClose > 0 && (
-                            <div className="flex items-center justify-between text-amber-700 font-semibold">
-                              <span>Retiro a Administración / Dueño:</span>
-                              <strong className="font-mono">+{formatBs(deliveredAtClose)}</strong>
-                            </div>
-                          )}
                         </div>
 
                         <div className="bg-white p-2.5 rounded-xl border border-slate-200 pt-2 space-y-1">
                           <div className="flex items-center justify-between text-slate-800 font-bold">
-                            <span>Efectivo Físico que debía haber en gaveta:</span>
+                            <span>Efectivo que debía haber en gaveta:</span>
                             <span className="font-mono font-black text-brand-800">{formatBs(expectedCashInDrawer)}</span>
                           </div>
                           <div className="flex items-center justify-between text-[11px] text-slate-500">
@@ -777,7 +778,7 @@ export const ShiftHistory: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 2. DECLARADO POR EL RECEPCIONISTA (ARQUEO CIEGO) */}
+                      {/* 2. DECLARADO POR EL RECEPCIONISTA (ARQUEO) */}
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2.5 text-xs">
                         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                           <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
@@ -785,21 +786,25 @@ export const ShiftHistory: React.FC = () => {
                             2. Declarado en Arqueo:
                           </span>
                           <span className="font-mono font-bold text-slate-500">
-                            Dejó Caja Chica: {formatBs(handoverFloat)}
+                            Caja Chica: {formatBs(handoverFloat)}
                           </span>
                         </div>
 
                         <div className="space-y-1.5 text-slate-600">
                           <div className="flex items-center justify-between">
-                            <span>Efectivo Quedado en Gaveta:</span>
-                            <strong className="font-mono text-emerald-700">{formatBs(declaredCashInDrawer)}</strong>
+                            <span>Total Efectivo Contado en Gaveta:</span>
+                            <strong className="font-mono text-emerald-700">{formatBs(effectiveCountedCash)}</strong>
                           </div>
                           {deliveredAtClose > 0 && (
                             <div className="flex items-center justify-between text-amber-800 font-bold">
-                              <span>Retiro Entregado a Adm. (Sobre/Dueño):</span>
+                              <span>(-) Retiro en Sobre (Dueño / Marco):</span>
                               <strong className="font-mono text-amber-700">+{formatBs(deliveredAtClose)}</strong>
                             </div>
                           )}
+                          <div className="flex items-center justify-between text-slate-500">
+                            <span>(=) Caja Chica que quedó en Gaveta:</span>
+                            <strong className="font-mono text-slate-700">{formatBs(handoverFloat)}</strong>
+                          </div>
                           <div className="flex items-center justify-between">
                             <span>QR Vendis Declarado:</span>
                             <strong className="font-mono text-sky-700">{formatBs(declaredQrVendis)}</strong>
@@ -808,9 +813,9 @@ export const ShiftHistory: React.FC = () => {
                             <span>QR Banco Unión Declarado:</span>
                             <strong className="font-mono text-indigo-700">{formatBs(declaredQrUnion)}</strong>
                           </div>
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span>Total Efectivo Justificado:</span>
-                            <strong className="font-mono text-slate-800">{formatBs(declaredCashInDrawer + deliveredAtClose + operationalExpensesCash)}</strong>
+                          <div className="flex items-center justify-between text-slate-500 pt-1 border-t border-slate-200">
+                            <span>Total Efectivo Distribuido (Sobre + Caja):</span>
+                            <strong className="font-mono text-slate-800">{formatBs(handoverFloat + deliveredAtClose)}</strong>
                           </div>
                         </div>
 

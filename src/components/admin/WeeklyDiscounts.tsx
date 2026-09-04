@@ -112,9 +112,10 @@ export const WeeklyDiscounts: React.FC = () => {
   };
 
   const handleQuickRepairShift = (s: Shift) => {
+    const floatLeft = s.handoverCashFloat !== undefined ? s.handoverCashFloat : (s.initialCashFloat || 100);
     updateShiftInHistory(s.id, {
       cashDeliveredAtClose: s.expectedCash,
-      totalPhysicalCashInDrawer: s.handoverCashFloat ?? (s.initialCashFloat || 100),
+      totalPhysicalCashInDrawer: floatLeft + (s.expectedCash || 0),
       declaredQrVendis: s.declaredQrVendis || s.expectedQrVendis || 0,
       declaredQrUnion: s.declaredQrUnion || s.expectedQrUnion || 0,
       notes: (s.notes ? s.notes + ' | ' : '') + 'Asentado retiro de ventas en efectivo entregado a administración.',
