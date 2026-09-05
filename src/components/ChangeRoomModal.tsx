@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { getNetworkTimestamp } from '../services/firebase';
 import { Room } from '../types';
 import { formatBs, getRoomTypeBadge, getRoomTypeLabel } from '../utils/formatUtils';
 import { formatTimeOnly, calculateStayTime, formatTimerDisplay } from '../utils/timeUtils';
@@ -54,7 +55,7 @@ export const ChangeRoomModal: React.FC<ChangeRoomModalProps> = ({
   const sourceBadge = getRoomTypeBadge(sourceRoom.type);
   const extraRate = tariffs[sourceRoom.type]?.extraHourPrice || 30;
   const priceNight = tariffs[sourceRoom.type]?.priceNight || (sourceRoom.type === 'ventilador' ? 140 : sourceRoom.type === 'aire' ? 150 : sourceRoom.type === 'suite' ? 180 : sourceRoom.type === 'jacuzzi' ? 220 : 230);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, Date.now(), {
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, getNetworkTimestamp(), {
     priceNight,
     baseRoomPrice: stay.baseRoomPrice,
     chosenPlan: stay.chosenPlan,

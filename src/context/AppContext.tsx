@@ -1469,7 +1469,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const stay = room.currentStay;
     const extraRate = tariffs[room.type]?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
     const priceNight = tariffs[room.type]?.priceNight || (room.type === 'ventilador' ? 140 : room.type === 'aire' ? 150 : room.type === 'suite' ? 180 : room.type === 'jacuzzi' ? 220 : 230);
-    const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, Date.now(), {
+    const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraRate, getNetworkTimestamp(), {
       priceNight,
       baseRoomPrice: stay.baseRoomPrice,
       chosenPlan: stay.chosenPlan,

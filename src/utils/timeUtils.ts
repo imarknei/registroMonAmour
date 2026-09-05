@@ -1,3 +1,5 @@
+import { getNetworkTimestamp } from '../services/firebase';
+
 export interface OvertimeCalculation {
   isOvertime: boolean;
   overtimeMinutes: number;
@@ -44,7 +46,7 @@ export function calculateStayTime(
   }
 ): OvertimeCalculation {
   const start = new Date(startTimeIso).getTime();
-  const now = nowMs || Date.now();
+  const now = nowMs !== undefined ? nowMs : getNetworkTimestamp();
   const elapsedMs = Math.max(0, now - start);
   const totalElapsedMinutes = Math.floor(elapsedMs / (60 * 1000));
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Room, Product, PaymentMethod, Stay, ConsumptionItem } from '../types';
 import { useApp } from '../context/AppContext';
+import { getNetworkTimestamp } from '../services/firebase';
 import { calculateStayTime, formatDateTime, formatTimeOnly, formatTimerDisplay } from '../utils/timeUtils';
 import { formatBs, getRoomTypeBadge, getPaymentMethodLabel } from '../utils/formatUtils';
 import {
@@ -50,6 +51,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
     addCustomConsumptionToRoom,
     removeConsumptionFromRoom,
     closeStayAndCheckout,
+    nowTimestamp,
   } = useApp();
 
   const [, setTick] = useState(0);
@@ -84,7 +86,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   const roomTariff = tariffs[room.type];
   const extraHourRate = roomTariff?.extraHourPrice || (room.type === 'jacuzzi' || room.type === 'golden_suite' ? 40 : 30);
   const priceNight = roomTariff?.priceNight || (room.type === 'ventilador' ? 140 : room.type === 'aire' ? 150 : room.type === 'suite' ? 180 : room.type === 'jacuzzi' ? 220 : 230);
-  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, Date.now(), {
+  const timeCalc = calculateStayTime(stay.startTime, stay.chosenDurationMinutes, extraHourRate, nowTimestamp || getNetworkTimestamp(), {
     priceNight,
     baseRoomPrice: stay.baseRoomPrice,
     chosenPlan: stay.chosenPlan,
