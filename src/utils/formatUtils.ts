@@ -165,11 +165,13 @@ export function getPaymentMethodLabel(method: string): string {
   }
 }
 
+import { getBoliviaDayOfWeek } from './timeUtils';
+
 /**
- * Determina si la fecha corresponde a Fin de Semana (Viernes, Sábado o Domingo)
+ * Determina si la fecha corresponde a Fin de Semana (Viernes, Sábado o Domingo) según el horario de Bolivia
  */
-export function isWeekendTariffDay(date = new Date()): boolean {
-  const day = date.getDay(); // 0 = Domingo, 5 = Viernes, 6 = Sábado
+export function isWeekendTariffDay(date?: Date | string | number): boolean {
+  const day = getBoliviaDayOfWeek(date); // 0 = Domingo, 5 = Viernes, 6 = Sábado en hora de Bolivia
   return day === 0 || day === 5 || day === 6;
 }
 

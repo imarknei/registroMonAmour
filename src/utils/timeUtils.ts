@@ -365,10 +365,82 @@ export function formatTimerDisplay(minutes: number, seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+export const BOLIVIA_TIMEZONE = 'America/La_Paz';
+
+/**
+ * Obtiene la fecha en formato YYYY-MM-DD en la zona horaria oficial de Bolivia (America/La_Paz, UTC-4).
+ * Es inmune a la zona horaria del sistema operativo del cliente.
+ */
+export function getBoliviaDateKey(dateInput?: Date | string | number): string {
+  try {
+    const d = dateInput !== undefined
+      ? (typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput)
+      : new Date();
+    return new Intl.DateTimeFormat('en-CA', { timeZone: BOLIVIA_TIMEZONE }).format(d);
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * Obtiene el timestamp en milisegundos correspondiente al inicio del día (00:00:00.000) en hora de Bolivia.
+ */
+export function getBoliviaStartOfDay(dateInput?: Date | string | number): number {
+  const dateKey = getBoliviaDateKey(dateInput);
+  return Date.parse(`${dateKey}T00:00:00-04:00`);
+}
+
+/**
+ * Obtiene el timestamp en milisegundos correspondiente al inicio del mes (día 1 a las 00:00:00.000) en hora de Bolivia.
+ */
+export function getBoliviaStartOfMonth(dateInput?: Date | string | number): number {
+  const dateKey = getBoliviaDateKey(dateInput);
+  return Date.parse(`${dateKey.slice(0, 7)}-01T00:00:00-04:00`);
+}
+
+/**
+ * Obtiene la hora exacta (0-23) en la zona horaria de Bolivia.
+ */
+export function getBoliviaHour(dateInput?: Date | string | number): number {
+  try {
+    const d = dateInput !== undefined
+      ? (typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput)
+      : new Date();
+    const str = new Intl.DateTimeFormat('en-US', {
+      timeZone: BOLIVIA_TIMEZONE,
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(d);
+    return parseInt(str, 10);
+  } catch {
+    return new Date().getHours();
+  }
+}
+
+/**
+ * Obtiene el día de la semana (0 = Domingo, 1 = Lunes, ..., 6 = Sábado) en hora de Bolivia.
+ */
+export function getBoliviaDayOfWeek(dateInput?: Date | string | number): number {
+  try {
+    const d = dateInput !== undefined
+      ? (typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput)
+      : new Date();
+    const weekdayStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: BOLIVIA_TIMEZONE,
+      weekday: 'short',
+    }).format(d);
+    const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return map[weekdayStr] ?? 0;
+  } catch {
+    return new Date().getDay();
+  }
+}
+
 export function formatTimeOnly(isoString: string): string {
   try {
     const date = new Date(isoString);
     return date.toLocaleTimeString('es-BO', {
+      timeZone: BOLIVIA_TIMEZONE,
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
@@ -382,6 +454,7 @@ export function formatDateTime(isoString: string): string {
   try {
     const date = new Date(isoString);
     return date.toLocaleDateString('es-BO', {
+      timeZone: BOLIVIA_TIMEZONE,
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -398,6 +471,7 @@ export function formatDateOnly(isoString: string): string {
   try {
     const date = new Date(isoString);
     return date.toLocaleDateString('es-BO', {
+      timeZone: BOLIVIA_TIMEZONE,
       weekday: 'short',
       day: '2-digit',
       month: 'short',
@@ -409,7 +483,7 @@ export function formatDateOnly(isoString: string): string {
 }
 
 /**
- * Obtener rango de lunes a domingo para reportes semanales (ISO Week)
+ * Obtener rango de lunes a domingo para reportes semanales (ISO Week) fijado estrictamente en hora de Bolivia.
  */
 export function getWeekRange(dateInput: Date | string): {
   weekKey: string;
@@ -417,27 +491,24 @@ export function getWeekRange(dateInput: Date | string): {
   endDate: string;
   label: string;
 } {
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : new Date(dateInput);
-  const day = d.getDay();
+  const todayStartMs = getBoliviaStartOfDay(dateInput);
+  const day = getBoliviaDayOfWeek(dateInput);
   // Monday is 1, Sunday is 0
-  const diffToMonday = d.getDate() - day + (day === 0 ? -6 : 1);
-  
-  const monday = new Date(d.setDate(diffToMonday));
-  monday.setHours(0, 0, 0, 0);
+  const diffToMondayDays = day === 0 ? -6 : 1 - day;
+  const mondayStartMs = todayStartMs + (diffToMondayDays * 24 * 60 * 60 * 1000);
+  const sundayEndMs = mondayStartMs + (7 * 24 * 60 * 60 * 1000) - 1;
 
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
+  const monday = new Date(mondayStartMs);
+  const sunday = new Date(sundayEndMs);
 
-  // ISO Week number
-  const tempDate = new Date(monday.getTime());
-  tempDate.setDate(tempDate.getDate() + 3 - ((tempDate.getDay() + 6) % 7));
-  const week1 = new Date(tempDate.getFullYear(), 0, 4);
-  const weekNumber = 1 + Math.round(((tempDate.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  const mondayYear = parseInt(getBoliviaDateKey(mondayStartMs).slice(0, 4), 10);
+  const jan4Ms = Date.parse(`${mondayYear}-01-04T00:00:00-04:00`);
+  const jan4Day = getBoliviaDayOfWeek(jan4Ms);
+  const jan4MondayMs = jan4Ms - ((jan4Day === 0 ? 6 : jan4Day - 1) * 86400000);
+  const weekNumber = 1 + Math.round((mondayStartMs - jan4MondayMs) / (7 * 86400000));
 
-  const weekKey = `${monday.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
-  
-  const label = `Semana ${weekNumber} (${monday.toLocaleDateString('es-BO', { day: 'numeric', month: 'short' })} - ${sunday.toLocaleDateString('es-BO', { day: 'numeric', month: 'short', year: 'numeric' })})`;
+  const weekKey = `${mondayYear}-W${Math.max(1, weekNumber).toString().padStart(2, '0')}`;
+  const label = `Semana ${Math.max(1, weekNumber)} (${monday.toLocaleDateString('es-BO', { timeZone: BOLIVIA_TIMEZONE, day: 'numeric', month: 'short' })} - ${sunday.toLocaleDateString('es-BO', { timeZone: BOLIVIA_TIMEZONE, day: 'numeric', month: 'short', year: 'numeric' })})`;
 
   return {
     weekKey,

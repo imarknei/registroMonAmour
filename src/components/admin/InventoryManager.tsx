@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Product, ProductCategory, InventoryMovementLog, InventoryActionType } from '../../types';
 import { formatBs, getCategoryLabel, getStaffDiscountedPrice } from '../../utils/formatUtils';
-import { formatDateTime } from '../../utils/timeUtils';
+import { formatDateTime, getBoliviaDateKey } from '../../utils/timeUtils';
+import { getNetworkTimestamp } from '../../services/firebase';
 import {
   Package,
   Plus,
@@ -211,26 +212,27 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       // Filtro por producto
       if (filterProduct !== 'all' && log.productId !== filterProduct) return false;
 
-      // Filtro por fecha
+      // Filtro por fecha (Horario de Bolivia)
       if (filterDateRange !== 'all') {
-        const logDate = new Date(log.date || log.timestamp);
-        const now = new Date();
+        const logDateKey = getBoliviaDateKey(log.date || log.timestamp);
+        const nowMs = getNetworkTimestamp();
 
         if (filterDateRange === 'today') {
-          const todayIso = now.toISOString().slice(0, 10);
-          if (!log.date?.startsWith(todayIso)) return false;
+          const todayKey = getBoliviaDateKey(nowMs);
+          if (logDateKey !== todayKey) return false;
         } else if (filterDateRange === 'yesterday') {
-          const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-          const yestIso = yesterday.toISOString().slice(0, 10);
-          if (!log.date?.startsWith(yestIso)) return false;
+          const yestKey = getBoliviaDateKey(nowMs - 24 * 60 * 60 * 1000);
+          if (logDateKey !== yestKey) return false;
         } else if (filterDateRange === 'week') {
-          const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          if (logDate < sevenDaysAgo) return false;
+          const sevenDaysAgo = nowMs - 7 * 24 * 60 * 60 * 1000;
+          const logMs = new Date(log.date || log.timestamp).getTime();
+          if (logMs < sevenDaysAgo) return false;
         } else if (filterDateRange === 'month') {
-          const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          if (logDate < thirtyDaysAgo) return false;
+          const thirtyDaysAgo = nowMs - 30 * 24 * 60 * 60 * 1000;
+          const logMs = new Date(log.date || log.timestamp).getTime();
+          if (logMs < thirtyDaysAgo) return false;
         } else if (filterDateRange === 'custom' && customDate) {
-          if (!log.date?.startsWith(customDate)) return false;
+          if (logDateKey !== customDate) return false;
         }
       }
 

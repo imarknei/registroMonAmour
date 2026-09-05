@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Room, Stay, Product } from '../../types';
 import { formatBs, getRoomTypeBadge, getRoomTypeLabel, getPlanLabel } from '../../utils/formatUtils';
-import { formatDateTime, formatTimeOnly, calculateStayTime, formatTimerDisplay, formatDateOnly } from '../../utils/timeUtils';
+import { formatDateTime, formatTimeOnly, calculateStayTime, formatTimerDisplay, formatDateOnly, getBoliviaDateKey, getBoliviaHour } from '../../utils/timeUtils';
+import { getNetworkTimestamp } from '../../services/firebase';
 import { CancelStayModal } from './CancelStayModal';
 import { EditStayModal } from './EditStayModal';
 import {
@@ -69,7 +70,7 @@ export const RegisteredRoomsView: React.FC = () => {
 
   // Filtros de fecha
   const [selectedDateMode, setSelectedDateMode] = useState<'today' | 'yesterday' | 'week' | 'custom' | 'all'>('today');
-  const [customDate, setCustomDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [customDate, setCustomDate] = useState<string>(() => getBoliviaDateKey(getNetworkTimestamp()));
 
   // Filtros de turno y cajero
   const [filterShiftType, setFilterShiftType] = useState<string>('all'); // 'all' | 'dia' | 'noche'
@@ -88,13 +89,12 @@ export const RegisteredRoomsView: React.FC = () => {
 
   // Determinar rango de timestamp del día seleccionado
   const targetDateString = useMemo(() => {
-    const now = new Date();
+    const nowMs = getNetworkTimestamp();
     if (selectedDateMode === 'today') {
-      return now.toISOString().slice(0, 10);
+      return getBoliviaDateKey(nowMs);
     }
     if (selectedDateMode === 'yesterday') {
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      return yesterday.toISOString().slice(0, 10);
+      return getBoliviaDateKey(nowMs - 24 * 60 * 60 * 1000);
     }
     return customDate;
   }, [selectedDateMode, customDate]);
@@ -138,7 +138,7 @@ export const RegisteredRoomsView: React.FC = () => {
   // Estadías correspondientes al día seleccionado
   const dayStays = useMemo(() => {
     return allUnifiedStays.filter((s) => {
-      const stayDate = s.startTime ? s.startTime.slice(0, 10) : '';
+      const stayDate = s.startTime ? getBoliviaDateKey(s.startTime) : '';
       return stayDate === targetDateString;
     });
   }, [allUnifiedStays, targetDateString]);
@@ -146,7 +146,7 @@ export const RegisteredRoomsView: React.FC = () => {
   // Gastos correspondientes al día seleccionado
   const dayExpenses = useMemo(() => {
     return expenses.filter((e) => {
-      const expDate = e.timestamp ? e.timestamp.slice(0, 10) : '';
+      const expDate = e.timestamp ? getBoliviaDateKey(e.timestamp) : '';
       return expDate === targetDateString;
     });
   }, [expenses, targetDateString]);
@@ -154,7 +154,7 @@ export const RegisteredRoomsView: React.FC = () => {
   // Consumos extras correspondientes al día seleccionado
   const dayExtraConsumptions = useMemo(() => {
     return extraConsumptions.filter((e) => {
-      const ecDate = e.date ? e.date.slice(0, 10) : '';
+      const ecDate = e.date ? getBoliviaDateKey(e.date) : '';
       return ecDate === targetDateString;
     });
   }, [extraConsumptions, targetDateString]);
@@ -300,20 +300,21 @@ export const RegisteredRoomsView: React.FC = () => {
     return list.filter((s) => {
       // Filtro de fecha en pestañas que no sean 'day'
       if (activeTab !== 'day') {
+        const stayDateKey = s.startTime ? getBoliviaDateKey(s.startTime) : '';
         if (selectedDateMode === 'today') {
-          const todayIso = new Date().toISOString().slice(0, 10);
-          if (!s.startTime || !s.startTime.startsWith(todayIso)) return false;
+          const todayKey = getBoliviaDateKey(getNetworkTimestamp());
+          if (stayDateKey !== todayKey) return false;
         } else if (selectedDateMode === 'yesterday') {
-          const yesterdayIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-          if (!s.startTime || !s.startTime.startsWith(yesterdayIso)) return false;
+          const yesterdayKey = getBoliviaDateKey(getNetworkTimestamp() - 24 * 60 * 60 * 1000);
+          if (stayDateKey !== yesterdayKey) return false;
         } else if (selectedDateMode === 'custom' && customDate) {
-          if (!s.startTime || !s.startTime.startsWith(customDate)) return false;
+          if (stayDateKey !== customDate) return false;
         }
       }
 
-      // Filtro de turno (Día: 08:00 a 20:00, Noche: 20:00 a 08:00)
+      // Filtro de turno (Día: 08:00 a 20:00, Noche: 20:00 a 08:00 hora de Bolivia)
       if (filterShiftType !== 'all') {
-        const startHour = s.startTime ? new Date(s.startTime).getHours() : 12;
+        const startHour = s.startTime ? getBoliviaHour(s.startTime) : 12;
         const isNightShift = startHour >= 20 || startHour < 8;
         if (filterShiftType === 'noche' && !isNightShift) return false;
         if (filterShiftType === 'dia' && isNightShift) return false;

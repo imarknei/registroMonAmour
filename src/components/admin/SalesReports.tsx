@@ -1,7 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatBs, getRoomTypeLabel, getPlanLabel } from '../../utils/formatUtils';
-import { formatDateTime, formatTimeOnly } from '../../utils/timeUtils';
+import { formatDateTime, formatTimeOnly, getBoliviaStartOfDay, getBoliviaDayOfWeek, getBoliviaStartOfMonth } from '../../utils/timeUtils';
+import { getNetworkTimestamp } from '../../services/firebase';
 import { Stay, PaymentMethod } from '../../types';
 import {
   BarChart3,
@@ -74,13 +75,14 @@ export const SalesReports: React.FC = () => {
     });
   }, [completedStays, rooms]);
 
-  // Date filtering logic
+  // Date filtering logic (Bolivia timezone)
   const filteredStays = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const nowMs = getNetworkTimestamp();
+    const todayStart = getBoliviaStartOfDay(nowMs);
     const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-    const weekStart = todayStart - (now.getDay() === 0 ? 6 : now.getDay() - 1) * 24 * 60 * 60 * 1000;
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const dayOfWeek = getBoliviaDayOfWeek(nowMs);
+    const weekStart = todayStart - ((dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+    const monthStart = getBoliviaStartOfMonth(nowMs);
 
     return allUnifiedStays.filter((s) => {
       const stayTime = new Date(s.startTime).getTime();
@@ -118,13 +120,14 @@ export const SalesReports: React.FC = () => {
     });
   }, [allUnifiedStays, dateRange, selectedReceptionist, statusFilter, searchQuery]);
 
-  // Filtered extra consumptions
+  // Filtered extra consumptions (Bolivia timezone)
   const filteredExtraConsumptions = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const nowMs = getNetworkTimestamp();
+    const todayStart = getBoliviaStartOfDay(nowMs);
     const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-    const weekStart = todayStart - (now.getDay() === 0 ? 6 : now.getDay() - 1) * 24 * 60 * 60 * 1000;
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const dayOfWeek = getBoliviaDayOfWeek(nowMs);
+    const weekStart = todayStart - ((dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+    const monthStart = getBoliviaStartOfMonth(nowMs);
 
     return extraConsumptions.filter((ec) => {
       const ecTime = new Date(ec.date).getTime();

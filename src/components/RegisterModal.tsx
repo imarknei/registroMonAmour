@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { getNetworkTimestamp } from '../services/firebase';
 import { Room, PlanType, PaymentMethod } from '../types';
 import { formatBs, getRoomTypeBadge, getEffective2hPrice, isWeekendTariffDay } from '../utils/formatUtils';
 import {
@@ -220,8 +221,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
   };
 
   // Expected exit time calculation
-  const exitDate = new Date(Date.now() + durationMinutes * 60 * 1000);
+  const exitDate = new Date(getNetworkTimestamp() + durationMinutes * 60 * 1000);
   const formattedExitTime = exitDate.toLocaleTimeString('es-BO', {
+    timeZone: 'America/La_Paz',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,

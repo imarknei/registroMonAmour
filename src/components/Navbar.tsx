@@ -70,13 +70,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
-  const formattedTime = new Date(nowTimestamp).toLocaleTimeString('es-ES', {
+  const formattedTime = new Date(nowTimestamp).toLocaleTimeString('es-BO', {
+    timeZone: 'America/La_Paz',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   });
 
-  const formattedDate = new Date(nowTimestamp).toLocaleDateString('es-ES', {
+  const formattedDate = new Date(nowTimestamp).toLocaleDateString('es-BO', {
+    timeZone: 'America/La_Paz',
     weekday: 'short',
     day: 'numeric',
     month: 'short',

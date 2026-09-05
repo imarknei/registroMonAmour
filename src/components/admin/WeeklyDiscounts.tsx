@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Shift, StaffMember, StaffConsumption, StaffSettlement, StaffSettlementDiscountItem } from '../../types';
 import { formatBs, getPaymentMethodLabel } from '../../utils/formatUtils';
-import { getWeekRange, formatDateTime, formatDateOnly, formatTimeOnly } from '../../utils/timeUtils';
+import { getWeekRange, formatDateTime, formatDateOnly, formatTimeOnly, getBoliviaDateKey } from '../../utils/timeUtils';
 import {
   CalendarDays,
   Calendar,
@@ -189,7 +189,7 @@ export const WeeklyDiscounts: React.FC = () => {
 
     // 1. Mapear turnos trabajados por fecha
     staffShifts.forEach((s) => {
-      const dateKey = (s.endTime || s.startTime).slice(0, 10);
+      const dateKey = getBoliviaDateKey(s.endTime || s.startTime);
       if (!dayMap.has(dateKey)) {
         dayMap.set(dateKey, {
           dateKey,
@@ -213,7 +213,7 @@ export const WeeklyDiscounts: React.FC = () => {
 
     // 2. Mapear consumos de personal por fecha
     staffUnsettledConsumptions.forEach((c) => {
-      const dateKey = c.date.slice(0, 10);
+      const dateKey = getBoliviaDateKey(c.date);
       if (!dayMap.has(dateKey)) {
         dayMap.set(dateKey, {
           dateKey,

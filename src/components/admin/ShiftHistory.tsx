@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Shift, Stay, Expense, InventoryMovementLog, ExtraConsumption, StaffConsumption } from '../../types';
 import { formatBs, getPaymentMethodLabel } from '../../utils/formatUtils';
-import { formatDateTime, formatTimeOnly, formatDateOnly } from '../../utils/timeUtils';
+import { formatDateTime, formatTimeOnly, formatDateOnly, getBoliviaDateKey, getBoliviaStartOfDay, getBoliviaDayOfWeek } from '../../utils/timeUtils';
+import { getNetworkTimestamp } from '../../services/firebase';
 import {
   History,
   DollarSign,
@@ -55,7 +56,7 @@ export const ShiftHistory: React.FC = () => {
 
   // Filtros
   const [selectedDateMode, setSelectedDateMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'custom'>('all');
-  const [customDate, setCustomDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [customDate, setCustomDate] = useState<string>(() => getBoliviaDateKey(getNetworkTimestamp()));
   const [filterReceptionist, setFilterReceptionist] = useState<string>('all');
   const [filterDiscrepancy, setFilterDiscrepancy] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -97,22 +98,19 @@ export const ShiftHistory: React.FC = () => {
     });
   };
 
-  // Rango de fechas seleccionado
+  // Rango de fechas seleccionado fijado estrictamente en hora oficial de Bolivia (America/La_Paz)
   const dateRangeBounds = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const todayStart = getBoliviaStartOfDay(getNetworkTimestamp());
     const todayEnd = todayStart + 24 * 60 * 60 * 1000;
     const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-    const weekStart = todayStart - (now.getDay() === 0 ? 6 : now.getDay() - 1) * 24 * 60 * 60 * 1000;
+    const dayOfWeek = getBoliviaDayOfWeek(getNetworkTimestamp());
+    const weekStart = todayStart - ((dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
 
     let customStart = 0;
     let customEnd = Infinity;
     if (selectedDateMode === 'custom' && customDate) {
-      const parts = customDate.split('-');
-      if (parts.length === 3) {
-        customStart = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])).getTime();
-        customEnd = customStart + 24 * 60 * 60 * 1000;
-      }
+      customStart = getBoliviaStartOfDay(customDate);
+      customEnd = customStart + 24 * 60 * 60 * 1000;
     }
 
     return {
