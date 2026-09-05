@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Shift, Stay, Expense } from '../../types';
+import { Shift, Stay, Expense, InventoryMovementLog, ExtraConsumption, StaffConsumption } from '../../types';
 import { formatBs, getPaymentMethodLabel } from '../../utils/formatUtils';
 import { formatDateTime, formatTimeOnly, formatDateOnly } from '../../utils/timeUtils';
 import {
@@ -29,12 +29,29 @@ import {
   ArrowRightLeft,
   Check,
   Edit3,
+  Package,
+  Coffee,
+  Trash2,
+  Tag,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../../data/initialData';
 import { ShiftAdjustmentModal } from './ShiftAdjustmentModal';
 
 export const ShiftHistory: React.FC = () => {
-  const { shiftsHistory, completedStays, rooms, expenses, cleanupOrphanShifts, updateShiftInHistory } = useApp();
+  const {
+    shiftsHistory,
+    completedStays,
+    rooms,
+    expenses,
+    inventoryLogs,
+    extraConsumptions,
+    staffConsumptions,
+    cleanupOrphanShifts,
+    updateShiftInHistory,
+    deleteShiftFromHistory,
+  } = useApp();
 
   // Filtros
   const [selectedDateMode, setSelectedDateMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'custom'>('all');
@@ -210,16 +227,63 @@ export const ShiftHistory: React.FC = () => {
     };
   }, [filteredClosedShifts]);
 
-  // Helper para buscar estadías de un turno
+  // Helper para buscar estadías de un turno (cotejo exacto sin solapamiento ni duplicación)
   const getStaysForShift = (shift: Shift): Stay[] => {
     const shiftStart = new Date(shift.startTime).getTime();
-    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Date.now();
+    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
 
     return completedStays.filter((s) => {
+      // 1. Vinculación directa por ID de turno
+      if (s.checkoutShiftId === shift.id || s.entryShiftId === shift.id) return true;
       if (shift.stayIds && shift.stayIds.includes(s.id)) return true;
-      const stayTime = new Date(s.startTime).getTime();
-      const matchRecep = s.receptionistId === shift.receptionistId || s.receptionistName.includes(shift.receptionistName);
-      return matchRecep && stayTime >= shiftStart - 1000 * 60 * 60 && stayTime <= shiftEnd + 1000 * 60 * 60;
+
+      // 2. Solo si no tiene IDs asignados (estadías legacy): cotejo estricto de tiempo
+      if (!s.checkoutShiftId && !s.entryShiftId) {
+        const t = s.endTime ? new Date(s.endTime).getTime() : new Date(s.startTime).getTime();
+        const matchesReceptionist =
+          s.receptionistId === shift.receptionistId ||
+          s.receptionistName?.toLowerCase().includes(shift.receptionistName?.toLowerCase()) ||
+          (shift.responsiblePersonName && s.receptionistName?.toLowerCase().includes(shift.responsiblePersonName.toLowerCase()));
+        return matchesReceptionist && t >= shiftStart && t < shiftEnd;
+      }
+
+      return false;
+    });
+  };
+
+  // Helper para buscar modificaciones de inventario hechas en el turno
+  const getInventoryLogsForShift = (shift: Shift): InventoryMovementLog[] => {
+    const shiftStart = new Date(shift.startTime).getTime();
+    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
+
+    return inventoryLogs.filter((l) => {
+      if (l.shiftId && l.shiftId === shift.id) return true;
+      const t = l.timestamp ? new Date(l.timestamp).getTime() : new Date(l.date).getTime();
+      return t >= shiftStart && t < shiftEnd;
+    });
+  };
+
+  // Helper para buscar ventas directas / mostrador del turno
+  const getExtraConsumptionsForShift = (shift: Shift): ExtraConsumption[] => {
+    const shiftStart = new Date(shift.startTime).getTime();
+    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
+
+    return extraConsumptions.filter((c) => {
+      if (c.shiftId && c.shiftId === shift.id) return true;
+      const t = new Date(c.date).getTime();
+      return t >= shiftStart && t < shiftEnd;
+    });
+  };
+
+  // Helper para buscar consumos de personal del turno
+  const getStaffConsumptionsForShift = (shift: Shift): StaffConsumption[] => {
+    const shiftStart = new Date(shift.startTime).getTime();
+    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
+
+    return staffConsumptions.filter((c) => {
+      if (c.shiftId && c.shiftId === shift.id) return true;
+      const t = new Date(c.date).getTime();
+      return t >= shiftStart && t < shiftEnd;
     });
   };
 
@@ -560,6 +624,10 @@ export const ShiftHistory: React.FC = () => {
             {filteredClosedShifts.map((shift) => {
               const isExpanded = expandedShiftId === shift.id;
               const shiftStays = getStaysForShift(shift);
+              const shiftInventoryLogs = getInventoryLogsForShift(shift);
+              const shiftExtraConsumptions = getExtraConsumptionsForShift(shift);
+              const shiftStaffConsumptions = getStaffConsumptionsForShift(shift);
+              const stayFrigobarCount = shiftStays.reduce((acc, s) => acc + (s.consumptions?.length || 0), 0);
               const isSuspicious = suspiciousShifts.some((susp) => susp.id === shift.id);
 
               // Cargar egresos asociados al turno de forma reactiva
@@ -849,74 +917,331 @@ export const ShiftHistory: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Botón para desplegar habitaciones y gastos */}
-                    <div className="flex items-center justify-between pt-1">
+                    {/* Barra de Acciones y Despliegue de Auditoría */}
+                    <div className="flex flex-wrap items-center justify-between pt-2 gap-2 border-t border-slate-100 mt-2">
                       <button
                         onClick={() => setExpandedShiftId(isExpanded ? null : shift.id)}
-                        className="text-xs font-extrabold text-brand-700 hover:text-brand-800 flex items-center gap-1.5 py-1 px-3 rounded-xl hover:bg-brand-50 transition-colors"
+                        className="text-xs font-extrabold text-brand-700 hover:text-brand-800 flex items-center gap-1.5 py-1.5 px-3 rounded-xl hover:bg-brand-50 transition-colors"
                       >
                         <Layers className="w-3.5 h-3.5" />
                         <span>
-                          {isExpanded ? 'Ocultar Detalle del Turno' : `Ver ${shiftStays.length} Habitación(es) y ${shiftExpensesList.length} Pago(s)`}
+                          {isExpanded
+                            ? 'Ocultar Auditoría Detallada'
+                            : `Auditoría Completa (${shiftStays.length} Hab, ${shiftExtraConsumptions.length + shiftStaffConsumptions.length + stayFrigobarCount} Consumos, ${shiftInventoryLogs.length} Inventario, ${shiftExpensesList.length} Pagos)`}
                         </span>
                         {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAdjustingShift(shift)}
+                          className="px-2.5 py-1 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 text-xs font-bold rounded-lg border border-slate-200 flex items-center gap-1 transition-colors"
+                          title="Ajustar valores de arqueo o retiros de este turno"
+                        >
+                          <Edit3 className="w-3 h-3 text-slate-500" />
+                          <span>Ajustar Arqueo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const conf = window.confirm(
+                              `¿Estás seguro de ELIMINAR permanentemente este registro de turno de "${shift.receptionistName}" (${formatDateTime(shift.startTime)})?\n\nEsta acción no se puede deshacer y borrará el turno de Firebase y del historial.`
+                            );
+                            if (conf) {
+                              deleteShiftFromHistory(shift.id);
+                            }
+                          }}
+                          className="px-2 py-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                          title="Eliminar este turno permanentemente si fue un registro huérfano o vacío de 0 Bs"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Eliminar</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* DESPLEGABLE: HABITACIONES Y GASTOS DEL TURNO */}
+                  {/* DESPLEGABLE: AUDITORÍA DETALLADA COMPLETA DEL TURNO */}
                   {isExpanded && (
-                    <div className="bg-slate-50 p-5 border-t border-slate-200 space-y-4 animate-fade-in text-xs">
-                      {/* Habitaciones del Turno */}
-                      <div className="space-y-2">
-                        <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                          <ShoppingBag className="w-3.5 h-3.5 text-brand-600" />
-                          Habitaciones Cobradas en este Turno ({shiftStays.length}):
-                        </h4>
+                    <div className="bg-slate-50 p-5 border-t border-slate-200 space-y-6 animate-fade-in text-xs">
+                      {/* 1. HABITACIONES COBRADAS EN EL TURNO */}
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <ShoppingBag className="w-3.5 h-3.5 text-brand-600" />
+                            1. Habitaciones Cobradas en este Turno ({shiftStays.length}):
+                          </h4>
+                          <span className="text-[11px] font-mono font-bold text-slate-500">
+                            Total Habitaciones: {formatBs(shiftStays.reduce((sum, s) => sum + (s.totalAmount || s.baseRoomPrice), 0))}
+                          </span>
+                        </div>
+
                         {shiftStays.length === 0 ? (
-                          <p className="text-slate-400 italic">No hay habitaciones registradas directamente en este turno.</p>
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-400 italic text-center">
+                            No hay habitaciones registradas o cobradas directamente durante este turno.
+                          </div>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                            {shiftStays.map((s) => (
-                              <div key={s.id} className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <strong className="text-slate-900 font-extrabold">{s.roomName}</strong>
-                                  <span className="font-mono font-bold text-brand-700">
-                                    {formatBs(s.totalAmount || s.baseRoomPrice)}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {shiftStays.map((s) => {
+                              const stayCons = s.consumptions || [];
+                              return (
+                                <div key={s.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-7 h-7 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center font-black text-xs">
+                                        {s.roomName.replace(/\D/g, '') || s.roomName}
+                                      </div>
+                                      <strong className="text-slate-900 font-extrabold text-xs">{s.roomName}</strong>
+                                    </div>
+                                    <span className="font-mono font-black text-brand-700 text-sm">
+                                      {formatBs(s.totalAmount || s.baseRoomPrice)}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                                    <span className="font-bold text-slate-700">{s.chosenPlan.toUpperCase()}</span>
+                                    <span>{getPaymentMethodLabel(s.paymentMethod)}</span>
+                                  </div>
+
+                                  <div className="text-[10px] text-slate-400 space-y-0.5">
+                                    <div className="flex justify-between">
+                                      <span>Tarifa Base:</span>
+                                      <span className="font-mono font-bold text-slate-600">{formatBs(s.baseRoomPrice)}</span>
+                                    </div>
+                                    {s.overtimeCharge ? (
+                                      <div className="flex justify-between text-amber-700 font-semibold">
+                                        <span>Horas Extras ({s.overtimeMinutes} min):</span>
+                                        <span className="font-mono">+{formatBs(s.overtimeCharge)}</span>
+                                      </div>
+                                    ) : null}
+                                    <div className="flex justify-between">
+                                      <span>Horario:</span>
+                                      <span>{formatTimeOnly(s.startTime)} {s.endTime ? `➔ ${formatTimeOnly(s.endTime)}` : '(En curso)'}</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Frigobar consumido en la habitación */}
+                                  {stayCons.length > 0 && (
+                                    <div className="pt-2 border-t border-slate-100 space-y-1">
+                                      <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                                        Frigobar Consumido ({stayCons.length}):
+                                      </span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {stayCons.map((c, i) => (
+                                          <span key={i} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
+                                            {c.productName} ×{c.quantity} ({formatBs(c.subtotal)})
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2. CONSUMOS REALIZADOS (MOSTRADOR, FRIGOBAR Y PERSONAL) */}
+                      <div className="space-y-3 pt-3 border-t border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-extrabold text-amber-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                            2. Consumos y Ventas Realizados en este Turno ({shiftExtraConsumptions.length + shiftStaffConsumptions.length + stayFrigobarCount}):
+                          </h4>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {/* Ventas Directas de Mostrador / Extras */}
+                          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                              <ShoppingBag className="w-3 h-3 text-brand-600" />
+                              Ventas Mostrador / Consumos Extras ({shiftExtraConsumptions.length})
+                            </span>
+                            {shiftExtraConsumptions.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 italic">No hubo ventas directas en mostrador.</p>
+                            ) : (
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                {shiftExtraConsumptions.map((ec) => (
+                                  <div key={ec.id} className="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-[11px]">
+                                    <div>
+                                      <strong className="text-slate-800 block">{ec.description}</strong>
+                                      <span className="text-[10px] text-slate-400">
+                                        {formatTimeOnly(ec.date)} • {getPaymentMethodLabel(ec.paymentMethod)}
+                                        {ec.items && ec.items.length > 0 ? ` (${ec.items.map((it) => `${it.productName} ×${it.quantity}`).join(', ')})` : ''}
+                                      </span>
+                                    </div>
+                                    <span className="font-mono font-black text-emerald-700">+{formatBs(ec.totalAmount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Consumos del Personal en este Turno */}
+                          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                            <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider flex items-center gap-1">
+                              <UserCheck className="w-3 h-3 text-amber-600" />
+                              Consumos de Personal en este Turno ({shiftStaffConsumptions.length})
+                            </span>
+                            {shiftStaffConsumptions.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 italic">El personal no registró consumos en este turno.</p>
+                            ) : (
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                {shiftStaffConsumptions.map((sc) => (
+                                  <div key={sc.id} className="p-2 rounded-xl bg-amber-50/60 border border-amber-200/60 flex items-center justify-between text-[11px]">
+                                    <div>
+                                      <strong className="text-amber-950 block">{sc.staffName}</strong>
+                                      <span className="text-[10px] text-amber-800">
+                                        {formatTimeOnly(sc.date)} • {sc.items.map((it) => `${it.productName} ×${it.quantity}`).join(', ')}
+                                      </span>
+                                      <span className="block text-[9px] font-bold text-amber-700">
+                                        {sc.isPaid ? '✓ Pagado al contado' : '⚠️ A descontar en semana'}
+                                      </span>
+                                    </div>
+                                    <span className="font-mono font-black text-amber-900">{formatBs(sc.totalAmount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. MODIFICACIONES AL INVENTARIO EN ESTE TURNO */}
+                      <div className="space-y-2.5 pt-3 border-t border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-extrabold text-indigo-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <Package className="w-3.5 h-3.5 text-indigo-600" />
+                            3. Modificaciones al Inventario en este Turno ({shiftInventoryLogs.length}):
+                          </h4>
+                          <span className="text-[10px] text-slate-400">
+                            Cambios de stock y altas/bajas realizadas
+                          </span>
+                        </div>
+
+                        {shiftInventoryLogs.length === 0 ? (
+                          <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-slate-500 text-xs flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>El recepcionista no realizó modificaciones manuales ni ajustes de stock en el inventario durante este turno.</span>
+                          </div>
+                        ) : (
+                          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                            <div className="divide-y divide-slate-100">
+                              {shiftInventoryLogs.map((log) => {
+                                const isPositive = log.quantityAdded > 0;
+                                const isNegative = log.quantityAdded < 0;
+                                return (
+                                  <div key={log.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/80 transition-colors">
+                                    <div className="flex items-start sm:items-center gap-3">
+                                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 font-bold text-xs ${
+                                        isPositive
+                                          ? 'bg-emerald-100 text-emerald-700'
+                                          : isNegative
+                                          ? 'bg-rose-100 text-rose-700'
+                                          : 'bg-indigo-100 text-indigo-700'
+                                      }`}>
+                                        {isPositive ? <ArrowUpRight className="w-4 h-4" /> : isNegative ? <ArrowDownRight className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <strong className="text-slate-900 font-extrabold text-xs">{log.productName}</strong>
+                                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                            log.action === 'restock'
+                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                              : log.action === 'create_product'
+                                              ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                              : log.action === 'price_change'
+                                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                                          }`}>
+                                            {log.action === 'restock'
+                                              ? 'Ingreso de Stock'
+                                              : log.action === 'create_product'
+                                              ? 'Nuevo Producto'
+                                              : log.action === 'price_change'
+                                              ? 'Cambio de Precio'
+                                              : 'Ajuste Manual'}
+                                          </span>
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap mt-0.5">
+                                          <span>Stock: <strong>{log.previousStock}</strong> ➔ <strong>{log.newStock}</strong></span>
+                                          <span>•</span>
+                                          <span>Por: <strong>{log.responsibleName || 'Recepcionista'}</strong></span>
+                                          <span>•</span>
+                                          <span>{formatTimeOnly(log.date || new Date(log.timestamp).toISOString())}</span>
+                                          {log.notes && (
+                                            <>
+                                              <span>•</span>
+                                              <span className="italic text-slate-400">"{log.notes}"</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-right sm:text-right self-end sm:self-center">
+                                      <span className={`font-mono font-black text-sm ${
+                                        isPositive ? 'text-emerald-600' : isNegative ? 'text-rose-600' : 'text-slate-700'
+                                      }`}>
+                                        {isPositive ? `+${log.quantityAdded}` : log.quantityAdded} u.
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 4. PAGOS, GASTOS Y RETIROS REALIZADOS */}
+                      <div className="space-y-2.5 pt-3 border-t border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-extrabold text-rose-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <Receipt className="w-3.5 h-3.5 text-rose-600" />
+                            4. Pagos, Salidas de Caja y Retiros ({shiftExpensesList.length + (deliveredAtClose > 0 ? 1 : 0)}):
+                          </h4>
+                          <span className="text-[11px] font-mono font-bold text-rose-700">
+                            Total Salidas: -{formatBs(operationalExpensesCash + deliveredAtClose)}
+                          </span>
+                        </div>
+
+                        {/* Banner de Retiro en Sobre si existió */}
+                        {deliveredAtClose > 0 && (
+                          <div className="bg-amber-50 p-3 rounded-xl border border-amber-300 text-amber-950 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Coins className="w-4 h-4 text-amber-700 shrink-0" />
+                              <div>
+                                <strong className="text-xs font-black block">Retiro de Ventas en Sobre a Administración / Marco</strong>
+                                <span className="text-[10px] text-amber-800">Efectivo entregado físicamente al momento del cierre de caja</span>
+                              </div>
+                            </div>
+                            <span className="font-mono font-black text-sm text-amber-800">+{formatBs(deliveredAtClose)}</span>
+                          </div>
+                        )}
+
+                        {shiftExpensesList.length === 0 ? (
+                          <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-400 italic text-center">
+                            No se registraron gastos operativos durante este turno.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {shiftExpensesList.map((e) => (
+                              <div key={e.id} className="bg-white p-3 rounded-xl border border-rose-200 flex items-center justify-between shadow-xs">
+                                <div>
+                                  <strong className="text-slate-800 block text-xs">{e.description}</strong>
+                                  <span className="text-[10px] text-slate-400">
+                                    {formatTimeOnly(e.timestamp)} • {getPaymentMethodLabel(e.paymentMethod)} • {e.category}
                                   </span>
                                 </div>
-                                <div className="flex items-center justify-between text-[11px] text-slate-500">
-                                  <span>{s.chosenPlan.toUpperCase()} • {getPaymentMethodLabel(s.paymentMethod)}</span>
-                                  <span>{formatTimeOnly(s.startTime)}</span>
-                                </div>
+                                <span className="font-mono font-black text-rose-600 text-xs">-{formatBs(e.amount)}</span>
                               </div>
                             ))}
                           </div>
                         )}
                       </div>
-
-                      {/* Gastos del Turno */}
-                      {shiftExpensesList.length > 0 && (
-                        <div className="space-y-2 pt-2 border-t border-slate-200">
-                          <h4 className="font-extrabold text-rose-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                            <Receipt className="w-3.5 h-3.5 text-rose-600" />
-                            Pagos / Salidas de Caja Realizadas ({shiftExpensesList.length}):
-                          </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {shiftExpensesList.map((e) => (
-                              <div key={e.id} className="bg-white p-2.5 rounded-xl border border-rose-200 flex items-center justify-between">
-                                <div>
-                                  <strong className="text-slate-800 block">{e.description}</strong>
-                                  <span className="text-[10px] text-slate-400">
-                                    {formatTimeOnly(e.timestamp)} • {getPaymentMethodLabel(e.paymentMethod)} • {e.category}
-                                  </span>
-                                </div>
-                                <span className="font-mono font-black text-rose-600">-{formatBs(e.amount)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

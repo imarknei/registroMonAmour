@@ -361,6 +361,7 @@ export interface InventoryMovementLog {
   responsibleName: string;
   date: string; // ISO String
   timestamp: number;
+  shiftId?: string;
   notes?: string;
 }
 

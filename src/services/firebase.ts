@@ -81,6 +81,32 @@ export const clearStoredFirebaseConfig = (): void => {
 let realtimeDb: any = null;
 let firebaseApp: any = null;
 
+// Desfase horario oficial con los servidores atómicos de Google Firebase (en milisegundos)
+let serverTimeOffsetMs = 0;
+let isServerTimeSynced = false;
+
+/**
+ * Obtiene la marca de tiempo (timestamp ms) oficial de Internet.
+ * Es 100% inmune a desconfiguraciones del reloj, fecha o zona horaria de la computadora del recepcionista.
+ */
+export const getNetworkTimestamp = (): number => {
+  return Date.now() + serverTimeOffsetMs;
+};
+
+/**
+ * Obtiene el objeto Date sincronizado con la hora real de Internet.
+ */
+export const getNetworkDate = (): Date => {
+  return new Date(getNetworkTimestamp());
+};
+
+/**
+ * Obtiene la fecha en formato ISO 8601 sincronizada con la hora real de Internet.
+ */
+export const getNetworkIsoString = (): string => {
+  return new Date(getNetworkTimestamp()).toISOString();
+};
+
 export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
   const finalConfig = config || getStoredFirebaseConfig();
   if (!finalConfig || !finalConfig.projectId || !finalConfig.apiKey) {
@@ -89,7 +115,7 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
 
   try {
     const { initializeApp, getApps, getApp } = await import('firebase/app');
-    const { getDatabase } = await import('firebase/database');
+    const { getDatabase, ref, onValue } = await import('firebase/database');
 
     if (getApps().length === 0) {
       firebaseApp = initializeApp(finalConfig);
@@ -98,6 +124,22 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
     }
 
     realtimeDb = getDatabase(firebaseApp, finalConfig.databaseURL || DEFAULT_FIREBASE_CONFIG.databaseURL);
+
+    // Escuchar el desfase horario real de Internet respecto a la computadora
+    try {
+      const offsetRef = ref(realtimeDb, '.info/serverTimeOffset');
+      onValue(offsetRef, (snap) => {
+        const offset = snap.val();
+        if (typeof offset === 'number') {
+          serverTimeOffsetMs = offset;
+          isServerTimeSynced = true;
+          console.log(`[Reloj Internet] Sincronizado con Google Firebase. Desfase local detectado: ${offset}ms (${(offset / 1000).toFixed(1)}s)`);
+        }
+      });
+    } catch (offsetErr) {
+      console.warn('No se pudo suscribir a .info/serverTimeOffset:', offsetErr);
+    }
+
     return { success: true, db: realtimeDb };
   } catch (err: any) {
     console.warn('Error inicializando Firebase Realtime DB:', err);
@@ -431,6 +473,18 @@ export const syncShiftToFirestore = async (shift: Shift): Promise<void> => {
     await set(ref(db, `shifts/${shift.id}`), cleanShift);
   } catch (err) {
     console.error(`Error guardando shift ${shift.id} en Firebase:`, err);
+  }
+};
+
+export const deleteShiftFromFirebase = async (shiftId: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, `shifts/${shiftId}`));
+    console.log(`[Firebase] Turno ${shiftId} eliminado.`);
+  } catch (err) {
+    console.error(`Error eliminando shift ${shiftId} de Firebase:`, err);
   }
 };
 

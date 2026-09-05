@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Shift, StaffMember, StaffConsumption, StaffSettlement, StaffSettlementDiscountItem } from '../../types';
 import { formatBs, getPaymentMethodLabel } from '../../utils/formatUtils';
-import { getWeekRange, formatDateTime, formatDateOnly } from '../../utils/timeUtils';
+import { getWeekRange, formatDateTime, formatDateOnly, formatTimeOnly } from '../../utils/timeUtils';
 import {
   CalendarDays,
+  Calendar,
   UserCheck,
   AlertTriangle,
   DollarSign,
@@ -172,6 +173,73 @@ export const WeeklyDiscounts: React.FC = () => {
 
   const totalDiscounts = selectedShortageTotal + selectedConsumptionTotal + numCustomDiscount;
   const netPaidAmount = Math.max(0, numBaseSalary - totalDiscounts);
+
+  // Agrupación y desglose de auditoría por días de la semana
+  const dailyAudit = React.useMemo(() => {
+    const dayMap = new Map<string, {
+      dateKey: string;
+      dayLabel: string;
+      shifts: Shift[];
+      consumptions: StaffConsumption[];
+      shortagesTotal: number;
+      consumptionsTotal: number;
+      totalDayDiscount: number;
+      hasSuspiciousShortage: boolean;
+    }>();
+
+    // 1. Mapear turnos trabajados por fecha
+    staffShifts.forEach((s) => {
+      const dateKey = (s.endTime || s.startTime).slice(0, 10);
+      if (!dayMap.has(dateKey)) {
+        dayMap.set(dateKey, {
+          dateKey,
+          dayLabel: formatDateOnly(s.endTime || s.startTime),
+          shifts: [],
+          consumptions: [],
+          shortagesTotal: 0,
+          consumptionsTotal: 0,
+          totalDayDiscount: 0,
+          hasSuspiciousShortage: false,
+        });
+      }
+      const entry = dayMap.get(dateKey)!;
+      entry.shifts.push(s);
+      const shortage = s.discountAmount || 0;
+      entry.shortagesTotal += shortage;
+      if (isSuspiciousWithdrawal(s)) {
+        entry.hasSuspiciousShortage = true;
+      }
+    });
+
+    // 2. Mapear consumos de personal por fecha
+    staffUnsettledConsumptions.forEach((c) => {
+      const dateKey = c.date.slice(0, 10);
+      if (!dayMap.has(dateKey)) {
+        dayMap.set(dateKey, {
+          dateKey,
+          dayLabel: formatDateOnly(c.date),
+          shifts: [],
+          consumptions: [],
+          shortagesTotal: 0,
+          consumptionsTotal: 0,
+          totalDayDiscount: 0,
+          hasSuspiciousShortage: false,
+        });
+      }
+      const entry = dayMap.get(dateKey)!;
+      entry.consumptions.push(c);
+      entry.consumptionsTotal += c.totalAmount;
+    });
+
+    // 3. Consolidar totales y ordenar cronológicamente descendente
+    const list = Array.from(dayMap.values()).map((d) => ({
+      ...d,
+      totalDayDiscount: d.shortagesTotal + d.consumptionsTotal,
+    }));
+
+    list.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+    return list;
+  }, [staffShifts, staffUnsettledConsumptions]);
 
   const handleConfirmSettlement = (e: React.FormEvent) => {
     e.preventDefault();
@@ -396,6 +464,110 @@ export const WeeklyDiscounts: React.FC = () => {
               </div>
             </div>
 
+            {/* AUDITORÍA Y DESGLOSE DIARIO DE LA SEMANA */}
+            <div className="space-y-3 bg-slate-50/80 p-4 sm:p-5 rounded-2xl border border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-brand-600" />
+                    Auditoría Día a Día: Turnos y Descuentos ({dailyAudit.length} días)
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Desglose detallado por fecha para verificar con total seguridad qué turno estuvo, cuánto faltó y qué consumió cada día.
+                  </p>
+                </div>
+                <span className="text-[11px] font-mono font-black text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                  {staffShifts.length} turno(s) trabajados
+                </span>
+              </div>
+
+              {dailyAudit.length === 0 ? (
+                <div className="p-4 bg-white rounded-xl border border-slate-200 text-slate-400 text-xs italic text-center">
+                  No se encontraron turnos ni consumos registrados para este empleado en la semana seleccionada.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {dailyAudit.map((day) => (
+                    <div key={day.dateKey} className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-md bg-brand-50 text-brand-800 text-[11px] font-extrabold capitalize">
+                            {day.dayLabel}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            ({day.shifts.length} turno(s))
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-500">Descuento de este día:</span>
+                          <strong className={`font-mono text-xs ${day.totalDayDiscount > 0 ? 'text-rose-700 font-black' : 'text-emerald-700'}`}>
+                            {day.totalDayDiscount > 0 ? `-${formatBs(day.totalDayDiscount)}` : '0.00 Bs'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* Turnos de este día */}
+                      <div className="space-y-1.5">
+                        {day.shifts.map((s) => {
+                          const isShortage = (s.discountAmount || 0) > 0;
+                          const isSuspicious = isSuspiciousWithdrawal(s);
+                          return (
+                            <div key={s.id} className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                  s.shiftType === 'noche' ? 'bg-indigo-100 text-indigo-800' : 'bg-amber-100 text-amber-900'
+                                }`}>
+                                  {s.shiftType === 'noche' ? '🌙 Turno Noche' : '☀️ Turno Día'}
+                                </span>
+                                <strong className="text-slate-800">
+                                  {s.responsiblePersonName || s.receptionistName}
+                                </strong>
+                                <span className="text-slate-400 text-[10px]">
+                                  {formatTimeOnly(s.startTime)} ➔ {formatTimeOnly(s.endTime || s.startTime)}
+                                </span>
+                                {isSuspicious && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold">
+                                    ⚠️ Retiro no anotado
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-3 text-[10px]">
+                                <span className="text-slate-500">
+                                  Ventas: Ef {formatBs(s.expectedCash)} | QR {formatBs(s.expectedQr)}
+                                </span>
+                                {isShortage ? (
+                                  <span className="font-mono font-black text-rose-700">
+                                    Faltante: -{formatBs(s.discountAmount || 0)}
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-emerald-700">
+                                    ✓ Cuadrado
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Consumos de este día si existen */}
+                      {day.consumptions.length > 0 && (
+                        <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
+                          <span>
+                            Minibar consumido: {day.consumptions.map((c) => c.items.map((it) => `${it.productName} ×${it.quantity}`).join(', ')).join(' | ')}
+                          </span>
+                          <span className="font-mono font-bold text-amber-800">
+                            -{formatBs(day.consumptionsTotal)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* 2. Faltantes de Caja en Turnos Trabajados */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -467,7 +639,7 @@ export const WeeklyDiscounts: React.FC = () => {
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-xs font-bold text-slate-900">
-                                    Turno {shift.shiftType === 'noche' ? 'Noche' : 'Día'} • {formatDateTime(shift.endTime || shift.startTime)}
+                                    {shift.shiftType === 'noche' ? '🌙 Turno Noche' : '☀️ Turno Día'} ({shift.responsiblePersonName || shift.receptionistName}) • {formatDateOnly(shift.endTime || shift.startTime)}
                                   </span>
                                   {isSuspicious && (
                                     <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
@@ -476,7 +648,7 @@ export const WeeklyDiscounts: React.FC = () => {
                                   )}
                                 </div>
                                 <span className="text-[10px] text-slate-500">
-                                  Entregado por: {shift.responsiblePersonName || shift.receptionistName} | Ventas Efectivo: {formatBs(shift.expectedCash)}
+                                  Horario: {formatTimeOnly(shift.startTime)} ➔ {formatTimeOnly(shift.endTime || shift.startTime)} | Responsable: {shift.responsiblePersonName || shift.receptionistName} | Ventas Efectivo: {formatBs(shift.expectedCash)} | QR: {formatBs(shift.expectedQr)}
                                 </span>
                               </div>
                             </label>

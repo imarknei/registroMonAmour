@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { getNetworkIsoString } from '../services/firebase';
 import { formatBs, getRoomTypeLabel } from '../utils/formatUtils';
 import { formatDateTime, formatTimeOnly } from '../utils/timeUtils';
 import {
@@ -368,7 +369,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] text-slate-400 block">Fecha y Hora</span>
-                  <strong className="text-xs font-mono text-slate-200">{formatDateTime(new Date().toISOString())}</strong>
+                  <strong className="text-xs font-mono text-slate-200">{formatDateTime(getNetworkIsoString())}</strong>
                 </div>
               </div>
 

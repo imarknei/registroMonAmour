@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
 } from 'react';
 import {
   Room,
@@ -46,6 +47,9 @@ import {
 import { formatBs, getPaymentMethodLabel } from '../utils/formatUtils';
 import {
   initializeFirebaseClient,
+  getNetworkTimestamp,
+  getNetworkDate,
+  getNetworkIsoString,
   subscribeToRooms,
   subscribeToProducts,
   subscribeToTariffs,
@@ -68,6 +72,7 @@ import {
   deleteProductFromFirestore,
   syncTariffsToFirestore,
   syncShiftToFirestore,
+  deleteShiftFromFirebase,
   syncStayToFirebase,
   syncCompletedStayToFirebase,
   syncExpenseToFirestore,
@@ -263,6 +268,7 @@ interface AppContextType {
     cashDeliveredAtClose?: number
   ) => Shift | null;
   updateShiftInHistory: (shiftId: string, updatedData: Partial<Shift>) => boolean;
+  deleteShiftFromHistory: (shiftId: string) => void;
 
   // Admin functions
   cancelStay: (stayId: string, reason: string, restoreInventory?: boolean) => boolean;
@@ -458,8 +464,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
+  const [nowTimestamp, setNowTimestamp] = useState<number>(() => getNetworkTimestamp());
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
+  const shiftsLoadedFromFirestoreRef = useRef<boolean>(false);
 
   // 2. Persist to LocalStorage
   useEffect(() => {
@@ -527,7 +534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 4. Realtime Tick & Sound Alerts
   useEffect(() => {
     const timer = setInterval(() => {
-      const now = Date.now();
+      const now = getNetworkTimestamp();
       setNowTimestamp(now);
 
       if (soundAlertsEnabled) {
@@ -609,48 +616,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Shifts
       const unsubShifts = await subscribeToAllShifts((firestoreShifts) => {
         if (firestoreShifts) {
+          shiftsLoadedFromFirestoreRef.current = true;
+          setShiftsHistory(firestoreShifts);
+
           const openShifts = firestoreShifts.filter((s) => s.status === 'open');
-
-          if (openShifts.length > 1) {
-            // Sorteamos los turnos abiertos por fecha de inicio descendente (el más nuevo primero)
-            openShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-            const latestOpen = openShifts[0];
-            const orphanShifts = openShifts.slice(1);
-
-            // Auto-cerrar turnos huérfanos anteriores en Firestore
-            orphanShifts.forEach((orphan) => {
-              const closedOrphan: Shift = {
-                ...orphan,
-                status: 'closed',
-                endTime: orphan.endTime || new Date().toISOString(),
-                notes: orphan.notes
-                  ? `${orphan.notes} • (Cierre automático de turno huérfano)`
-                  : 'Cierre automático de turno anterior huérfano',
-              };
-              syncShiftToFirestore(closedOrphan);
+          if (openShifts.length > 0) {
+            const activeMap: Record<string, Shift> = {};
+            openShifts.forEach((s) => {
+              activeMap[s.receptionistId] = s;
             });
-
-            // Reconstruir lista limpia con solo 1 turno abierto
-            const sanitizedShifts = firestoreShifts.map((s) => {
-              if (s.id === latestOpen.id) return latestOpen;
-              if (orphanShifts.some((o) => o.id === s.id)) {
-                return {
-                  ...s,
-                  status: 'closed' as const,
-                  endTime: s.endTime || new Date().toISOString(),
-                };
-              }
-              return s;
-            });
-
-            setShiftsHistory(sanitizedShifts);
-            setActiveShifts({ [latestOpen.receptionistId]: latestOpen });
+            setActiveShifts(activeMap);
           } else {
-            setShiftsHistory(firestoreShifts);
-            if (openShifts.length === 1) {
-              const singleOpen = openShifts[0];
-              setActiveShifts({ [singleOpen.receptionistId]: singleOpen });
-            }
+            setActiveShifts({});
           }
         }
       });
@@ -704,19 +681,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // 6. Ensure there is EXACTLY ONE active shift for reception
+  // 6. Ensure there is active shift for reception
   const ensureActiveShift = useCallback((user: User): Shift => {
-    // 1. Buscar si ya hay un turno abierto en activeShifts
+    // 1. Buscar si ya hay un turno abierto en historial (el más reciente)
+    const openInHistory = shiftsHistory.filter((s) => s.status === 'open');
+    if (openInHistory.length > 0) {
+      openInHistory.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+      const chosen = openInHistory.find((s) => s.receptionistId === user.id) || openInHistory[0];
+      setActiveShifts((prev) => ({ ...prev, [chosen.receptionistId]: chosen }));
+      return chosen;
+    }
+
+    // 2. Buscar si ya hay un turno abierto en activeShifts
     const openInActive = Object.values(activeShifts).find((s) => s.status === 'open');
     if (openInActive) {
       return openInActive;
-    }
-
-    // 2. Buscar si hay algún turno abierto en historial
-    const openInHistory = shiftsHistory.find((s) => s.status === 'open');
-    if (openInHistory) {
-      setActiveShifts({ [openInHistory.receptionistId]: openInHistory });
-      return openInHistory;
     }
 
     // 3. Obtener caja chica del último turno cerrado o 100 Bs por defecto
@@ -726,11 +705,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const receptionistUser = user.role === 'admin' ? SYSTEM_USERS[1] : user;
     const shiftType = receptionistUser.role === 'recepcionista_noche' ? 'noche' : 'dia';
     const newShift: Shift = {
-      id: `shift-${receptionistUser.id}-${Date.now()}`,
+      id: `shift-${receptionistUser.id}-${getNetworkTimestamp()}`,
       receptionistId: receptionistUser.id,
       receptionistName: receptionistUser.name,
       shiftType,
-      startTime: new Date().toISOString(),
+      startTime: getNetworkIsoString(),
       status: 'open',
       initialCashFloat: initialFloat,
       expectedCash: 0,
@@ -742,23 +721,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       stayIds: [],
     };
 
-    setActiveShifts({ [receptionistUser.id]: newShift });
+    setActiveShifts((prev) => ({ ...prev, [receptionistUser.id]: newShift }));
     syncShiftToFirestore(newShift);
     return newShift;
   }, [activeShifts, shiftsHistory]);
 
   // Turno base sin recalcular
   const rawTargetShift = useMemo<Shift | null>(() => {
+    // 1. Buscar en historial cualquier turno abierto
+    const openInHistory = shiftsHistory.filter((s) => s.status === 'open');
+    if (openInHistory.length > 0) {
+      openInHistory.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+      const matchUser = openInHistory.find((s) => s.receptionistId === currentUser.id);
+      return matchUser || openInHistory[0];
+    }
+
+    // 2. Buscar en activeShifts
     const openInActive = Object.values(activeShifts).find((s) => s.status === 'open');
     if (openInActive) return openInActive;
 
-    const historyOpen = shiftsHistory.find((s) => s.status === 'open');
-    if (historyOpen) return historyOpen;
-
-    if (currentUser.role !== 'admin') {
-      return ensureActiveShift(currentUser);
+    // Si Firestore aún no ha terminado de cargar turnos, esperar para no crear turnos prematuros
+    if (!shiftsLoadedFromFirestoreRef.current) {
+      return null;
     }
-    return ensureActiveShift(SYSTEM_USERS[1]);
+
+    // Si el usuario es administrador y no hay turno abierto, NO crear turno
+    if (currentUser.role === 'admin') {
+      return null;
+    }
+
+    return ensureActiveShift(currentUser);
   }, [currentUser, activeShifts, shiftsHistory, ensureActiveShift]);
 
   // Cálculo en vivo y exacto del total en caja del turno (Caja Chica, Ventas Efectivo, QR y Gastos)
@@ -836,8 +828,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const stayStartTime = new Date(s.startTime).getTime();
       const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
       const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
-      const isEntryInThisShift = s.entryShiftId === rawTargetShift.id || (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
-      const isCheckoutInThisShift = s.checkoutShiftId === rawTargetShift.id || (s.checkoutReceptionistId === rawTargetShift.receptionistId) || (!s.checkoutShiftId && matchesReceptionist && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime);
+
+      // Entrada en este turno (directa por ID o por horario si no tiene entryShiftId)
+      const isEntryInThisShift = s.entryShiftId
+        ? s.entryShiftId === rawTargetShift.id
+        : (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
+
+      // Salida en este turno (directa por ID o por horario si no tiene checkoutShiftId)
+      const isCheckoutInThisShift = s.checkoutShiftId
+        ? s.checkoutShiftId === rawTargetShift.id
+        : (!s.checkoutShiftId && (s.checkoutReceptionistId === rawTargetShift.receptionistId || matchesReceptionist) && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime);
 
       // 2a. Cobro de adelanto / prepago en este turno
       if (isEntryInThisShift && s.isPrepaid) {
@@ -898,15 +898,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? s.finalQrPaid
           : (finalVendis + finalUnion || (s.isPrepaid ? Math.max(0, (s.qrPaid || 0) - (s.prepaidQr || 0)) : (s.qrPaid || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0))));
 
-        if (finalCash > 0 || finalQr > 0 || !s.isPrepaid) {
+        // Si la entrada no fue prepagada en este turno, sumar el cobro final
+        if (!isEntryInThisShift || !s.isPrepaid) {
           liveCashSales += finalCash;
           liveQrVendisSales += finalVendis;
           liveQrUnionSales += finalUnion;
           liveQrSales += finalQr;
-          if (!countedSalesStayIds.has(s.id)) {
-            countedSalesStayIds.add(s.id);
-            liveSalesCount++;
+        } else {
+          // Si ya se sumó el prepago en este turno, sumar únicamente saldos adicionales/extras
+          if (finalCash > 0) liveCashSales += finalCash;
+          if (finalVendis > 0) {
+            liveQrVendisSales += finalVendis;
+            liveQrSales += finalVendis;
           }
+          if (finalUnion > 0) {
+            liveQrUnionSales += finalUnion;
+            liveQrSales += finalUnion;
+          }
+        }
+
+        if (!countedSalesStayIds.has(s.id)) {
+          countedSalesStayIds.add(s.id);
+          liveSalesCount++;
         }
       }
     });
@@ -1046,7 +1059,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       roomId: room.id,
       roomName: room.name,
       roomType: room.type,
-      startTime: new Date().toISOString(),
+      startTime: getNetworkIsoString(),
       chosenPlan: entryData.chosenPlan,
       chosenDurationMinutes: duration,
       baseRoomPrice: entryData.basePrice,
@@ -1526,7 +1539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const completedStay: Stay = {
       ...stay,
       status: 'completed',
-      endTime: new Date().toISOString(),
+      endTime: getNetworkIsoString(),
       overtimeMinutes: timeCalc.overtimeMinutes,
       overtimeCharge: overtimeTotal,
       totalAmount,
@@ -1723,7 +1736,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       category: expenseData.category,
       amount: expenseData.amount,
       paymentMethod: expenseData.paymentMethod,
-      timestamp: new Date().toISOString(),
+      timestamp: getNetworkIsoString(),
       shiftId: currentShift.id,
       registeredById: currentUser.id,
       registeredByName: currentUser.name,
@@ -1777,7 +1790,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id,
       staffId: consumptionData.staffId,
       staffName: consumptionData.staffName,
-      date: new Date().toISOString(),
+      date: getNetworkIsoString(),
       items: mappedItems,
       totalAmount: consumptionData.totalAmount,
       notes: consumptionData.notes,
@@ -1917,7 +1930,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: effectiveDesc,
       roomNumber: data.roomNumber?.trim() || undefined,
       originType: data.originType || (data.roomNumber ? 'habitacion_cerrada' : 'mostrador_recepcion'),
-      date: new Date().toISOString(),
+      date: getNetworkIsoString(),
       items: data.items.map((it) => ({
         id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         productId: it.productId,
@@ -2203,7 +2216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const closedShift: Shift = {
       ...shift,
       status: 'closed',
-      endTime: new Date().toISOString(),
+      endTime: getNetworkIsoString(),
       receptionistName: responsiblePersonName.trim() || shift.receptionistName,
       responsiblePersonName: responsiblePersonName.trim() || shift.receptionistName,
       handedOverTo: nextReceptionistName.trim(),
@@ -2244,11 +2257,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 3. Crear UN SOLO nuevo turno abierto para el recepcionista entrante con la caja chica dejada
     const newShiftForNext: Shift = {
-      id: `shift-${nextUser.id}-${Date.now()}`,
+      id: `shift-${nextUser.id}-${getNetworkTimestamp()}`,
       receptionistId: nextUser.id,
       receptionistName: nextReceptionistName.trim() || nextUser.name,
       shiftType: nextUser.role === 'recepcionista_noche' ? 'noche' : 'dia',
-      startTime: new Date().toISOString(),
+      startTime: getNetworkIsoString(),
       status: 'open',
       initialCashFloat: floatLeftForNext,
       expectedCash: 0,
@@ -2394,6 +2407,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return true;
+  };
+
+  const deleteShiftFromHistory = (shiftId: string): void => {
+    setShiftsHistory((prev) => prev.filter((s) => s.id !== shiftId));
+    setActiveShifts((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (next[key]?.id === shiftId) {
+          delete next[key];
+        }
+      });
+      return next;
+    });
+    deleteShiftFromFirebase(shiftId);
+    showToast({
+      title: 'Turno Eliminado',
+      message: 'El registro del turno ha sido eliminado permanentemente.',
+      type: 'info',
+    });
   };
 
   // ADMIN ACTIONS
@@ -2610,16 +2642,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addInventoryLog = useCallback(
     (logData: Omit<InventoryMovementLog, 'id' | 'timestamp' | 'date'> & { date?: string }) => {
+      const activeShiftId = rawTargetShift?.id;
       const newLog: InventoryMovementLog = {
         ...logData,
-        id: `inv-log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        date: logData.date || new Date().toISOString(),
-        timestamp: Date.now(),
+        shiftId: logData.shiftId || activeShiftId,
+        id: `inv-log-${getNetworkTimestamp()}-${Math.random().toString(36).substring(2, 7)}`,
+        date: logData.date || getNetworkIsoString(),
+        timestamp: getNetworkTimestamp(),
       };
       setInventoryLogs((prev) => [newLog, ...prev]);
       syncInventoryLogToFirestore(newLog);
     },
-    []
+    [rawTargetShift]
   );
 
   const deleteInventoryLogById = useCallback((logId: string) => {
@@ -2808,6 +2842,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveStaffMember,
         closeCurrentShift,
         updateShiftInHistory,
+        deleteShiftFromHistory,
         cancelStay,
         updateStay,
         cleanupOrphanShifts,
