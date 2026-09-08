@@ -28,6 +28,7 @@ import {
   History,
   CreditCard,
   Edit3,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { StaffSettlementReceiptModal } from '../StaffSettlementReceiptModal';
 import { ShiftAdjustmentModal } from './ShiftAdjustmentModal';
@@ -42,6 +43,7 @@ export const WeeklyDiscounts: React.FC = () => {
     removeStaffConsumption,
     currentUser,
     updateShiftInHistory,
+    recalculateShiftSales,
   } = useApp();
 
   const currentWeekInfo = getWeekRange(new Date());
@@ -647,9 +649,14 @@ export const WeeklyDiscounts: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[10px] text-slate-500">
+                                <span className="text-[10px] text-slate-500 block">
                                   Horario: {formatTimeOnly(shift.startTime)} ➔ {formatTimeOnly(shift.endTime || shift.startTime)} | Responsable: {shift.responsiblePersonName || shift.receptionistName} | Ventas Efectivo: {formatBs(shift.expectedCash)} | QR: {formatBs(shift.expectedQr)}
                                 </span>
+                                {shift.notes && (
+                                  <div className="mt-1 p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-900">
+                                    <strong className="text-amber-950">Observaciones:</strong> {shift.notes}
+                                  </div>
+                                )}
                               </div>
                             </label>
 
@@ -663,6 +670,18 @@ export const WeeklyDiscounts: React.FC = () => {
                                 >
                                   <Sparkles className="w-3 h-3" />
                                   <span>⚡ Cuadrar</span>
+                                </button>
+                              )}
+
+                              {!shift.isSettled && (
+                                <button
+                                  type="button"
+                                  onClick={() => recalculateShiftSales(shift)}
+                                  className="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-[10px] font-bold border border-sky-200 flex items-center gap-1 transition-colors"
+                                  title="Auditar y recalcular con las estancias reales registradas en este turno"
+                                >
+                                  <ArrowRightLeft className="w-3 h-3 text-sky-600" />
+                                  <span>Auditar</span>
                                 </button>
                               )}
 

@@ -191,6 +191,7 @@ export interface Shift {
   expectedQrUnion?: number; // Ventas esperadas en QR Banco Unión
   expectedQr: number;   // Ventas esperadas en QR total
   expenses?: Expense[]; // Lista de pagos/egresos registrados durante el turno
+  operationalExpensesCash?: number; // Egresos de operación pagados en efectivo (excluyendo retiros al dueño)
   totalExpensesCash?: number; // Total egresos y retiros pagados en efectivo
   cashWithdrawals?: number; // Total de retiros entregados a administración durante el turno
   cashDeliveredAtClose?: number; // Efectivo retirado/entregado a administración al momento del cierre de turno
@@ -233,6 +234,23 @@ export interface WeeklyDiscountReport {
   totalExpensesQr?: number;
   totalFaltante: number;
   totalDiscount: number;
+}
+
+export interface ShiftReconciledMetrics {
+  expectedCash: number;
+  expectedQrVendis: number;
+  expectedQrUnion: number;
+  expectedQr: number;
+  salesCount: number;
+  stayIds: string[];
+  shiftExpenses: Expense[];
+  cashWithdrawals: number;
+  operationalExpensesCash: number;
+  totalExpensesCash: number;
+  totalExpensesQrVendis: number;
+  totalExpensesQrUnion: number;
+  totalExpensesQr: number;
+  expectedCashInDrawer: number;
 }
 
 // ----------------------------------------------------

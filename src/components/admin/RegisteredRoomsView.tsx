@@ -232,11 +232,24 @@ export const RegisteredRoomsView: React.FC = () => {
       overtimeSales += stayOvertime;
 
       if (s.status === 'completed') {
-        totalCash += s.cashPaid || (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0);
-        totalQr += s.qrPaid || (s.paymentMethod === 'qr' || s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr_union' ? s.totalAmount || 0 : 0);
+        let cPaid = s.cashPaid || 0;
+        let qPaid = s.qrPaid || (s.qrVendisPaid || 0) + (s.qrUnionPaid || 0);
+        if (cPaid === 0 && qPaid === 0) {
+          if (s.paymentMethod === 'efectivo') cPaid = s.totalAmount || 0;
+          else if (s.paymentMethod === 'qr' || s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr_union') qPaid = s.totalAmount || 0;
+        }
+        totalCash += cPaid;
+        totalQr += qPaid;
       } else if (s.isPrepaid) {
-        totalCash += s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
-        totalQr += s.prepaidQr || (s.paymentMethod === 'qr' || s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
+        let pCash = s.prepaidCash || 0;
+        let pQr = s.prepaidQr || (s.prepaidQrVendis || 0) + (s.prepaidQrUnion || 0);
+        if (pCash === 0 && pQr === 0) {
+          const pAmt = s.prepaidAmount || s.baseRoomPrice || 0;
+          if (s.paymentMethod === 'efectivo') pCash = pAmt;
+          else if (s.paymentMethod === 'qr' || s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr_union') pQr = pAmt;
+        }
+        totalCash += pCash;
+        totalQr += pQr;
       }
     });
 

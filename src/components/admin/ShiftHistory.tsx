@@ -52,6 +52,8 @@ export const ShiftHistory: React.FC = () => {
     cleanupOrphanShifts,
     updateShiftInHistory,
     deleteShiftFromHistory,
+    recalculateShiftSales,
+    recalculateAllSeptemberShifts,
   } = useApp();
 
   // Filtros
@@ -370,6 +372,15 @@ export const ShiftHistory: React.FC = () => {
                 }`}
               />
             </div>
+
+            <button
+              onClick={() => recalculateAllSeptemberShifts()}
+              className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-sky-600 hover:bg-sky-700 active:scale-95 text-white shadow-sm transition-all flex items-center gap-1.5 ml-auto"
+              title="Auditar y recalcular automáticamente todos los turnos cerrados de septiembre con las estancias reales"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Auditar Turnos Septiembre</span>
+            </button>
           </div>
         </div>
 
@@ -741,6 +752,16 @@ export const ShiftHistory: React.FC = () => {
                             <span>⚡ Cuadrar Retiro ({formatBs(shift.expectedCash)})</span>
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => recalculateShiftSales(shift)}
+                          className="px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:scale-95 text-sky-700 font-bold text-xs border border-sky-200 flex items-center gap-1.5 transition-colors shadow-xs"
+                          title="Recalcular automáticamente montos esperados con las estancias y consumos reales del turno"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5 text-sky-600" />
+                          <span>Auditar con Estancias</span>
+                        </button>
 
                         <button
                           type="button"

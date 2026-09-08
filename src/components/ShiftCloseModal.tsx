@@ -77,10 +77,12 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
   const expectedQrVendis = currentShift.expectedQrVendis || 0;
   const expectedQrUnion = currentShift.expectedQrUnion || 0;
   const expectedQrTotal = currentShift.expectedQr || (expectedQrVendis + expectedQrUnion);
-  const totalShiftExpensesCash = currentShift.totalExpensesCash || 0;
+  const totalShiftExpensesCash = currentShift.operationalExpensesCash !== undefined
+    ? currentShift.operationalExpensesCash
+    : (currentShift.totalExpensesCash || 0);
 
   // Efectivo que DEBERÍA haber físicamente en la gaveta antes de separar sobre
-  // Fondo Inicial + Ventas Efectivo - Pagos/Gastos Efectivo
+  // Fondo Inicial + Ventas Efectivo - Pagos/Gastos Operativos en Efectivo
   const expectedCashInDrawer = Math.max(0, initialFloat + expectedCashSales - totalShiftExpensesCash);
 
   // Valores numéricos del conteo declarado en Paso 1
@@ -404,9 +406,14 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                   <span>= Efectivo que DEBÍA haber en caja:</span>
                   <strong className="font-mono text-white text-sm">{formatBs(expectedCashInDrawer)}</strong>
                 </div>
-                <div className="flex justify-between py-1 bg-white/5 px-2.5 rounded-xl text-white font-bold">
+                <div className="flex justify-between py-1 bg-white/5 px-2.5 rounded-xl text-white font-bold items-center">
                   <span>TOTAL DECLARADO EN CONTEO:</span>
-                  <strong className="font-mono text-emerald-300 text-sm">{formatBs(numTotalPhysicalCash)}</strong>
+                  <div className="text-right">
+                    <span className="font-mono text-emerald-300 text-sm block">{formatBs(numTotalPhysicalCash)}</span>
+                    <span className={`text-[10px] font-mono ${diffCash < -0.01 ? 'text-rose-400 font-bold' : diffCash > 0.01 ? 'text-emerald-400 font-bold' : 'text-slate-400'}`}>
+                      {Math.abs(diffCash) <= 0.01 ? 'Efectivo Cuadrado (0.00)' : `Dif: ${diffCash > 0 ? '+' : ''}${formatBs(diffCash)}`}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -414,16 +421,26 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               {(expectedQrTotal > 0 || numDeclaredQrTotal > 0) && (
                 <div className="pt-2 border-t border-white/10 grid grid-cols-2 gap-2 text-[11px] text-slate-300">
                   <div className="bg-white/5 p-2 rounded-xl">
-                    <span className="text-[10px] text-sky-300 block font-bold">QR Vendis</span>
-                    <div className="flex justify-between font-mono">
-                      <span>Esp: {formatBs(expectedQrVendis)}</span>
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="text-[10px] text-sky-300 block font-bold">QR Vendis</span>
+                      <span className={`text-[10px] font-mono font-bold ${diffQrVendis < -0.01 ? 'text-rose-400' : diffQrVendis > 0.01 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {Math.abs(diffQrVendis) <= 0.01 ? '0.00 Bs' : `${diffQrVendis > 0 ? '+' : ''}${formatBs(diffQrVendis)}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-mono text-[10px]">
+                      <span className="text-slate-300">Esp: {formatBs(expectedQrVendis)}</span>
                       <span className="text-white font-bold">Dec: {formatBs(numDeclaredQrVendis)}</span>
                     </div>
                   </div>
                   <div className="bg-white/5 p-2 rounded-xl">
-                    <span className="text-[10px] text-indigo-300 block font-bold">QR Banco Unión</span>
-                    <div className="flex justify-between font-mono">
-                      <span>Esp: {formatBs(expectedQrUnion)}</span>
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="text-[10px] text-indigo-300 block font-bold">QR Banco Unión</span>
+                      <span className={`text-[10px] font-mono font-bold ${diffQrUnion < -0.01 ? 'text-rose-400' : diffQrUnion > 0.01 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {Math.abs(diffQrUnion) <= 0.01 ? '0.00 Bs' : `${diffQrUnion > 0 ? '+' : ''}${formatBs(diffQrUnion)}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-mono text-[10px]">
+                      <span className="text-slate-300">Esp: {formatBs(expectedQrUnion)}</span>
                       <span className="text-white font-bold">Dec: {formatBs(numDeclaredQrUnion)}</span>
                     </div>
                   </div>
@@ -452,7 +469,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                     {isExact
                       ? '✅ CAJA CUADRADA EXACTA (0.00 Bs)'
                       : hasDeficit
-                      ? `🔴 FALTANTE EN CAJA: -${formatBs(discountAmt)}`
+                      ? `🔴 FALTANTE EN CAJA: -${formatBs(discountAmt)} (PASA A DESCUENTO)`
                       : `🟢 DEMASÍA / SOBRANTE: +${formatBs(surplusAmt)}`}
                   </strong>
                 </div>
@@ -460,7 +477,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                   {isExact
                     ? 'El dinero físico en gaveta coincide exactamente con las ventas y gastos del sistema.'
                     : hasDeficit
-                    ? 'Atención: Hay un faltante de dinero sobre lo registrado. Saca captura de este reporte.'
+                    ? 'Atención: Este faltante pasa a tu acumulado de descuentos semanales. Justifica abajo en Observaciones el motivo.'
                     : 'Hay un excedente en caja sobre lo registrado por el sistema.'}
                 </p>
               </div>
@@ -609,17 +626,30 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               </div>
             </div>
 
-            {/* Observaciones Opcionales */}
-            <div className="space-y-1">
-              <label className="font-bold text-slate-700 block text-xs">
-                Observaciones del Cierre (Opcional)
-              </label>
-              <input
-                type="text"
-                placeholder="Ej: Se dejó el sobre en administración..."
+            {/* Observaciones y Justificación de Cierre */}
+            <div className={`p-4 rounded-2xl border space-y-1.5 transition-all ${hasDeficit ? 'bg-rose-50/60 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <label className="font-extrabold text-slate-800 block text-xs flex items-center gap-1.5">
+                  <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Observaciones y Justificación del Turno</span>
+                </label>
+                {hasDeficit && (
+                  <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
+                    ⚠️ Justificar motivo del faltante (-{formatBs(discountAmt)})
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500">
+                {hasDeficit
+                  ? 'Describe detalladamente la razón de este faltante (ej: huésped que no pagó, billete falso, error de cambio, etc.) para que la administración lo evalúe al revisar tus descuentos semanales.'
+                  : 'Anota cualquier novedad, reporte de habitaciones o aclaración importante para administración o para el siguiente turno.'}
+              </p>
+              <textarea
+                rows={3}
+                placeholder={hasDeficit ? 'Explica detalladamente por qué hubo faltante en caja...' : 'Ej: Se dejó el sobre en administración, todo en orden...'}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 focus:outline-none focus:border-brand-500"
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:border-brand-500 shadow-inner"
               />
             </div>
 
@@ -640,7 +670,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs shadow-lg shadow-emerald-600/25 transition-all flex items-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>{isSubmitting ? 'Cerrando turno...' : 'Confirmar Cierre y Relevar Turno'}</span>
+                <span>{isSubmitting ? 'Cerrando turno...' : 'Aceptar Arqueo y Confirmar Cierre'}</span>
               </button>
             </div>
           </form>

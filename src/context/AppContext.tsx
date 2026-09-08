@@ -28,6 +28,7 @@ import {
   ExtraConsumption,
   InventoryMovementLog,
   InventoryActionType,
+  ShiftReconciledMetrics,
 } from '../types';
 import {
   INITIAL_ROOMS,
@@ -269,6 +270,8 @@ interface AppContextType {
   ) => Shift | null;
   updateShiftInHistory: (shiftId: string, updatedData: Partial<Shift>) => boolean;
   deleteShiftFromHistory: (shiftId: string) => void;
+  recalculateShiftSales: (shift: Shift) => Shift;
+  recalculateAllSeptemberShifts: () => Promise<number>;
 
   // Admin functions
   cancelStay: (stayId: string, reason: string, restoreInventory?: boolean) => boolean;
@@ -699,8 +702,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // 3. Obtener caja chica del último turno cerrado o 100 Bs por defecto
-    const lastClosedShift = shiftsHistory.find((s) => s.status === 'closed');
-    const initialFloat = lastClosedShift?.handoverCashFloat || 100;
+    const closedShifts = shiftsHistory.filter((s) => s.status === 'closed');
+    closedShifts.sort((a, b) => new Date(b.endTime || b.startTime).getTime() - new Date(a.endTime || a.startTime).getTime());
+    const lastClosedShift = closedShifts[0];
+    const initialFloat = lastClosedShift?.handoverCashFloat !== undefined ? lastClosedShift.handoverCashFloat : 100;
 
     const receptionistUser = user.role === 'admin' ? SYSTEM_USERS[1] : user;
     const shiftType = receptionistUser.role === 'recepcionista_noche' ? 'noche' : 'dia';
@@ -753,248 +758,240 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return ensureActiveShift(currentUser);
   }, [currentUser, activeShifts, shiftsHistory, ensureActiveShift]);
 
-  // Cálculo en vivo y exacto del total en caja del turno (Caja Chica, Ventas Efectivo, QR y Gastos)
-  const currentShift = useMemo<Shift | null>(() => {
-    if (!rawTargetShift) return null;
+  // Función pura para reconciliar con 100% de exactitud y aislamiento de canales las ventas de un turno
+  const calculateShiftMetrics = useCallback(
+    (targetShift: Shift): ShiftReconciledMetrics => {
+      const shiftStartTime = new Date(targetShift.startTime).getTime();
+      const shiftEndTime = targetShift.endTime ? new Date(targetShift.endTime).getTime() : Infinity;
 
-    const shiftStartTime = new Date(rawTargetShift.startTime).getTime();
-    const shiftEndTime = rawTargetShift.endTime ? new Date(rawTargetShift.endTime).getTime() : Infinity;
+      let liveCashSales = 0;
+      let liveQrVendisSales = 0;
+      let liveQrUnionSales = 0;
+      let liveSalesCount = 0;
+      const countedSalesStayIds = new Set<string>();
+      const trackedStayIds = new Set<string>(targetShift.stayIds || []);
 
-    let liveCashSales = 0;
-    let liveQrVendisSales = 0;
-    let liveQrUnionSales = 0;
-    let liveQrSales = 0;
-    let liveSalesCount = 0;
-    const countedSalesStayIds = new Set<string>();
-    const trackedStayIds = new Set<string>(rawTargetShift.stayIds || []);
-
-    // 1. Sumar cobros adelantados y consumos cobrados al momento de habitaciones actualmente ocupadas en este turno
-    rooms.forEach((r) => {
-      if (r.status === 'ocupada' && r.currentStay) {
-        const s = r.currentStay;
+      const processStay = (s: Stay, isOccupiedNow: boolean) => {
         if (s.status === 'cancelled') return;
-        const stayTime = new Date(s.startTime).getTime();
-        const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
-        const inTimeWindow = stayTime >= shiftStartTime && stayTime <= shiftEndTime;
-        const isThisShiftEntry = s.entryShiftId === rawTargetShift.id || (!s.entryShiftId && matchesReceptionist && inTimeWindow);
+        const stayStartTime = new Date(s.startTime).getTime();
+        const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
+        const matchesReceptionist = s.receptionistId === targetShift.receptionistId;
 
-        if (isThisShiftEntry && s.isPrepaid) {
+        const isEntryInThisShift = s.entryShiftId
+          ? s.entryShiftId === targetShift.id
+          : (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
+
+        const isCheckoutInThisShift = !isOccupiedNow && (s.checkoutShiftId
+          ? s.checkoutShiftId === targetShift.id
+          : (!s.checkoutShiftId && (s.checkoutReceptionistId === targetShift.receptionistId || matchesReceptionist) && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime));
+
+        // 1. Cobro de adelanto / prepago en este turno (Aislamiento estricto de canal de pago)
+        if (isEntryInThisShift && s.isPrepaid) {
           trackedStayIds.add(s.id);
-          const prepCash = s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
-          const prepVendis = s.prepaidQrVendis || (s.paymentMethod === 'qr_vendis' ? s.prepaidAmount || s.baseRoomPrice : 0);
-          const prepUnion = s.prepaidQrUnion || (s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
-          const prepQr = s.prepaidQr || (prepVendis + prepUnion) || (s.paymentMethod === 'qr' ? s.prepaidAmount || s.baseRoomPrice : 0);
+          let prepCash = s.prepaidCash || 0;
+          let prepVendis = s.prepaidQrVendis || 0;
+          let prepUnion = s.prepaidQrUnion || 0;
+
+          // Fallback a paymentMethod ÚNICAMENTE si ningún canal específico fue provisto
+          if (prepCash === 0 && prepVendis === 0 && prepUnion === 0) {
+            const pAmt = s.prepaidAmount || s.baseRoomPrice || 0;
+            if (s.paymentMethod === 'efectivo') prepCash = pAmt;
+            else if (s.paymentMethod === 'qr_vendis') prepVendis = pAmt;
+            else if (s.paymentMethod === 'qr_union') prepUnion = pAmt;
+            else if (s.paymentMethod === 'qr') prepVendis = pAmt;
+          }
 
           liveCashSales += prepCash;
           liveQrVendisSales += prepVendis;
           liveQrUnionSales += prepUnion;
-          liveQrSales += prepQr;
+
           if (!countedSalesStayIds.has(s.id)) {
             countedSalesStayIds.add(s.id);
             liveSalesCount++;
           }
         }
 
-        // Consumos pagados al momento en este turno
+        // 2. Consumos cobrados al momento en este turno
         (s.consumptions || []).forEach((c) => {
           if (c.isPaid) {
-            const cTime = c.paidAt ? new Date(c.paidAt).getTime() : stayTime;
+            const cTime = c.paidAt ? new Date(c.paidAt).getTime() : stayStartTime;
             const isThisShiftCons =
-              c.paidShiftId === rawTargetShift.id ||
-              (!c.paidShiftId && c.paidReceptionistId === rawTargetShift.receptionistId) ||
+              c.paidShiftId === targetShift.id ||
+              (!c.paidShiftId && c.paidReceptionistId === targetShift.receptionistId) ||
               (!c.paidShiftId && matchesReceptionist && cTime >= shiftStartTime && cTime <= shiftEndTime);
 
             if (isThisShiftCons) {
               if (c.paymentMethod === 'efectivo') liveCashSales += c.subtotal;
-              else if (c.paymentMethod === 'qr_vendis') {
+              else if (c.paymentMethod === 'qr_vendis' || c.paymentMethod === 'qr') {
                 liveQrVendisSales += c.subtotal;
-                liveQrSales += c.subtotal;
               } else if (c.paymentMethod === 'qr_union') {
                 liveQrUnionSales += c.subtotal;
-                liveQrSales += c.subtotal;
-              } else if (c.paymentMethod === 'qr') {
-                liveQrVendisSales += c.subtotal;
-                liveQrSales += c.subtotal;
               }
             }
           }
         });
-      }
-    });
 
-    // 2. Sumar habitaciones cerradas y cobradas durante el turno
-    completedStays.forEach((s) => {
-      if (s.status === 'cancelled') return;
-      const stayStartTime = new Date(s.startTime).getTime();
-      const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
-      const matchesReceptionist = s.receptionistId === rawTargetShift.receptionistId;
+        // 3. Cobro de saldo de salida / checkout en este turno
+        if (isCheckoutInThisShift) {
+          trackedStayIds.add(s.id);
+          let finalCash = s.finalCashPaid;
+          let finalVendis = s.finalQrVendisPaid;
+          let finalUnion = s.finalQrUnionPaid;
 
-      // Entrada en este turno (directa por ID o por horario si no tiene entryShiftId)
-      const isEntryInThisShift = s.entryShiftId
-        ? s.entryShiftId === rawTargetShift.id
-        : (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
-
-      // Salida en este turno (directa por ID o por horario si no tiene checkoutShiftId)
-      const isCheckoutInThisShift = s.checkoutShiftId
-        ? s.checkoutShiftId === rawTargetShift.id
-        : (!s.checkoutShiftId && (s.checkoutReceptionistId === rawTargetShift.receptionistId || matchesReceptionist) && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime);
-
-      // 2a. Cobro de adelanto / prepago en este turno
-      if (isEntryInThisShift && s.isPrepaid) {
-        trackedStayIds.add(s.id);
-        const prepCash = s.prepaidCash || (s.paymentMethod === 'efectivo' ? s.prepaidAmount || s.baseRoomPrice : 0);
-        const prepVendis = s.prepaidQrVendis || (s.paymentMethod === 'qr_vendis' ? s.prepaidAmount || s.baseRoomPrice : 0);
-        const prepUnion = s.prepaidQrUnion || (s.paymentMethod === 'qr_union' ? s.prepaidAmount || s.baseRoomPrice : 0);
-        const prepQr = s.prepaidQr || (prepVendis + prepUnion) || (s.paymentMethod === 'qr' ? s.prepaidAmount || s.baseRoomPrice : 0);
-
-        liveCashSales += prepCash;
-        liveQrVendisSales += prepVendis;
-        liveQrUnionSales += prepUnion;
-        liveQrSales += prepQr;
-        if (!countedSalesStayIds.has(s.id)) {
-          countedSalesStayIds.add(s.id);
-          liveSalesCount++;
-        }
-      }
-
-      // 2b. Consumos cobrados al momento en este turno
-      (s.consumptions || []).forEach((c) => {
-        if (c.isPaid) {
-          const cTime = c.paidAt ? new Date(c.paidAt).getTime() : stayStartTime;
-          const isThisShiftCons =
-            c.paidShiftId === rawTargetShift.id ||
-            (!c.paidShiftId && c.paidReceptionistId === rawTargetShift.receptionistId) ||
-            (!c.paidShiftId && matchesReceptionist && cTime >= shiftStartTime && cTime <= shiftEndTime);
-
-          if (isThisShiftCons) {
-            if (c.paymentMethod === 'efectivo') liveCashSales += c.subtotal;
-            else if (c.paymentMethod === 'qr_vendis') {
-              liveQrVendisSales += c.subtotal;
-              liveQrSales += c.subtotal;
-            } else if (c.paymentMethod === 'qr_union') {
-              liveQrUnionSales += c.subtotal;
-              liveQrSales += c.subtotal;
-            } else if (c.paymentMethod === 'qr') {
-              liveQrVendisSales += c.subtotal;
-              liveQrSales += c.subtotal;
+          if (finalCash === undefined && finalVendis === undefined && finalUnion === undefined) {
+            if (s.isPrepaid) {
+              finalCash = Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0));
+              finalVendis = Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0));
+              finalUnion = Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0));
+            } else {
+              finalCash = s.cashPaid || 0;
+              finalVendis = s.qrVendisPaid || 0;
+              finalUnion = s.qrUnionPaid || 0;
+              if (finalCash === 0 && finalVendis === 0 && finalUnion === 0) {
+                const tot = s.totalAmount || 0;
+                if (s.paymentMethod === 'efectivo') finalCash = tot;
+                else if (s.paymentMethod === 'qr_vendis') finalVendis = tot;
+                else if (s.paymentMethod === 'qr_union') finalUnion = tot;
+                else if (s.paymentMethod === 'qr') finalVendis = tot;
+              }
             }
           }
+          finalCash = finalCash || 0;
+          finalVendis = finalVendis || 0;
+          finalUnion = finalUnion || 0;
+
+          if (!isEntryInThisShift || !s.isPrepaid) {
+            liveCashSales += finalCash;
+            liveQrVendisSales += finalVendis;
+            liveQrUnionSales += finalUnion;
+          } else {
+            if (finalCash > 0) liveCashSales += finalCash;
+            if (finalVendis > 0) liveQrVendisSales += finalVendis;
+            if (finalUnion > 0) liveQrUnionSales += finalUnion;
+          }
+
+          if (!countedSalesStayIds.has(s.id)) {
+            countedSalesStayIds.add(s.id);
+            liveSalesCount++;
+          }
+        }
+      };
+
+      rooms.forEach((r) => {
+        if (r.status === 'ocupada' && r.currentStay) {
+          processStay(r.currentStay, true);
         }
       });
 
-      // 2c. Cobro de saldo de salida / checkout en este turno
-      if (isCheckoutInThisShift) {
-        trackedStayIds.add(s.id);
-        const finalCash = s.finalCashPaid !== undefined
-          ? s.finalCashPaid
-          : (s.isPrepaid ? Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0)) : (s.cashPaid || (s.paymentMethod === 'efectivo' ? s.totalAmount || 0 : 0)));
-        const finalVendis = s.finalQrVendisPaid !== undefined
-          ? s.finalQrVendisPaid
-          : (s.isPrepaid ? Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0)) : (s.qrVendisPaid || (s.paymentMethod === 'qr_vendis' ? s.totalAmount || 0 : 0)));
-        const finalUnion = s.finalQrUnionPaid !== undefined
-          ? s.finalQrUnionPaid
-          : (s.isPrepaid ? Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0)) : (s.qrUnionPaid || (s.paymentMethod === 'qr_union' ? s.totalAmount || 0 : 0)));
-        const finalQr = s.finalQrPaid !== undefined
-          ? s.finalQrPaid
-          : (finalVendis + finalUnion || (s.isPrepaid ? Math.max(0, (s.qrPaid || 0) - (s.prepaidQr || 0)) : (s.qrPaid || (s.paymentMethod === 'qr' ? s.totalAmount || 0 : 0))));
+      completedStays.forEach((s) => {
+        processStay(s, false);
+      });
 
-        // Si la entrada no fue prepagada en este turno, sumar el cobro final
-        if (!isEntryInThisShift || !s.isPrepaid) {
-          liveCashSales += finalCash;
-          liveQrVendisSales += finalVendis;
-          liveQrUnionSales += finalUnion;
-          liveQrSales += finalQr;
-        } else {
-          // Si ya se sumó el prepago en este turno, sumar únicamente saldos adicionales/extras
-          if (finalCash > 0) liveCashSales += finalCash;
-          if (finalVendis > 0) {
-            liveQrVendisSales += finalVendis;
-            liveQrSales += finalVendis;
-          }
-          if (finalUnion > 0) {
-            liveQrUnionSales += finalUnion;
-            liveQrSales += finalUnion;
-          }
-        }
+      // 3. Consumos extras y ventas de mostrador registradas en este turno
+      extraConsumptions.forEach((ec) => {
+        const ecTime = new Date(ec.date).getTime();
+        const matchesReceptionist = ec.registeredById === targetShift.receptionistId;
+        const isThisShiftExtra =
+          ec.shiftId === targetShift.id ||
+          (!ec.shiftId && matchesReceptionist && ecTime >= shiftStartTime && ecTime <= shiftEndTime);
 
-        if (!countedSalesStayIds.has(s.id)) {
-          countedSalesStayIds.add(s.id);
+        if (isThisShiftExtra) {
+          if (ec.paymentMethod === 'efectivo') liveCashSales += ec.totalAmount;
+          else if (ec.paymentMethod === 'qr_vendis' || ec.paymentMethod === 'qr') {
+            liveQrVendisSales += ec.totalAmount;
+          } else if (ec.paymentMethod === 'qr_union') {
+            liveQrUnionSales += ec.totalAmount;
+          }
           liveSalesCount++;
         }
-      }
-    });
+      });
 
-    // 3. Sumar consumos extras y ventas de mostrador registradas en este turno
-    extraConsumptions.forEach((ec) => {
-      const ecTime = new Date(ec.date).getTime();
-      const matchesReceptionist = ec.registeredById === rawTargetShift.receptionistId;
-      const isThisShiftExtra =
-        ec.shiftId === rawTargetShift.id ||
-        (!ec.shiftId && matchesReceptionist && ecTime >= shiftStartTime && ecTime <= shiftEndTime);
+      const expectedCash = liveCashSales;
+      const expectedQrVendis = liveQrVendisSales;
+      const expectedQrUnion = liveQrUnionSales;
+      const expectedQr = expectedQrVendis + expectedQrUnion;
+      const salesCount = liveSalesCount;
 
-      if (isThisShiftExtra) {
-        if (ec.paymentMethod === 'efectivo') liveCashSales += ec.totalAmount;
-        else if (ec.paymentMethod === 'qr_vendis') {
-          liveQrVendisSales += ec.totalAmount;
-          liveQrSales += ec.totalAmount;
-        } else if (ec.paymentMethod === 'qr_union') {
-          liveQrUnionSales += ec.totalAmount;
-          liveQrSales += ec.totalAmount;
-        } else if (ec.paymentMethod === 'qr') {
-          liveQrVendisSales += ec.totalAmount;
-          liveQrSales += ec.totalAmount;
+      // Gastos del turno
+      const shiftExpenses = expenses.filter((e) => {
+        if (e.shiftId === targetShift.id) return true;
+        const expTime = new Date(e.timestamp).getTime();
+        return expTime >= shiftStartTime && expTime <= shiftEndTime;
+      });
+
+      let operationalExpensesCash = 0;
+      let cashWithdrawals = 0;
+      let totalExpensesCash = 0;
+      let totalExpensesQrVendis = 0;
+      let totalExpensesQrUnion = 0;
+      let totalExpensesQr = 0;
+
+      shiftExpenses.forEach((e) => {
+        if (e.paymentMethod === 'efectivo') {
+          totalExpensesCash += e.amount;
+          const isRetiro =
+            e.category === 'retiro_administracion' ||
+            (e.description && e.description.toLowerCase().includes('retiro / entrega de efectivo a administración'));
+          if (isRetiro) {
+            cashWithdrawals += e.amount;
+          } else {
+            operationalExpensesCash += e.amount;
+          }
+        } else if (e.paymentMethod === 'qr_vendis') {
+          totalExpensesQrVendis += e.amount;
+          totalExpensesQr += e.amount;
+        } else if (e.paymentMethod === 'qr_union') {
+          totalExpensesQrUnion += e.amount;
+          totalExpensesQr += e.amount;
+        } else {
+          totalExpensesQr += e.amount;
         }
-        liveSalesCount++;
-      }
-    });
+      });
 
-    const expectedCash = Math.max(rawTargetShift.expectedCash || 0, liveCashSales);
-    const expectedQrVendis = Math.max(rawTargetShift.expectedQrVendis || 0, liveQrVendisSales);
-    const expectedQrUnion = Math.max(rawTargetShift.expectedQrUnion || 0, liveQrUnionSales);
-    const expectedQr = Math.max(rawTargetShift.expectedQr || 0, liveQrSales, expectedQrVendis + expectedQrUnion);
-    const salesCount = Math.max(rawTargetShift.salesCount || 0, liveSalesCount);
+      const startingFloat = targetShift.initialCashFloat !== undefined ? targetShift.initialCashFloat : 100;
+      const expectedCashInDrawer = Math.max(0, startingFloat + expectedCash - operationalExpensesCash);
 
-    // Sumar egresos / pagos y retiros de este turno
-    const shiftExpenses = expenses.filter((e) => {
-      if (e.shiftId === rawTargetShift.id) return true;
-      const expTime = new Date(e.timestamp).getTime();
-      return expTime >= shiftStartTime && expTime <= shiftEndTime;
-    });
+      return {
+        expectedCash,
+        expectedQrVendis,
+        expectedQrUnion,
+        expectedQr,
+        salesCount,
+        stayIds: Array.from(trackedStayIds),
+        shiftExpenses,
+        cashWithdrawals,
+        operationalExpensesCash,
+        totalExpensesCash,
+        totalExpensesQrVendis,
+        totalExpensesQrUnion,
+        totalExpensesQr,
+        expectedCashInDrawer,
+      };
+    },
+    [rooms, completedStays, extraConsumptions, expenses]
+  );
 
-    const cashWithdrawals = shiftExpenses
-      .filter((e) => e.paymentMethod === 'efectivo' && e.category === 'retiro_administracion')
-      .reduce((sum, e) => sum + e.amount, 0);
+  // Cálculo en vivo y exacto del total en caja del turno (Caja Chica, Ventas Efectivo, QR y Gastos)
+  const currentShift = useMemo<Shift | null>(() => {
+    if (!rawTargetShift) return null;
 
-    const totalExpensesCash = shiftExpenses
-      .filter((e) => e.paymentMethod === 'efectivo')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const totalExpensesQrVendis = shiftExpenses
-      .filter((e) => e.paymentMethod === 'qr_vendis')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const totalExpensesQrUnion = shiftExpenses
-      .filter((e) => e.paymentMethod === 'qr_union')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const totalExpensesQr = shiftExpenses
-      .filter((e) => e.paymentMethod === 'qr' || e.paymentMethod === 'qr_vendis' || e.paymentMethod === 'qr_union')
-      .reduce((sum, e) => sum + e.amount, 0);
+    const metrics = calculateShiftMetrics(rawTargetShift);
 
     return {
       ...rawTargetShift,
-      expectedCash,
-      expectedQrVendis,
-      expectedQrUnion,
-      expectedQr,
-      salesCount,
-      stayIds: Array.from(trackedStayIds),
-      expenses: shiftExpenses,
-      cashWithdrawals,
-      totalExpensesCash,
-      totalExpensesQrVendis,
-      totalExpensesQrUnion,
-      totalExpensesQr,
+      expectedCash: metrics.expectedCash,
+      expectedQrVendis: metrics.expectedQrVendis,
+      expectedQrUnion: metrics.expectedQrUnion,
+      expectedQr: metrics.expectedQr,
+      salesCount: metrics.salesCount,
+      stayIds: metrics.stayIds,
+      expenses: metrics.shiftExpenses,
+      cashWithdrawals: metrics.cashWithdrawals,
+      operationalExpensesCash: metrics.operationalExpensesCash,
+      totalExpensesCash: metrics.totalExpensesCash,
+      totalExpensesQrVendis: metrics.totalExpensesQrVendis,
+      totalExpensesQrUnion: metrics.totalExpensesQrUnion,
+      totalExpensesQr: metrics.totalExpensesQr,
     };
   }, [rawTargetShift, rooms, completedStays, expenses, extraConsumptions]);
 
@@ -1049,10 +1046,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const isPrepaid = entryData.isPrepaid ?? true;
     const prepaidAmount = isPrepaid ? (entryData.prepaidAmount !== undefined ? entryData.prepaidAmount : entryData.basePrice) : 0;
-    const prepaidCash = isPrepaid ? (entryData.prepaidCash !== undefined ? entryData.prepaidCash : (entryData.cashPaid || (entryData.paymentMethod === 'efectivo' ? prepaidAmount : 0))) : 0;
-    const prepaidQrVendis = isPrepaid ? (entryData.prepaidQrVendis !== undefined ? entryData.prepaidQrVendis : (entryData.qrVendisPaid || (entryData.paymentMethod === 'qr_vendis' ? prepaidAmount : 0))) : 0;
-    const prepaidQrUnion = isPrepaid ? (entryData.prepaidQrUnion !== undefined ? entryData.prepaidQrUnion : (entryData.qrUnionPaid || (entryData.paymentMethod === 'qr_union' ? prepaidAmount : 0))) : 0;
-    const prepaidQr = isPrepaid ? (entryData.prepaidQr !== undefined ? entryData.prepaidQr : (prepaidQrVendis + prepaidQrUnion || (entryData.qrPaid || (entryData.paymentMethod === 'qr' ? prepaidAmount : 0)))) : 0;
+    let prepaidCash = entryData.prepaidCash ?? 0;
+    let prepaidQrVendis = entryData.prepaidQrVendis ?? 0;
+    let prepaidQrUnion = entryData.prepaidQrUnion ?? 0;
+
+    // Solo si ninguno de los canales específicos vino definido, recurrir a paymentMethod
+    if (isPrepaid && prepaidCash === 0 && prepaidQrVendis === 0 && prepaidQrUnion === 0) {
+      if (entryData.paymentMethod === 'efectivo') prepaidCash = prepaidAmount;
+      else if (entryData.paymentMethod === 'qr_vendis') prepaidQrVendis = prepaidAmount;
+      else if (entryData.paymentMethod === 'qr_union') prepaidQrUnion = prepaidAmount;
+      else if (entryData.paymentMethod === 'qr') prepaidQrVendis = prepaidAmount;
+    }
+    const prepaidQr = entryData.prepaidQr !== undefined ? entryData.prepaidQr : (prepaidQrVendis + prepaidQrUnion);
 
     const newStay: Stay = {
       id: stayId,
@@ -1496,10 +1501,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const isPrepaid = stay.isPrepaid || false;
     const prepaidAmount = isPrepaid ? (stay.prepaidAmount || stay.baseRoomPrice) : 0;
-    const prepaidCash = isPrepaid ? (stay.prepaidCash || (stay.paymentMethod === 'efectivo' ? prepaidAmount : 0)) : 0;
-    const prepaidQrVendis = isPrepaid ? (stay.prepaidQrVendis || (stay.paymentMethod === 'qr_vendis' ? prepaidAmount : 0)) : 0;
-    const prepaidQrUnion = isPrepaid ? (stay.prepaidQrUnion || (stay.paymentMethod === 'qr_union' ? prepaidAmount : 0)) : 0;
-    const prepaidQr = isPrepaid ? (stay.prepaidQr || (prepaidQrVendis + prepaidQrUnion) || (stay.paymentMethod === 'qr' ? prepaidAmount : 0)) : 0;
+    let prepaidCash = stay.prepaidCash || 0;
+    let prepaidQrVendis = stay.prepaidQrVendis || 0;
+    let prepaidQrUnion = stay.prepaidQrUnion || 0;
+
+    // Solo si ninguno de los canales específicos vino provisto en la estadía, recurrir a paymentMethod
+    if (isPrepaid && prepaidCash === 0 && prepaidQrVendis === 0 && prepaidQrUnion === 0) {
+      if (stay.paymentMethod === 'efectivo') prepaidCash = prepaidAmount;
+      else if (stay.paymentMethod === 'qr_vendis') prepaidQrVendis = prepaidAmount;
+      else if (stay.paymentMethod === 'qr_union') prepaidQrUnion = prepaidAmount;
+      else if (stay.paymentMethod === 'qr') prepaidQrVendis = prepaidAmount;
+    }
+    const prepaidQr = stay.prepaidQr !== undefined ? stay.prepaidQr : (prepaidQrVendis + prepaidQrUnion);
 
     // Remaining balance to be paid at exit (deducting room prepay AND on-the-spot paid consumptions)
     const totalAlreadyPaid = prepaidAmount + paidConsumptionsTotal;
@@ -2428,6 +2441,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const recalculateShiftSales = useCallback(
+    (shift: Shift): Shift => {
+      const metrics = calculateShiftMetrics(shift);
+      const startingFloat = shift.initialCashFloat !== undefined ? shift.initialCashFloat : 100;
+      const handoverFloat = shift.handoverCashFloat !== undefined ? shift.handoverCashFloat : startingFloat;
+      const deliveredAtClose = shift.cashDeliveredAtClose || 0;
+      const countedCash =
+        shift.totalPhysicalCashInDrawer !== undefined
+          ? shift.totalPhysicalCashInDrawer
+          : handoverFloat + deliveredAtClose;
+
+      const expectedCashInDrawer = Math.max(0, startingFloat + metrics.expectedCash - metrics.operationalExpensesCash);
+      const diffCash = countedCash - expectedCashInDrawer;
+      const declaredSalesCash = Math.max(0, metrics.expectedCash + diffCash);
+
+      const declaredQrVendis = shift.declaredQrVendis !== undefined ? shift.declaredQrVendis : metrics.expectedQrVendis;
+      const declaredQrUnion = shift.declaredQrUnion !== undefined ? shift.declaredQrUnion : metrics.expectedQrUnion;
+      const declaredQrTotal = shift.declaredQr !== undefined ? shift.declaredQr : declaredQrVendis + declaredQrUnion;
+
+      const diffQrVendis = declaredQrVendis - metrics.expectedQrVendis;
+      const diffQrUnion = declaredQrUnion - metrics.expectedQrUnion;
+      const diffQr = declaredQrTotal - metrics.expectedQr;
+      const totalDiff = diffCash + diffQrVendis + diffQrUnion;
+
+      const discountAmount = totalDiff < -0.01 ? Math.abs(totalDiff) : 0;
+      const surplusAmount = totalDiff > 0.01 ? totalDiff : 0;
+
+      const updatedShift: Shift = {
+        ...shift,
+        expectedCash: metrics.expectedCash,
+        expectedQrVendis: metrics.expectedQrVendis,
+        expectedQrUnion: metrics.expectedQrUnion,
+        expectedQr: metrics.expectedQr,
+        salesCount: metrics.salesCount,
+        stayIds: metrics.stayIds,
+        expenses: metrics.shiftExpenses,
+        operationalExpensesCash: metrics.operationalExpensesCash,
+        cashWithdrawals: metrics.cashWithdrawals,
+        totalExpensesCash: metrics.totalExpensesCash,
+        totalExpensesQrVendis: metrics.totalExpensesQrVendis,
+        totalExpensesQrUnion: metrics.totalExpensesQrUnion,
+        totalExpensesQr: metrics.totalExpensesQr,
+        totalPhysicalCashInDrawer: countedCash,
+        declaredCash: declaredSalesCash,
+        declaredQrVendis,
+        declaredQrUnion,
+        declaredQr: declaredQrTotal,
+        differenceCash: diffCash,
+        differenceQrVendis: diffQrVendis,
+        differenceQrUnion: diffQrUnion,
+        differenceQr: diffQr,
+        totalDifference: totalDiff,
+        discountAmount,
+        surplusAmount,
+      };
+
+      setShiftsHistory((prev) => prev.map((s) => (s.id === updatedShift.id ? updatedShift : s)));
+      syncShiftToFirestore(updatedShift);
+      return updatedShift;
+    },
+    [calculateShiftMetrics]
+  );
+
+  const recalculateAllSeptemberShifts = useCallback(async (): Promise<number> => {
+    const septShifts = shiftsHistory.filter(
+      (s) => (s.startTime || '') >= '2026-09-01T00:00:00Z' && s.status === 'closed'
+    );
+    let count = 0;
+    for (const s of septShifts) {
+      recalculateShiftSales(s);
+      count++;
+    }
+    showToast({
+      title: 'Auditoría Completada',
+      message: `Se auditaron y reconciliaron exitosamente ${count} turnos de septiembre.`,
+      type: 'success',
+    });
+    return count;
+  }, [shiftsHistory, recalculateShiftSales, showToast]);
+
   // ADMIN ACTIONS
   const cancelStay = (stayId: string, reason: string, restoreInventory = true): boolean => {
     if (currentUser.role !== 'admin') {
@@ -2843,6 +2936,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         closeCurrentShift,
         updateShiftInHistory,
         deleteShiftFromHistory,
+        recalculateShiftSales,
+        recalculateAllSeptemberShifts,
         cancelStay,
         updateStay,
         cleanupOrphanShifts,
