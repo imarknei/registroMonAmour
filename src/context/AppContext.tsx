@@ -272,6 +272,12 @@ interface AppContextType {
   deleteShiftFromHistory: (shiftId: string) => void;
   recalculateShiftSales: (shift: Shift) => Shift;
   recalculateAllSeptemberShifts: () => Promise<number>;
+  markShiftEnvelopeCollected: (
+    shiftId: string,
+    collectedBy?: string,
+    notes?: string,
+    status?: 'pendiente' | 'recogido'
+  ) => boolean;
 
   // Admin functions
   cancelStay: (stayId: string, reason: string, restoreInventory?: boolean) => boolean;
@@ -2176,36 +2182,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const floatLeftForNext = handoverCashFloat !== undefined ? handoverCashFloat : startingCashFloat;
     const deliveredAtClose = cashDeliveredAtClose && cashDeliveredAtClose > 0 ? cashDeliveredAtClose : 0;
 
-    // Si se entregó/retiró efectivo al momento del cierre, registrar automáticamente el comprobante de retiro
-    if (deliveredAtClose > 0) {
-      const withdrawalExpense: Expense = {
-        id: `exp-ret-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        description: `Retiro / Entrega de efectivo a administración al cierre de turno (Entregó: ${responsiblePersonName.trim()})`,
-        category: 'retiro_administracion',
-        amount: deliveredAtClose,
-        paymentMethod: 'efectivo',
-        timestamp: new Date().toISOString(),
-        shiftId: shift.id,
-        registeredById: currentUser.id,
-        registeredByName: currentUser.name,
-        notes: notes ? `Cierre de turno: ${notes}` : 'Retiro registrado automáticamente al cierre de turno',
-      };
-      setExpenses((prev) => [withdrawalExpense, ...prev]);
-      syncExpenseToFirestore(withdrawalExpense);
-    }
-
     // Total de egresos operativos en efectivo registrados antes del cierre
-    const prevExpensesCash = shift.totalExpensesCash || 0;
-    const allExpensesCash = prevExpensesCash + deliveredAtClose;
-    const cashWithdrawalsTotal = (shift.cashWithdrawals || 0) + deliveredAtClose;
-
-    const totalExpensesQrVendis = shift.totalExpensesQrVendis || 0;
-    const totalExpensesQrUnion = shift.totalExpensesQrUnion || 0;
-    const totalExpensesQr = shift.totalExpensesQr || (totalExpensesQrVendis + totalExpensesQrUnion);
+    const operationalExpensesCash = shift.operationalExpensesCash !== undefined
+      ? shift.operationalExpensesCash
+      : (shift.totalExpensesCash || 0);
 
     // Efectivo que DEBERÍA haber en la gaveta antes de separar el sobre:
     // Fondo Inicial + Ventas Efectivo - Egresos Operativos en Efectivo
-    const expectedCashInDrawer = Math.max(0, startingCashFloat + shift.expectedCash - prevExpensesCash);
+    const expectedCashInDrawer = Math.max(0, startingCashFloat + shift.expectedCash - operationalExpensesCash);
 
     // Diferencia en Efectivo = Lo que contó en gaveta - Lo que debía haber
     const diffCash = totalPhysicalCashInDrawer - expectedCashInDrawer;
@@ -2235,12 +2219,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       handedOverTo: nextReceptionistName.trim(),
       initialCashFloat: startingCashFloat,
       handoverCashFloat: floatLeftForNext,
-      totalExpensesCash: allExpensesCash,
-      cashWithdrawals: cashWithdrawalsTotal,
+      operationalExpensesCash,
+      totalExpensesCash: operationalExpensesCash,
+      cashWithdrawals: shift.cashWithdrawals || 0,
       cashDeliveredAtClose: deliveredAtClose,
-      totalExpensesQrVendis,
-      totalExpensesQrUnion,
-      totalExpensesQr,
+      envelopeStatus: deliveredAtClose > 0 ? 'pendiente' : undefined,
+      totalExpensesQrVendis: shift.totalExpensesQrVendis || 0,
+      totalExpensesQrUnion: shift.totalExpensesQrUnion || 0,
+      totalExpensesQr: shift.totalExpensesQr || 0,
       totalPhysicalCashInDrawer,
       declaredCash: declaredSalesCash,
       declaredQrVendis,
@@ -2520,6 +2506,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     return count;
   }, [shiftsHistory, recalculateShiftSales, showToast]);
+
+  const markShiftEnvelopeCollected = useCallback(
+    (
+      shiftId: string,
+      collectedBy = 'Marco',
+      notes?: string,
+      status: 'pendiente' | 'recogido' = 'recogido'
+    ): boolean => {
+      const shift = shiftsHistory.find((s) => s.id === shiftId);
+      if (!shift) return false;
+
+      const isPending = status === 'pendiente';
+      const updatedShift: Shift = {
+        ...shift,
+        envelopeStatus: isPending ? 'pendiente' : 'recogido',
+        envelopeCollectedAt: isPending ? undefined : getNetworkIsoString(),
+        envelopeCollectedBy: isPending ? undefined : collectedBy,
+        envelopeNotes: isPending ? undefined : (notes || shift.envelopeNotes),
+      };
+
+      setShiftsHistory((prev) => prev.map((s) => (s.id === shiftId ? updatedShift : s)));
+      syncShiftToFirestore(updatedShift);
+
+      showToast({
+        title: isPending ? 'Sobre Marcado como Pendiente' : '¡Sobre Marcado como Recogido!',
+        message: isPending
+          ? `El sobre de ${formatBs(shift.cashDeliveredAtClose || 0)} vuelve a figurar pendiente en recepción.`
+          : `Se confirmó el recojo del sobre de ${formatBs(shift.cashDeliveredAtClose || 0)} por ${collectedBy}.`,
+        type: 'success',
+      });
+
+      return true;
+    },
+    [shiftsHistory, showToast]
+  );
 
   // ADMIN ACTIONS
   const cancelStay = (stayId: string, reason: string, restoreInventory = true): boolean => {
@@ -2938,6 +2959,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteShiftFromHistory,
         recalculateShiftSales,
         recalculateAllSeptemberShifts,
+        markShiftEnvelopeCollected,
         cancelStay,
         updateStay,
         cleanupOrphanShifts,

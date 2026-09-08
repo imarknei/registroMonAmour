@@ -678,11 +678,10 @@ export const ShiftHistory: React.FC = () => {
               const declaredQrUnion = shift.declaredQrUnion || 0;
               const declaredQrTotal = shift.declaredQr || (declaredQrVendis + declaredQrUnion);
 
-              // Efectivo físico contado (si totalPhysicalCashInDrawer ya incluye todo, o si se anotó por separado):
-              const effectiveCountedCash = Math.max(
-                declaredCashInDrawer,
-                handoverFloat + deliveredAtClose
-              );
+              // Efectivo físico contado por el recepcionista en gaveta
+              const effectiveCountedCash = shift.totalPhysicalCashInDrawer !== undefined
+                ? shift.totalPhysicalCashInDrawer
+                : (handoverFloat + deliveredAtClose);
 
               // Diferencias exactas
               const diffCash = shift.differenceCash !== undefined ? shift.differenceCash : (effectiveCountedCash - expectedCashInDrawer);
@@ -883,9 +882,20 @@ export const ShiftHistory: React.FC = () => {
                             <strong className="font-mono text-emerald-700">{formatBs(effectiveCountedCash)}</strong>
                           </div>
                           {deliveredAtClose > 0 && (
-                            <div className="flex items-center justify-between text-amber-800 font-bold">
-                              <span>(-) Retiro en Sobre (Dueño / Marco):</span>
-                              <strong className="font-mono text-amber-700">+{formatBs(deliveredAtClose)}</strong>
+                            <div className="flex items-center justify-between text-amber-900 font-bold bg-amber-50/60 p-1.5 rounded-lg border border-amber-200/60">
+                              <span className="flex items-center gap-1.5">
+                                <span>Sobre en Recepción:</span>
+                                {shift.envelopeStatus === 'recogido' ? (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    ✓ Recogido {shift.envelopeCollectedBy ? `por ${shift.envelopeCollectedBy}` : ''}
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-200 text-amber-900 border border-amber-300">
+                                    🟡 Pendiente de Recojo
+                                  </span>
+                                )}
+                              </span>
+                              <strong className="font-mono text-amber-900">+{formatBs(deliveredAtClose)}</strong>
                             </div>
                           )}
                           <div className="flex items-center justify-between text-slate-500">

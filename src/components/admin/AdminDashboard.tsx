@@ -6,8 +6,9 @@ import { WeeklyDiscounts } from './WeeklyDiscounts';
 import { SalesReports } from './SalesReports';
 import { FirebaseConfigManager } from './FirebaseConfigManager';
 import { RegisteredRoomsView } from './RegisteredRoomsView';
+import { EnvelopesManager } from './EnvelopesManager';
 
-export type AdminSubView = 'registered_rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
+export type AdminSubView = 'registered_rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase' | 'envelopes';
 
 interface AdminDashboardProps {
   currentView: AdminSubView;
@@ -23,6 +24,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   switch (currentView) {
     case 'registered_rooms':
       return <RegisteredRoomsView />;
+    case 'envelopes':
+      return <EnvelopesManager />;
     case 'inventory':
       return <InventoryManager onBackToRooms={onBackToRooms} onLockInventory={onLockInventory} />;
     case 'tariffs':

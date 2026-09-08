@@ -542,10 +542,10 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 {/* 1. Efectivo en Sobre */}
                 <div className="bg-amber-50/70 p-3.5 rounded-2xl border-2 border-amber-300 space-y-1">
                   <label className="font-extrabold text-amber-950 block text-xs">
-                    1. Efectivo en SOBRE para Administración / Dueño (Bs)
+                    1. Efectivo en SOBRE en Recepción (Bs)
                   </label>
                   <span className="text-[10px] text-amber-800 block">
-                    Dinero retirado en sobre para entregar a Marco.
+                    Dinero en sobre que se queda en recepción para que Marco lo recoja (figura en Sobres por Cobrar).
                   </span>
                   <div className="relative pt-1">
                     <input
@@ -572,10 +572,10 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                 {/* 2. Caja Chica dejada */}
                 <div className="bg-emerald-50/70 p-3.5 rounded-2xl border-2 border-emerald-300 space-y-1">
                   <label className="font-extrabold text-emerald-950 block text-xs">
-                    2. Caja Chica que se queda en GAVETA (Bs)
+                    2. Caja Chica para el Siguiente Turno (Bs)
                   </label>
                   <span className="text-[10px] text-emerald-800 block">
-                    Fondo de cambio entregado físicamente al relevo.
+                    Fondo de cambio que se queda físicamente en la gaveta y pasa automáticamente al relevo.
                   </span>
                   <div className="relative pt-1">
                     <input

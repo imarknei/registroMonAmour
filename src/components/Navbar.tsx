@@ -26,10 +26,11 @@ import {
   Coffee,
   Coins,
   ShoppingBag,
+  Mail,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
-export type AdminViewType = 'rooms' | 'registered_rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
+export type AdminViewType = 'rooms' | 'registered_rooms' | 'envelopes' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
 
 interface NavbarProps {
   currentView: AdminViewType;
@@ -66,7 +67,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     toggleSoundAlerts,
     nowTimestamp,
     isFirestoreConnected,
+    shiftsHistory,
   } = useApp();
+
+  const pendingEnvelopesCount = (shiftsHistory || []).filter(
+    (s) => s.status === 'closed' && (s.cashDeliveredAtClose || 0) > 0 && s.envelopeStatus !== 'recogido'
+  ).length;
 
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
@@ -398,6 +404,23 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <BedDouble className="w-3.5 h-3.5 text-rose-500" />
               Habitaciones & Precios (En Vivo)
+            </button>
+
+            <button
+              onClick={() => setCurrentView('envelopes')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                currentView === 'envelopes'
+                  ? 'bg-amber-600 text-white shadow-sm shadow-amber-500/20'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5 text-amber-700" />
+              <span>Sobres por Cobrar</span>
+              {pendingEnvelopesCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white animate-pulse">
+                  {pendingEnvelopesCount}
+                </span>
+              )}
             </button>
 
             <button

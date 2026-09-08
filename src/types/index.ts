@@ -195,6 +195,10 @@ export interface Shift {
   totalExpensesCash?: number; // Total egresos y retiros pagados en efectivo
   cashWithdrawals?: number; // Total de retiros entregados a administración durante el turno
   cashDeliveredAtClose?: number; // Efectivo retirado/entregado a administración al momento del cierre de turno
+  envelopeStatus?: 'pendiente' | 'recogido'; // Estado del sobre en recepción ('pendiente' de recojo o 'recogido')
+  envelopeCollectedAt?: string; // Fecha y hora en que administración/dueño recogió el sobre
+  envelopeCollectedBy?: string; // Nombre de quien recogió el sobre (ej. Marco)
+  envelopeNotes?: string; // Observaciones del recojo del sobre
   totalExpensesQrVendis?: number; // Total egresos pagados en QR Vendis
   totalExpensesQrUnion?: number; // Total egresos pagados en QR Banco Unión
   totalExpensesQr?: number;   // Total egresos pagados en QR total
