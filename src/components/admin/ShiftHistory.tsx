@@ -232,19 +232,37 @@ export const ShiftHistory: React.FC = () => {
     const shiftStart = new Date(shift.startTime).getTime();
     const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
 
-    return completedStays.filter((s) => {
+    // Unificar completedStays y rooms para tener acceso a todas las estadías
+    const allStaysMap = new Map<string, Stay>();
+    (completedStays || []).forEach((s) => {
+      if (s && s.id) allStaysMap.set(s.id, s);
+    });
+    (rooms || []).forEach((r) => {
+      if (r && r.currentStay && r.currentStay.id) {
+        allStaysMap.set(r.currentStay.id, r.currentStay);
+      }
+    });
+
+    return Array.from(allStaysMap.values()).filter((s) => {
       // 1. Vinculación directa por ID de turno
       if (s.checkoutShiftId === shift.id || s.entryShiftId === shift.id) return true;
       if (shift.stayIds && shift.stayIds.includes(s.id)) return true;
 
+      // Consumos cobrados en este turno
+      const hasConsInShift = (s.consumptions || []).some(
+        (c) => c.isPaid && (c.paidShiftId === shift.id || (!c.paidShiftId && c.paidReceptionistId === shift.receptionistId))
+      );
+      if (hasConsInShift) return true;
+
       // 2. Solo si no tiene IDs asignados (estadías legacy): cotejo estricto de tiempo
       if (!s.checkoutShiftId && !s.entryShiftId) {
-        const t = s.endTime ? new Date(s.endTime).getTime() : new Date(s.startTime).getTime();
+        const start = new Date(s.startTime).getTime();
+        const end = s.endTime ? new Date(s.endTime).getTime() : start;
         const matchesReceptionist =
           s.receptionistId === shift.receptionistId ||
           s.receptionistName?.toLowerCase().includes(shift.receptionistName?.toLowerCase()) ||
           (shift.responsiblePersonName && s.receptionistName?.toLowerCase().includes(shift.responsiblePersonName.toLowerCase()));
-        return matchesReceptionist && t >= shiftStart && t < shiftEnd;
+        return matchesReceptionist && ((start >= shiftStart && start <= shiftEnd) || (s.endTime && end >= shiftStart && end <= shiftEnd));
       }
 
       return false;
@@ -256,16 +274,19 @@ export const ShiftHistory: React.FC = () => {
     const shiftStartTime = new Date(targetShift.startTime).getTime();
     const shiftEndTime = targetShift.endTime ? new Date(targetShift.endTime).getTime() : Infinity;
     const stayStartTime = new Date(s.startTime).getTime();
-    const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
+    const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : null;
     const matchesReceptionist = s.receptionistId === targetShift.receptionistId;
 
     const isEntryInThisShift = s.entryShiftId
       ? s.entryShiftId === targetShift.id
       : (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
 
-    const isCheckoutInThisShift = (s.checkoutShiftId
+    // REGLA CRÍTICA: Una estadía SOLO puede computar cobro de salida si REALMENTE se completó
+    // y tiene endTime definido dentro del turno. Las habitaciones activas NUNCA tienen cobro de salida.
+    const isStayCompleted = s.status === 'completed' && Boolean(s.endTime);
+    const isCheckoutInThisShift = isStayCompleted && (s.checkoutShiftId
       ? s.checkoutShiftId === targetShift.id
-      : (!s.checkoutShiftId && (s.checkoutReceptionistId === targetShift.receptionistId || matchesReceptionist) && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime));
+      : (!s.checkoutShiftId && (s.checkoutReceptionistId === targetShift.receptionistId || matchesReceptionist) && stayEndTime !== null && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime));
 
     // 1. Prepago / Adelanto al ingresar
     let prepCash = 0;
@@ -1280,11 +1301,15 @@ export const ShiftHistory: React.FC = () => {
                                             </span>
                                           ) : contrib.isEntryInThisShift ? (
                                             <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
-                                              🟢 Ingresó en este Turno
+                                              🟢 Ingresó en este Turno {s.status === 'active' ? '(Hab. Sigue Ocupada)' : '(Salió en otro turno)'}
+                                            </span>
+                                          ) : contrib.isCheckoutInThisShift ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold border border-amber-200">
+                                              🚪 Salida en este Turno (Ingresó en turno anterior)
                                             </span>
                                           ) : (
-                                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold border border-amber-200">
-                                              🚪 Salida en este Turno
+                                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 font-bold border border-indigo-200">
+                                              🛒 Solo Consumos en este Turno
                                             </span>
                                           )}
 

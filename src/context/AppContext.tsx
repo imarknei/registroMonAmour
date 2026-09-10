@@ -777,23 +777,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const countedSalesStayIds = new Set<string>();
       const trackedStayIds = new Set<string>(targetShift.stayIds || []);
 
-      const processStay = (s: Stay, isOccupiedNow: boolean) => {
+      // 1. Unificar todas las estadías en un solo mapa por ID para garantizar que cada estadía se procese EXACTAMENTE UNA VEZ
+      const allStaysMap = new Map<string, Stay>();
+      (completedStays || []).forEach((s) => {
+        if (s && s.id) allStaysMap.set(s.id, s);
+      });
+      (rooms || []).forEach((r) => {
+        if (r && r.currentStay && r.currentStay.id) {
+          allStaysMap.set(r.currentStay.id, r.currentStay);
+        }
+      });
+
+      allStaysMap.forEach((s) => {
         if (s.status === 'cancelled') return;
         const stayStartTime = new Date(s.startTime).getTime();
-        const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
+        const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : null;
         const matchesReceptionist = s.receptionistId === targetShift.receptionistId;
 
         const isEntryInThisShift = s.entryShiftId
           ? s.entryShiftId === targetShift.id
           : (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
 
-        const isCheckoutInThisShift = !isOccupiedNow && (s.checkoutShiftId
+        // REGLA CRÍTICA: Una estadía SOLO puede computar cobro de checkout si REALMENTE se completó
+        // (status === 'completed' y endTime definido) y el checkout ocurrió dentro del rango del turno.
+        // Las habitaciones en curso/ocupadas NUNCA tienen cobro de salida/checkout en este turno.
+        const isStayCompleted = s.status === 'completed' && Boolean(s.endTime);
+        const isCheckoutInThisShift = isStayCompleted && (s.checkoutShiftId
           ? s.checkoutShiftId === targetShift.id
-          : (!s.checkoutShiftId && (s.checkoutReceptionistId === targetShift.receptionistId || matchesReceptionist) && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime));
+          : (!s.checkoutShiftId && (s.checkoutReceptionistId === targetShift.receptionistId || matchesReceptionist) && stayEndTime !== null && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime));
+
+        let stayHadActivityInThisShift = false;
 
         // 1. Cobro de adelanto / prepago en este turno (Aislamiento estricto de canal de pago)
         if (isEntryInThisShift && s.isPrepaid) {
           trackedStayIds.add(s.id);
+          stayHadActivityInThisShift = true;
           let prepCash = s.prepaidCash || 0;
           let prepVendis = s.prepaidQrVendis || 0;
           let prepUnion = s.prepaidQrUnion || 0;
@@ -810,11 +828,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           liveCashSales += prepCash;
           liveQrVendisSales += prepVendis;
           liveQrUnionSales += prepUnion;
-
-          if (!countedSalesStayIds.has(s.id)) {
-            countedSalesStayIds.add(s.id);
-            liveSalesCount++;
-          }
         }
 
         // 2. Consumos cobrados al momento en este turno
@@ -827,6 +840,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               (!c.paidShiftId && matchesReceptionist && cTime >= shiftStartTime && cTime <= shiftEndTime);
 
             if (isThisShiftCons) {
+              stayHadActivityInThisShift = true;
+              trackedStayIds.add(s.id);
               if (c.paymentMethod === 'efectivo') liveCashSales += c.subtotal;
               else if (c.paymentMethod === 'qr_vendis' || c.paymentMethod === 'qr') {
                 liveQrVendisSales += c.subtotal;
@@ -837,9 +852,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
-        // 3. Cobro de saldo de salida / checkout en este turno
+        // 3. Cobro de saldo de salida / checkout en este turno (SOLO SI REALMENTE HIZO CHECKOUT EN ESTE TURNO)
         if (isCheckoutInThisShift) {
           trackedStayIds.add(s.id);
+          stayHadActivityInThisShift = true;
           let finalCash = s.finalCashPaid;
           let finalVendis = s.finalQrVendisPaid;
           let finalUnion = s.finalQrUnionPaid;
@@ -875,22 +891,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (finalVendis > 0) liveQrVendisSales += finalVendis;
             if (finalUnion > 0) liveQrUnionSales += finalUnion;
           }
-
-          if (!countedSalesStayIds.has(s.id)) {
-            countedSalesStayIds.add(s.id);
-            liveSalesCount++;
-          }
         }
-      };
 
-      rooms.forEach((r) => {
-        if (r.status === 'ocupada' && r.currentStay) {
-          processStay(r.currentStay, true);
+        if (stayHadActivityInThisShift && !countedSalesStayIds.has(s.id)) {
+          countedSalesStayIds.add(s.id);
+          liveSalesCount++;
         }
-      });
-
-      completedStays.forEach((s) => {
-        processStay(s, false);
       });
 
       // 3. Consumos extras y ventas de mostrador registradas en este turno
@@ -937,7 +943,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           totalExpensesCash += e.amount;
           const isRetiro =
             e.category === 'retiro_administracion' ||
-            (e.description && e.description.toLowerCase().includes('retiro / entrega de efectivo a administración'));
+            (e.description && e.description.toLowerCase().includes('retiro / entrega de efectivo a administración')) ||
+            (e.description && e.description.toLowerCase().includes('retiro de ventas'));
           if (isRetiro) {
             cashWithdrawals += e.amount;
           } else {
