@@ -1054,7 +1054,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const room = rooms.find((r) => r.id === entryData.roomId);
     if (!room) return;
 
-    const stayId = `stay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const stayId = `stay-${getNetworkTimestamp()}-${Math.random().toString(36).substring(2, 7)}`;
     const duration = entryData.chosenDurationMinutes || entryData.durationMinutes || 120;
 
     const isPrepaid = entryData.isPrepaid ?? true;
@@ -1071,6 +1071,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       else if (entryData.paymentMethod === 'qr') prepaidQrVendis = prepaidAmount;
     }
     const prepaidQr = entryData.prepaidQr !== undefined ? entryData.prepaidQr : (prepaidQrVendis + prepaidQrUnion);
+
+    const activeShift = currentShift || (currentUser.role !== 'admin' ? ensureActiveShift(currentUser) : undefined);
+    const activeShiftId = activeShift ? activeShift.id : undefined;
 
     const newStay: Stay = {
       id: stayId,
@@ -1092,7 +1095,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       qrVendisPaid: prepaidQrVendis,
       qrUnionPaid: prepaidQrUnion,
       qrPaid: prepaidQr,
-      entryShiftId: currentShift ? currentShift.id : undefined,
+      entryShiftId: activeShiftId,
       vehiclePlate: entryData.vehiclePlate,
       receptionistId: currentUser.id,
       receptionistName: currentUser.name,
@@ -1232,10 +1235,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     discountStockForItems([{ productId, quantity }]);
 
     // 2. Agregar a la estadía
-    const consumptionId = `cons-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+    const consumptionId = `cons-${getNetworkTimestamp()}-${Math.random().toString(36).substring(2, 7)}`;
     const subtotal = product.price * quantity;
     const isPaid = paymentOptions?.isPaid ?? false;
     const paymentMethod = isPaid ? (paymentOptions?.paymentMethod || 'efectivo') : undefined;
+    const activeShift = currentShift || (currentUser.role !== 'admin' ? ensureActiveShift(currentUser) : undefined);
 
     const consumptionItem: ConsumptionItem = {
       id: consumptionId,
@@ -1244,11 +1248,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unitPrice: product.price,
       quantity,
       subtotal,
-      timestamp: new Date().toISOString(),
+      timestamp: getNetworkIsoString(),
       isPaid,
       paymentMethod,
-      paidAt: isPaid ? new Date().toISOString() : undefined,
-      paidShiftId: isPaid && currentShift ? currentShift.id : undefined,
+      paidAt: isPaid ? getNetworkIsoString() : undefined,
+      paidShiftId: isPaid && activeShift ? activeShift.id : undefined,
       paidReceptionistId: isPaid ? currentUser.id : undefined,
       paidReceptionistName: isPaid ? currentUser.name : undefined,
     };
@@ -1336,7 +1340,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const subtotal = unitPrice * quantity;
     const isPaid = customData.isPaid ?? false;
     const paymentMethod = isPaid ? (customData.paymentMethod || 'efectivo') : undefined;
-    const consumptionId = `cons-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const consumptionId = `cons-custom-${getNetworkTimestamp()}-${Math.random().toString(36).substring(2, 7)}`;
+    const activeShift = currentShift || (currentUser.role !== 'admin' ? ensureActiveShift(currentUser) : undefined);
 
     const consumptionItem: ConsumptionItem = {
       id: consumptionId,
@@ -1345,11 +1350,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unitPrice,
       quantity,
       subtotal,
-      timestamp: new Date().toISOString(),
+      timestamp: getNetworkIsoString(),
       isPaid,
       paymentMethod,
-      paidAt: isPaid ? new Date().toISOString() : undefined,
-      paidShiftId: isPaid && currentShift ? currentShift.id : undefined,
+      paidAt: isPaid ? getNetworkIsoString() : undefined,
+      paidShiftId: isPaid && activeShift ? activeShift.id : undefined,
       paidReceptionistId: isPaid ? currentUser.id : undefined,
       paidReceptionistName: isPaid ? currentUser.name : undefined,
       isCustom: true,
@@ -1584,7 +1589,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       finalQrVendisPaid: finalQrVendis,
       finalQrUnionPaid: finalQrUnion,
       finalQrPaid: finalQr,
-      checkoutShiftId: currentShift ? currentShift.id : undefined,
+      checkoutShiftId: (currentShift || (currentUser.role !== 'admin' ? ensureActiveShift(currentUser) : undefined))?.id,
       checkoutReceptionistId: currentUser.id,
       checkoutReceptionistName: currentUser.name,
       closedBy: currentUser.name,
