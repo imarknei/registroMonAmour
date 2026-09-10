@@ -2349,8 +2349,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       handoverCashFloat,
       totalPhysicalCashInDrawer,
       cashDeliveredAtClose,
-      cashWithdrawals: (existing.cashWithdrawals ? Math.max(0, existing.cashWithdrawals - (existing.cashDeliveredAtClose || 0)) : 0) + cashDeliveredAtClose,
-      totalExpensesCash: allExpensesCash,
+      envelopeStatus: cashDeliveredAtClose > 0 ? (updatedData.envelopeStatus || existing.envelopeStatus || 'pendiente') : undefined,
+      operationalExpensesCash,
+      totalExpensesCash: operationalExpensesCash,
       declaredCash,
       declaredQrVendis,
       declaredQrUnion,
@@ -2363,38 +2364,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       discountAmount,
       surplusAmount,
     };
-
-    // Si se especificó retiro a administración, asentar comprobante en expenses si no existe
-    if (cashDeliveredAtClose > 0) {
-      const existingWithdrawal = expenses.find(
-        (e) => (e.shiftId === shiftId || e.id.includes(shiftId)) && e.category === 'retiro_administracion'
-      );
-      if (existingWithdrawal) {
-        if (existingWithdrawal.amount !== cashDeliveredAtClose) {
-          const updatedExp: Expense = {
-            ...existingWithdrawal,
-            amount: cashDeliveredAtClose,
-          };
-          setExpenses((prev) => prev.map((e) => (e.id === existingWithdrawal.id ? updatedExp : e)));
-          syncExpenseToFirestore(updatedExp);
-        }
-      } else {
-        const newWithdrawal: Expense = {
-          id: `exp-ret-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          description: `Retiro de ventas a administración / dueño (${existing.receptionistName})`,
-          category: 'retiro_administracion',
-          amount: cashDeliveredAtClose,
-          paymentMethod: 'efectivo',
-          timestamp: existing.endTime || existing.startTime || new Date().toISOString(),
-          shiftId: shiftId,
-          registeredById: currentUser.id,
-          registeredByName: currentUser.name,
-          notes: `Retiro asentado por auditoría de turno`,
-        };
-        setExpenses((prev) => [newWithdrawal, ...prev]);
-        syncExpenseToFirestore(newWithdrawal);
-      }
-    }
 
     setShiftsHistory((prev) => prev.map((s) => (s.id === shiftId ? mergedShift : s)));
     syncShiftToFirestore(mergedShift);

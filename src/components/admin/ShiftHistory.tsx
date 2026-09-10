@@ -251,6 +251,139 @@ export const ShiftHistory: React.FC = () => {
     });
   };
 
+  // Helper para determinar con exactitud qué montos ingresaron a ESTE turno desde cada habitación
+  const getStayContribution = (s: Stay, targetShift: Shift) => {
+    const shiftStartTime = new Date(targetShift.startTime).getTime();
+    const shiftEndTime = targetShift.endTime ? new Date(targetShift.endTime).getTime() : Infinity;
+    const stayStartTime = new Date(s.startTime).getTime();
+    const stayEndTime = s.endTime ? new Date(s.endTime).getTime() : stayStartTime;
+    const matchesReceptionist = s.receptionistId === targetShift.receptionistId;
+
+    const isEntryInThisShift = s.entryShiftId
+      ? s.entryShiftId === targetShift.id
+      : (!s.entryShiftId && matchesReceptionist && stayStartTime >= shiftStartTime && stayStartTime <= shiftEndTime);
+
+    const isCheckoutInThisShift = (s.checkoutShiftId
+      ? s.checkoutShiftId === targetShift.id
+      : (!s.checkoutShiftId && (s.checkoutReceptionistId === targetShift.receptionistId || matchesReceptionist) && stayEndTime >= shiftStartTime && stayEndTime <= shiftEndTime));
+
+    // 1. Prepago / Adelanto al ingresar
+    let prepCash = 0;
+    let prepVendis = 0;
+    let prepUnion = 0;
+    if (s.isPrepaid) {
+      prepCash = s.prepaidCash || 0;
+      prepVendis = s.prepaidQrVendis || 0;
+      prepUnion = s.prepaidQrUnion || 0;
+      if (prepCash === 0 && prepVendis === 0 && prepUnion === 0) {
+        const pAmt = s.prepaidAmount || s.baseRoomPrice || 0;
+        if (s.paymentMethod === 'efectivo') prepCash = pAmt;
+        else if (s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr') prepVendis = pAmt;
+        else if (s.paymentMethod === 'qr_union') prepUnion = pAmt;
+      }
+    }
+    const prepTotal = prepCash + prepVendis + prepUnion;
+
+    // 2. Consumos pagados al momento
+    let consCash = 0;
+    let consVendis = 0;
+    let consUnion = 0;
+    (s.consumptions || []).forEach((c) => {
+      const cTime = c.paidAt ? new Date(c.paidAt).getTime() : stayStartTime;
+      const isThisShiftCons =
+        c.isPaid &&
+        (c.paidShiftId === targetShift.id ||
+          (!c.paidShiftId && c.paidReceptionistId === targetShift.receptionistId) ||
+          (!c.paidShiftId && matchesReceptionist && cTime >= shiftStartTime && cTime <= shiftEndTime));
+
+      if (isThisShiftCons) {
+        if (c.paymentMethod === 'efectivo') consCash += c.subtotal;
+        else if (c.paymentMethod === 'qr_vendis' || c.paymentMethod === 'qr') consVendis += c.subtotal;
+        else if (c.paymentMethod === 'qr_union') consUnion += c.subtotal;
+      }
+    });
+
+    // 3. Saldo al salir / checkout
+    let finalCash = 0;
+    let finalVendis = 0;
+    let finalUnion = 0;
+    if (isCheckoutInThisShift) {
+      let fc = s.finalCashPaid;
+      let fv = s.finalQrVendisPaid;
+      let fu = s.finalQrUnionPaid;
+      if (fc === undefined && fv === undefined && fu === undefined) {
+        if (s.isPrepaid) {
+          fc = Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0));
+          fv = Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0));
+          fu = Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0));
+        } else {
+          fc = s.cashPaid || 0;
+          fv = s.qrVendisPaid || 0;
+          fu = s.qrUnionPaid || 0;
+          if (fc === 0 && fv === 0 && fu === 0) {
+            const tot = s.totalAmount || s.baseRoomPrice || 0;
+            if (s.paymentMethod === 'efectivo') fc = tot;
+            else if (s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr') fv = tot;
+            else if (s.paymentMethod === 'qr_union') fu = tot;
+          }
+        }
+      }
+      finalCash = fc || 0;
+      finalVendis = fv || 0;
+      finalUnion = fu || 0;
+    }
+
+    // Totales recaudados en este turno
+    let shiftCash = 0;
+    let shiftQrVendis = 0;
+    let shiftQrUnion = 0;
+
+    if (isEntryInThisShift && s.isPrepaid) {
+      shiftCash += prepCash;
+      shiftQrVendis += prepVendis;
+      shiftQrUnion += prepUnion;
+    }
+
+    shiftCash += consCash;
+    shiftQrVendis += consVendis;
+    shiftQrUnion += consUnion;
+
+    if (isCheckoutInThisShift) {
+      if (!isEntryInThisShift || !s.isPrepaid) {
+        shiftCash += finalCash;
+        shiftQrVendis += finalVendis;
+        shiftQrUnion += finalUnion;
+      } else {
+        if (finalCash > 0) shiftCash += finalCash;
+        if (finalVendis > 0) shiftQrVendis += finalVendis;
+        if (finalUnion > 0) shiftQrUnion += finalUnion;
+      }
+    }
+
+    const shiftTotal = shiftCash + shiftQrVendis + shiftQrUnion;
+
+    return {
+      isEntryInThisShift,
+      isCheckoutInThisShift,
+      isPrepaid: s.isPrepaid,
+      prepCash,
+      prepVendis,
+      prepUnion,
+      prepTotal,
+      consCash,
+      consVendis,
+      consUnion,
+      finalCash,
+      finalVendis,
+      finalUnion,
+      finalTotal: finalCash + finalVendis + finalUnion,
+      shiftCash,
+      shiftQrVendis,
+      shiftQrUnion,
+      shiftTotal,
+    };
+  };
+
   // Helper para buscar modificaciones de inventario hechas en el turno
   const getInventoryLogsForShift = (shift: Shift): InventoryMovementLog[] => {
     const shiftStart = new Date(shift.startTime).getTime();
@@ -872,47 +1005,26 @@ export const ShiftHistory: React.FC = () => {
                             2. Declarado en Arqueo:
                           </span>
                           <span className="font-mono font-bold text-slate-500">
-                            Caja Chica: {formatBs(handoverFloat)}
+                            Conteo a Ciegas
                           </span>
                         </div>
 
                         <div className="space-y-1.5 text-slate-600">
                           <div className="flex items-center justify-between">
                             <span>Total Efectivo Contado en Gaveta:</span>
-                            <strong className="font-mono text-emerald-700">{formatBs(effectiveCountedCash)}</strong>
-                          </div>
-                          {deliveredAtClose > 0 && (
-                            <div className="flex items-center justify-between text-amber-900 font-bold bg-amber-50/60 p-1.5 rounded-lg border border-amber-200/60">
-                              <span className="flex items-center gap-1.5">
-                                <span>Sobre en Recepción:</span>
-                                {shift.envelopeStatus === 'recogido' ? (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    ✓ Recogido {shift.envelopeCollectedBy ? `por ${shift.envelopeCollectedBy}` : ''}
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-200 text-amber-900 border border-amber-300">
-                                    🟡 Pendiente de Recojo
-                                  </span>
-                                )}
-                              </span>
-                              <strong className="font-mono text-amber-900">+{formatBs(deliveredAtClose)}</strong>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span>(=) Caja Chica que quedó en Gaveta:</span>
-                            <strong className="font-mono text-slate-700">{formatBs(handoverFloat)}</strong>
+                            <strong className="font-mono text-emerald-700 font-black">{formatBs(effectiveCountedCash)}</strong>
                           </div>
                           <div className="flex items-center justify-between">
                             <span>QR Vendis Declarado:</span>
-                            <strong className="font-mono text-sky-700">{formatBs(declaredQrVendis)}</strong>
+                            <strong className="font-mono text-sky-700 font-bold">{formatBs(declaredQrVendis)}</strong>
                           </div>
                           <div className="flex items-center justify-between">
                             <span>QR Banco Unión Declarado:</span>
-                            <strong className="font-mono text-indigo-700">{formatBs(declaredQrUnion)}</strong>
+                            <strong className="font-mono text-indigo-700 font-bold">{formatBs(declaredQrUnion)}</strong>
                           </div>
                           <div className="flex items-center justify-between text-slate-500 pt-1 border-t border-slate-200">
-                            <span>Total Efectivo Distribuido (Sobre + Caja):</span>
-                            <strong className="font-mono text-slate-800">{formatBs(handoverFloat + deliveredAtClose)}</strong>
+                            <span>Total QR Declarado (Vendis + Unión):</span>
+                            <strong className="font-mono text-slate-800">{formatBs(declaredQrTotal)}</strong>
                           </div>
                         </div>
 
@@ -931,10 +1043,96 @@ export const ShiftHistory: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[10px] opacity-80">
-                            <span>Dif. Efectivo: {diffCash >= 0 ? `+${formatBs(diffCash)}` : `-${formatBs(Math.abs(diffCash))}`}</span>
-                            <span>Dif. QR: {totalDiff - diffCash >= 0 ? `+${formatBs(totalDiff - diffCash)}` : `-${formatBs(Math.abs(totalDiff - diffCash))}`}</span>
+                            <span>Dif. Efectivo: {diffCash >= 0 ? `+${formatBs(diffCash)}` : `-${formatBs(Math.abs(diffCash))}`} ({diffCash === 0 ? 'Exacto' : diffCash > 0 ? 'Sobrante' : 'Faltante'})</span>
+                            <span>Dif. QR: {totalDiff - diffCash >= 0 ? `+${formatBs(totalDiff - diffCash)}` : `-${formatBs(Math.abs(totalDiff - diffCash))}`} ({Math.abs(totalDiff - diffCash) <= 0.01 ? 'Exacto' : totalDiff - diffCash > 0 ? 'Sobrante' : 'Faltante'})</span>
                           </div>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* 3. DISTRIBUCIÓN DEL EFECTIVO (DESPUÉS DEL ARQUEO) */}
+                    <div className="bg-amber-50/60 rounded-2xl p-4 border-2 border-amber-200/80 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-amber-200/60 pb-2">
+                        <div>
+                          <span className="font-black text-amber-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <DollarSign className="w-4 h-4 text-amber-700" />
+                            3. Distribución del Efectivo Físico (Después del Arqueo)
+                          </span>
+                          <p className="text-[10px] text-amber-800">
+                            Destino físico del dinero contado en gaveta ({formatBs(effectiveCountedCash)}). Esta distribución física no afecta ni altera el cuadre de ventas del turno.
+                          </p>
+                        </div>
+                        <span className="font-mono text-xs font-black text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-300 shrink-0">
+                          Total Distribuido: {formatBs(deliveredAtClose + handoverFloat)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        {/* Sobre de Ventas para Administración */}
+                        <div className="bg-white p-3 rounded-xl border border-amber-200 space-y-1.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                              Retiro en Sobre (Dueño / Admin):
+                            </span>
+                            <strong className="font-mono text-sm font-black text-amber-900">
+                              {formatBs(deliveredAtClose)}
+                            </strong>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-slate-500">Control de recojo:</span>
+                            {deliveredAtClose > 0 ? (
+                              shift.envelopeStatus === 'recogido' ? (
+                                <span className="px-2 py-0.5 rounded-full font-black bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Recogido {shift.envelopeCollectedBy ? `por ${shift.envelopeCollectedBy}` : ''}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full font-black bg-amber-200 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
+                                  🟡 En Recepción (Por cobrar)
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-slate-400 italic">No se dejó sobre en este turno</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Caja Chica para el Siguiente Turno */}
+                        <div className="bg-white p-3 rounded-xl border border-amber-200 space-y-1.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <Coins className="w-3.5 h-3.5 text-emerald-600" />
+                              Caja Chica Dejada en Gaveta:
+                            </span>
+                            <strong className="font-mono text-sm font-black text-slate-900">
+                              {formatBs(handoverFloat)}
+                            </strong>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500">
+                            <span>Entregada a:</span>
+                            <strong className="text-slate-700 font-bold">
+                              {shift.handedOverTo || 'Siguiente Turno'}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cotejo de distribución */}
+                      <div className="flex items-center justify-between text-[10px] pt-1 border-t border-amber-200/50">
+                        <span className="text-amber-900 font-medium">
+                          {Math.abs((deliveredAtClose + handoverFloat) - effectiveCountedCash) <= 0.01 ? (
+                            <span className="text-emerald-800 font-bold flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              El 100% del dinero contado ({formatBs(effectiveCountedCash)}) quedó distribuido entre sobre y caja chica.
+                            </span>
+                          ) : (
+                            <span className="text-rose-700 font-bold flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                              Atención: La suma distribuida ({formatBs(deliveredAtClose + handoverFloat)}) difiere del conteo ({formatBs(effectiveCountedCash)}).
+                            </span>
+                          )}
+                        </span>
                       </div>
                     </div>
 
@@ -996,80 +1194,221 @@ export const ShiftHistory: React.FC = () => {
                     <div className="bg-slate-50 p-5 border-t border-slate-200 space-y-6 animate-fade-in text-xs">
                       {/* 1. HABITACIONES COBRADAS EN EL TURNO */}
                       <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                            <ShoppingBag className="w-3.5 h-3.5 text-brand-600" />
-                            1. Habitaciones Cobradas en este Turno ({shiftStays.length}):
-                          </h4>
-                          <span className="text-[11px] font-mono font-bold text-slate-500">
-                            Total Habitaciones: {formatBs(shiftStays.reduce((sum, s) => sum + (s.totalAmount || s.baseRoomPrice), 0))}
-                          </span>
-                        </div>
+                        {(() => {
+                          const roomTotals = shiftStays.reduce(
+                            (acc, s) => {
+                              const contrib = getStayContribution(s, shift);
+                              return {
+                                cash: acc.cash + contrib.shiftCash,
+                                qrVendis: acc.qrVendis + contrib.shiftQrVendis,
+                                qrUnion: acc.qrUnion + contrib.shiftQrUnion,
+                                total: acc.total + contrib.shiftTotal,
+                              };
+                            },
+                            { cash: 0, qrVendis: 0, qrUnion: 0, total: 0 }
+                          );
 
-                        {shiftStays.length === 0 ? (
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-400 italic text-center">
-                            No hay habitaciones registradas o cobradas directamente durante este turno.
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {shiftStays.map((s) => {
-                              const stayCons = s.consumptions || [];
-                              return (
-                                <div key={s.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-7 h-7 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center font-black text-xs">
-                                        {s.roomName.replace(/\D/g, '') || s.roomName}
-                                      </div>
-                                      <strong className="text-slate-900 font-extrabold text-xs">{s.roomName}</strong>
-                                    </div>
-                                    <span className="font-mono font-black text-brand-700 text-sm">
-                                      {formatBs(s.totalAmount || s.baseRoomPrice)}
+                          return (
+                            <>
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                                <h4 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                                  <ShoppingBag className="w-3.5 h-3.5 text-brand-600" />
+                                  1. Habitaciones Cobradas en este Turno ({shiftStays.length}):
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+                                  <span className="font-bold text-slate-700">
+                                    Total en Turno: <strong>{formatBs(roomTotals.total)}</strong>
+                                  </span>
+                                  <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                    💵 Efec: +{formatBs(roomTotals.cash)}
+                                  </span>
+                                  <span className="text-sky-700 font-bold bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                                    📱 Vendis: +{formatBs(roomTotals.qrVendis)}
+                                  </span>
+                                  {roomTotals.qrUnion > 0 && (
+                                    <span className="text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                                      🏦 Unión: +{formatBs(roomTotals.qrUnion)}
                                     </span>
-                                  </div>
-
-                                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-                                    <span className="font-bold text-slate-700">{s.chosenPlan.toUpperCase()}</span>
-                                    <span>{getPaymentMethodLabel(s.paymentMethod)}</span>
-                                  </div>
-
-                                  <div className="text-[10px] text-slate-400 space-y-0.5">
-                                    <div className="flex justify-between">
-                                      <span>Tarifa Base:</span>
-                                      <span className="font-mono font-bold text-slate-600">{formatBs(s.baseRoomPrice)}</span>
-                                    </div>
-                                    {s.overtimeCharge ? (
-                                      <div className="flex justify-between text-amber-700 font-semibold">
-                                        <span>Horas Extras ({s.overtimeMinutes} min):</span>
-                                        <span className="font-mono">+{formatBs(s.overtimeCharge)}</span>
-                                      </div>
-                                    ) : null}
-                                    <div className="flex justify-between">
-                                      <span>Horario:</span>
-                                      <span>{formatTimeOnly(s.startTime)} {s.endTime ? `➔ ${formatTimeOnly(s.endTime)}` : '(En curso)'}</span>
-                                    </div>
-                                  </div>
-
-                                  {/* Frigobar consumido en la habitación */}
-                                  {stayCons.length > 0 && (
-                                    <div className="pt-2 border-t border-slate-100 space-y-1">
-                                      <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
-                                        Frigobar Consumido ({stayCons.length}):
-                                      </span>
-                                      <div className="flex flex-wrap gap-1">
-                                        {stayCons.map((c, i) => (
-                                          <span key={i} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
-                                            {c.productName} ×{c.quantity} ({formatBs(c.subtotal)})
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
                                   )}
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                              </div>
+
+                              {shiftStays.length === 0 ? (
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-400 italic text-center">
+                                  No hay habitaciones registradas o cobradas directamente durante este turno.
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {shiftStays.map((s) => {
+                                    const contrib = getStayContribution(s, shift);
+                                    const stayCons = s.consumptions || [];
+                                    const matchesReceptionist = s.receptionistId === shift.receptionistId;
+
+                                    return (
+                                      <div key={s.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
+                                        {/* Cabecera Tarjeta: Habitación y Cobrado en Turno */}
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center font-black text-xs shrink-0">
+                                              {s.roomName.replace(/\D/g, '') || s.roomName}
+                                            </div>
+                                            <div>
+                                              <strong className="text-slate-900 font-extrabold text-xs block leading-tight">
+                                                {s.roomName}
+                                              </strong>
+                                              <span className="text-[10px] text-slate-400 font-medium">
+                                                {s.chosenPlan.toUpperCase()}
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          <div className="text-right">
+                                            <span className={`font-mono font-black text-sm block ${contrib.shiftTotal > 0 ? 'text-brand-700' : 'text-slate-400'}`}>
+                                              {contrib.shiftTotal > 0 ? `+${formatBs(contrib.shiftTotal)}` : '0.00 Bs'}
+                                            </span>
+                                            <span className="text-[9px] text-slate-400 block font-semibold">
+                                              Cobrado en este turno
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {/* Badges de Estado del Turno y Canales de Cobro */}
+                                        <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                                          {contrib.isEntryInThisShift && contrib.isCheckoutInThisShift ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                                              🔄 Entrada y Salida
+                                            </span>
+                                          ) : contrib.isEntryInThisShift ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                                              🟢 Ingresó en este Turno
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold border border-amber-200">
+                                              🚪 Salida en este Turno
+                                            </span>
+                                          )}
+
+                                          {contrib.shiftCash > 0 && (
+                                            <span className="px-1.5 py-0.2 rounded font-mono font-bold bg-emerald-100 text-emerald-800">
+                                              💵 {formatBs(contrib.shiftCash)}
+                                            </span>
+                                          )}
+                                          {contrib.shiftQrVendis > 0 && (
+                                            <span className="px-1.5 py-0.2 rounded font-mono font-bold bg-sky-100 text-sky-800">
+                                              📱 Vendis {formatBs(contrib.shiftQrVendis)}
+                                            </span>
+                                          )}
+                                          {contrib.shiftQrUnion > 0 && (
+                                            <span className="px-1.5 py-0.2 rounded font-mono font-bold bg-indigo-100 text-indigo-800">
+                                              🏦 Unión {formatBs(contrib.shiftQrUnion)}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Desglose Detallado de Cobros */}
+                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1 text-[10px] text-slate-600">
+                                          {/* Tarifa Base y Prepago */}
+                                          <div className="flex justify-between items-center">
+                                            <span className="text-slate-500">Tarifa Habitación:</span>
+                                            <span className="font-mono font-bold text-slate-700">{formatBs(s.baseRoomPrice)}</span>
+                                          </div>
+
+                                          {/* Info de Prepago */}
+                                          {contrib.isPrepaid && (
+                                            contrib.isEntryInThisShift ? (
+                                              <div className="flex justify-between items-center text-emerald-700 font-bold">
+                                                <span>↳ Prepago Entrada:</span>
+                                                <span className="font-mono">
+                                                  +{formatBs(contrib.prepTotal)} ({getPaymentMethodLabel(s.paymentMethod)})
+                                                </span>
+                                              </div>
+                                            ) : (
+                                              <div className="p-1.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 text-[10px] space-y-0.5 my-1">
+                                                <span className="font-bold block">
+                                                  ℹ️ Prepagado en Turno Anterior: {formatBs(contrib.prepTotal)} ({getPaymentMethodLabel(s.paymentMethod)})
+                                                </span>
+                                                <span className="text-[9px] text-amber-700 block">
+                                                  El dinero ingresó en la caja del turno anterior. En este turno solo se realizó la salida.
+                                                </span>
+                                              </div>
+                                            )
+                                          )}
+
+                                          {/* Horas Extras */}
+                                          {s.overtimeCharge ? (
+                                            <div className="flex justify-between items-center text-amber-700 font-bold">
+                                              <span>Horas Extras ({s.overtimeMinutes} min):</span>
+                                              <span className="font-mono">+{formatBs(s.overtimeCharge)}</span>
+                                            </div>
+                                          ) : null}
+
+                                          {/* Saldo al Salir / Checkout */}
+                                          {contrib.isCheckoutInThisShift && (contrib.finalCash > 0 || contrib.finalVendis > 0 || contrib.finalUnion > 0) && (
+                                            <div className="flex justify-between items-center text-emerald-700 font-bold pt-0.5 border-t border-slate-200">
+                                              <span>↳ Cobrado al Salir:</span>
+                                              <span className="font-mono">
+                                                +{formatBs(contrib.finalCash + contrib.finalVendis + contrib.finalUnion)}
+                                                {contrib.finalCash > 0 && contrib.finalVendis === 0 && contrib.finalUnion === 0 ? ' (💵 Efectivo)' : ''}
+                                                {contrib.finalVendis > 0 && contrib.finalCash === 0 && contrib.finalUnion === 0 ? ' (📱 QR Vendis)' : ''}
+                                                {contrib.finalUnion > 0 && contrib.finalCash === 0 && contrib.finalVendis === 0 ? ' (🏦 QR Unión)' : ''}
+                                              </span>
+                                            </div>
+                                          )}
+
+                                          {/* Horario */}
+                                          <div className="flex justify-between text-slate-400 pt-1 border-t border-slate-200/60">
+                                            <span>Horario:</span>
+                                            <span>{formatTimeOnly(s.startTime)} {s.endTime ? `➔ ${formatTimeOnly(s.endTime)}` : '(En curso)'}</span>
+                                          </div>
+                                        </div>
+
+                                        {/* Frigobar / Consumos con Método de Pago Específico */}
+                                        {stayCons.length > 0 && (
+                                          <div className="pt-2 border-t border-slate-100 space-y-1">
+                                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">
+                                              Frigobar / Consumos ({stayCons.length}):
+                                            </span>
+                                            <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5">
+                                              {stayCons.map((c, i) => (
+                                                <div key={i} className="flex items-center justify-between text-[10px] p-1.5 rounded-lg bg-slate-50 border border-slate-100">
+                                                  <div>
+                                                    <strong className="text-slate-800 block">
+                                                      {c.productName} ×{c.quantity}
+                                                    </strong>
+                                                    <span className="text-[9px] text-slate-400">
+                                                      {c.isPaid ? (
+                                                        c.paidShiftId === shift.id || (!c.paidShiftId && matchesReceptionist) ? (
+                                                          <span className="text-emerald-700 font-bold">
+                                                            ✓ Cobrado en turno ({getPaymentMethodLabel(c.paymentMethod || 'efectivo')})
+                                                          </span>
+                                                        ) : (
+                                                          <span className="text-slate-500 font-medium">
+                                                            ✓ Pagado en otro turno
+                                                          </span>
+                                                        )
+                                                      ) : (
+                                                        <span className="text-amber-700 font-bold">
+                                                          ⏳ En Cuenta (Cobrado al salir)
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                  <span className="font-mono font-bold text-slate-700">
+                                                    +{formatBs(c.subtotal)}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
 
                       {/* 2. CONSUMOS REALIZADOS (MOSTRADOR, FRIGOBAR Y PERSONAL) */}
@@ -1225,31 +1564,17 @@ export const ShiftHistory: React.FC = () => {
                         )}
                       </div>
 
-                      {/* 4. PAGOS, GASTOS Y RETIROS REALIZADOS */}
+                      {/* 4. PAGOS Y GASTOS OPERATIVOS REALIZADOS */}
                       <div className="space-y-2.5 pt-3 border-t border-slate-200">
                         <div className="flex items-center justify-between">
                           <h4 className="font-extrabold text-rose-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                             <Receipt className="w-3.5 h-3.5 text-rose-600" />
-                            4. Pagos, Salidas de Caja y Retiros ({shiftExpensesList.length + (deliveredAtClose > 0 ? 1 : 0)}):
+                            4. Pagos y Gastos Operativos ({shiftExpensesList.length}):
                           </h4>
                           <span className="text-[11px] font-mono font-bold text-rose-700">
-                            Total Salidas: -{formatBs(operationalExpensesCash + deliveredAtClose)}
+                            Total Gastos Operativos: -{formatBs(operationalExpensesCash)}
                           </span>
                         </div>
-
-                        {/* Banner de Retiro en Sobre si existió */}
-                        {deliveredAtClose > 0 && (
-                          <div className="bg-amber-50 p-3 rounded-xl border border-amber-300 text-amber-950 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Coins className="w-4 h-4 text-amber-700 shrink-0" />
-                              <div>
-                                <strong className="text-xs font-black block">Retiro de Ventas en Sobre a Administración / Marco</strong>
-                                <span className="text-[10px] text-amber-800">Efectivo entregado físicamente al momento del cierre de caja</span>
-                              </div>
-                            </div>
-                            <span className="font-mono font-black text-sm text-amber-800">+{formatBs(deliveredAtClose)}</span>
-                          </div>
-                        )}
 
                         {shiftExpensesList.length === 0 ? (
                           <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-400 italic text-center">
