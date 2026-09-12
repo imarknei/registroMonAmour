@@ -84,6 +84,7 @@ import {
   deleteIncomeFromFirebase,
   getFirebaseDb,
   getStoredFirebaseConfig,
+  fetchInitialDataRest,
 } from '../services/firebase';
 
 interface AppContextType {
@@ -108,6 +109,7 @@ interface AppContextType {
   isFirestoreConnected: boolean;
 
   // Actions
+  reloadFromFirebase: () => Promise<any>;
   setCurrentUserById: (userId: string) => void;
   toggleSoundAlerts: () => void;
   showToast: (toast: Omit<ToastMessage, 'id'>) => string;
@@ -504,6 +506,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
   const shiftsLoadedFromFirestoreRef = useRef<boolean>(false);
 
+  // Carga ultra rápida instantánea vía REST API (inmune a retrasos de WebSocket y cachés locales vacíos)
+  const reloadFromFirebase = useCallback(async () => {
+    try {
+      const data = await fetchInitialDataRest();
+      if (data) {
+        if (data.shifts && data.shifts.length > 0) {
+          shiftsLoadedFromFirestoreRef.current = true;
+          setShiftsHistory(data.shifts);
+          localStorage.setItem(STORAGE_KEYS.SHIFTS_HISTORY, JSON.stringify(data.shifts));
+
+          const openShifts = data.shifts.filter((s) => s.status === 'open');
+          if (openShifts.length > 0) {
+            const activeMap: Record<string, Shift> = {};
+            openShifts.forEach((s) => {
+              activeMap[s.receptionistId] = s;
+            });
+            setActiveShifts(activeMap);
+          }
+        }
+        if (data.stays && data.stays.length > 0) {
+          setCompletedStays(data.stays);
+          localStorage.setItem(STORAGE_KEYS.COMPLETED_STAYS, JSON.stringify(data.stays));
+        }
+        if (data.rooms && data.rooms.length > 0) {
+          setRooms(data.rooms);
+          localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(data.rooms));
+        }
+        if (data.incomes) {
+          setIncomes(data.incomes);
+          localStorage.setItem(STORAGE_KEYS.INCOMES, JSON.stringify(data.incomes));
+        }
+        if (data.expenses && data.expenses.length > 0) {
+          setExpenses(data.expenses);
+          localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(data.expenses));
+        }
+        if (data.products && data.products.length > 0) {
+          setProducts(data.products);
+          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products));
+        }
+        setIsFirestoreConnected(true);
+        return data;
+      }
+    } catch (err) {
+      console.warn('Aviso recargando desde Firebase:', err);
+    }
+    return null;
+  }, []);
+
+  // Cargar inmediatamente vía REST al iniciar la app
+  useEffect(() => {
+    reloadFromFirebase();
+  }, [reloadFromFirebase]);
+
   // 2. Persist to LocalStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(rooms));
@@ -622,50 +677,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Rooms
-      const unsubRooms = await subscribeToRooms((firestoreRooms) => {
+      subscribeToRooms((firestoreRooms) => {
         if (firestoreRooms && firestoreRooms.length > 0) {
           setRooms(firestoreRooms);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubRooms) unsubs.push(unsubRooms);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso rooms sync:', err));
 
       // Products
-      const unsubProducts = await subscribeToProducts((firestoreProducts) => {
+      subscribeToProducts((firestoreProducts) => {
         if (firestoreProducts && firestoreProducts.length > 0) {
           setProducts(firestoreProducts);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubProducts) unsubs.push(unsubProducts);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso products sync:', err));
 
       // Tariffs
-      const unsubTariffs = await subscribeToTariffs((firestoreTariffs) => {
+      subscribeToTariffs((firestoreTariffs) => {
         if (firestoreTariffs) {
           setTariffs(firestoreTariffs);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubTariffs) unsubs.push(unsubTariffs);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso tariffs sync:', err));
 
       // Expenses
-      const unsubExp = await subscribeToExpenses((firestoreExpenses) => {
+      subscribeToExpenses((firestoreExpenses) => {
         if (firestoreExpenses) {
           setExpenses(firestoreExpenses);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubExp) unsubs.push(unsubExp);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso expenses sync:', err));
 
       // Incomes
-      const unsubIncomes = await subscribeToIncomes((firestoreIncomes) => {
+      subscribeToIncomes((firestoreIncomes) => {
         if (firestoreIncomes) {
           setIncomes(firestoreIncomes);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubIncomes) unsubs.push(unsubIncomes);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso incomes sync:', err));
 
       // Shifts
-      const unsubShifts = await subscribeToAllShifts((firestoreShifts) => {
-        if (firestoreShifts) {
+      subscribeToAllShifts((firestoreShifts) => {
+        if (firestoreShifts && firestoreShifts.length > 0) {
           shiftsLoadedFromFirestoreRef.current = true;
           setShiftsHistory(firestoreShifts);
+          setIsFirestoreConnected(true);
 
           const openShifts = firestoreShifts.filter((s) => s.status === 'open');
           if (openShifts.length > 0) {
@@ -678,48 +734,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setActiveShifts({});
           }
         }
-      });
-      if (unsubShifts) unsubs.push(unsubShifts);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso shifts sync:', err));
 
       // Stays
-      const unsubStays = await subscribeToAllStays((firestoreStays) => {
-        if (firestoreStays) {
+      subscribeToAllStays((firestoreStays) => {
+        if (firestoreStays && firestoreStays.length > 0) {
           setCompletedStays(firestoreStays);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubStays) unsubs.push(unsubStays);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso stays sync:', err));
 
       // Staff Consumptions
-      const unsubStaffCons = await subscribeToStaffConsumptions((firestoreStaffCons) => {
+      subscribeToStaffConsumptions((firestoreStaffCons) => {
         if (firestoreStaffCons) {
           setStaffConsumptions(firestoreStaffCons);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubStaffCons) unsubs.push(unsubStaffCons);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso staffCons sync:', err));
 
       // Staff Settlements
-      const unsubStaffSettles = await subscribeToStaffSettlements((firestoreStaffSettles) => {
+      subscribeToStaffSettlements((firestoreStaffSettles) => {
         if (firestoreStaffSettles) {
           setStaffSettlements(firestoreStaffSettles);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubStaffSettles) unsubs.push(unsubStaffSettles);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso staffSettles sync:', err));
 
       // Extra Consumptions
-      const unsubExtraCons = await subscribeToExtraConsumptions((firestoreExtraCons) => {
+      subscribeToExtraConsumptions((firestoreExtraCons) => {
         if (firestoreExtraCons) {
           setExtraConsumptions(firestoreExtraCons);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubExtraCons) unsubs.push(unsubExtraCons);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso extraCons sync:', err));
 
       // Inventory Movement Logs
-      const unsubInventoryLogs = await subscribeToInventoryLogs((firestoreLogs) => {
+      subscribeToInventoryLogs((firestoreLogs) => {
         if (firestoreLogs) {
           setInventoryLogs(firestoreLogs);
+          setIsFirestoreConnected(true);
         }
-      });
-      if (unsubInventoryLogs) unsubs.push(unsubInventoryLogs);
+      }).then((unsub) => { if (unsub) unsubs.push(unsub); }).catch((err) => console.warn('Aviso inventoryLogs sync:', err));
     };
 
     setupFirebaseSync();
@@ -2876,6 +2931,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toasts,
         nowTimestamp,
         isFirestoreConnected,
+        reloadFromFirebase,
         setCurrentUserById,
         toggleSoundAlerts,
         showToast,
