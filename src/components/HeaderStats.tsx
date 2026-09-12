@@ -159,7 +159,7 @@ export const HeaderStats: React.FC = () => {
               <span>Turno Activo</span>
             </div>
             <span className="text-[10px] text-rose-200 block">
-              Arqueo Ciego al Cerrar
+              Conteo al Cerrar
             </span>
           </div>
         )}

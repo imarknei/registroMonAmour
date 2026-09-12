@@ -204,7 +204,7 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
               <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
                 <strong className="block font-black text-amber-950 text-xs sm:text-sm">
-                  Paso 1: Conteo Ciego de Caja
+                  Paso 1: Conteo de Caja
                 </strong>
                 <span className="text-[11px] text-amber-800">
                   Cuenta físicamente todo el efectivo y vouchers QR que tienes en caja. Al registrar los montos, pasarás a la siguiente ventana donde verás si la caja está cuadrada para sacar la captura de comprobante.

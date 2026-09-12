@@ -350,7 +350,7 @@ export const ShiftHistory: React.FC = () => {
                 Auditoría de Cierres de Turno y Cuadre de Caja
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                Cotejo de valores declarados a ciegas (Efectivo, QR Vendis y QR Banco Unión), control de faltantes y demasías.
+                Cotejo de valores declarados en conteo (Efectivo, QR Vendis y QR Banco Unión), control de faltantes y demasías.
               </p>
             </div>
           </div>
@@ -1013,7 +1013,7 @@ export const ShiftHistory: React.FC = () => {
                             2. Declarado en Arqueo:
                           </span>
                           <span className="font-mono font-bold text-slate-500">
-                            Conteo a Ciegas
+                            Conteo
                           </span>
                         </div>
 
