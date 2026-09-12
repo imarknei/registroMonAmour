@@ -140,9 +140,6 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
       console.warn('No se pudo suscribir a .info/serverTimeOffset:', offsetErr);
     }
 
-    // Asegurar migración automática de datos al espacio aislado 'mon_amour'
-    ensureMonAmourNamespaceMigrated(realtimeDb);
-
     return { success: true, db: realtimeDb };
   } catch (err: any) {
     console.warn('Error inicializando Firebase Realtime DB:', err);
@@ -154,52 +151,10 @@ export const getFirebaseDb = () => realtimeDb;
 export const getFirestoreDb = () => realtimeDb;
 
 // ==========================================
-// 🛡️ ESPACIO AISLADO 'mon_amour' PARA EVITAR CHOQUES
+// 🛡️ RUTAS DE BASE DE DATOS
 // ==========================================
-export const DB_PREFIX = 'mon_amour';
-export const getDbPath = (path: string): string => `${DB_PREFIX}/${path}`;
-
-let migrationStarted = false;
-export const ensureMonAmourNamespaceMigrated = async (db: any) => {
-  if (migrationStarted) return;
-  migrationStarted = true;
-
-  try {
-    const { ref, get, set } = await import('firebase/database');
-    const monAmourSnap = await get(ref(db, `${DB_PREFIX}/rooms`));
-    if (!monAmourSnap.exists()) {
-      console.log(`📦 [Firebase] Copiando datos existentes al espacio aislado "${DB_PREFIX}"...`);
-      const collections = [
-        'rooms',
-        'products',
-        'motel_config',
-        'expenses',
-        'incomes',
-        'shifts',
-        'stays',
-        'completed_stays',
-        'staff_consumptions',
-        'staff_settlements',
-        'extra_consumptions',
-        'inventory_logs',
-      ];
-
-      for (const col of collections) {
-        try {
-          const snap = await get(ref(db, col));
-          if (snap.exists()) {
-            await set(ref(db, `${DB_PREFIX}/${col}`), snap.val());
-          }
-        } catch (e) {
-          console.warn(`Aviso migrando ${col}:`, e);
-        }
-      }
-      console.log(`✅ [Firebase] Datos del motel protegidos y aislados bajo "${DB_PREFIX}" con éxito.`);
-    }
-  } catch (err) {
-    console.warn('Aviso en verificación de namespace mon_amour:', err);
-  }
-};
+export const DB_PREFIX = '';
+export const getDbPath = (path: string): string => (DB_PREFIX ? `${DB_PREFIX}/${path}` : path);
 
 // ==========================================
 // 🔄 LISTENERS EN TIEMPO REAL (onValue)
