@@ -131,13 +131,19 @@ export const HeaderStats: React.FC = () => {
                 <strong className="font-mono font-bold text-white">
                   {formatBs(
                     (currentShift.initialCashFloat || 100) +
-                      currentShift.expectedCash -
+                      currentShift.expectedCash +
+                      (currentShift.totalIncomesCash || 0) -
                       (currentShift.totalExpensesCash || 0)
                   )}
                 </strong>
               </div>
               <div className="text-rose-200 text-[10px]">
                 <span className="opacity-75">Ventas:</span> Ef: {formatBs(currentShift.expectedCash)} | Vendis: {formatBs(currentShift.expectedQrVendis || 0)} | Unión: {formatBs(currentShift.expectedQrUnion || 0)}
+                {(currentShift.totalIncomesCash || 0) > 0 && (
+                  <span className="text-emerald-200 font-semibold ml-1 block">
+                    Ingresos a Caja: +{formatBs(currentShift.totalIncomesCash || 0)}
+                  </span>
+                )}
                 {(currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0) > 0 && (
                   <span className="text-amber-200 font-semibold ml-1 block">
                     Pagos/Gastos: -{formatBs((currentShift.totalExpensesCash || 0) + (currentShift.totalExpensesQr || 0))}

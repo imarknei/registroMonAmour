@@ -5,7 +5,7 @@
  * Sincronización en vivo ultra-rápida (en milisegundos) entre todos los dispositivos (Recepción, Celulares, Administrador global)
  */
 
-import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement, ExtraConsumption, InventoryMovementLog } from '../types';
+import { Room, Product, TariffCatalog, Shift, Expense, Stay, StaffConsumption, StaffSettlement, ExtraConsumption, InventoryMovementLog, ShiftIncome } from '../types';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -140,6 +140,9 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
       console.warn('No se pudo suscribir a .info/serverTimeOffset:', offsetErr);
     }
 
+    // Asegurar migración automática de datos al espacio aislado 'mon_amour'
+    ensureMonAmourNamespaceMigrated(realtimeDb);
+
     return { success: true, db: realtimeDb };
   } catch (err: any) {
     console.warn('Error inicializando Firebase Realtime DB:', err);
@@ -149,6 +152,54 @@ export const initializeFirebaseClient = async (config?: FirebaseConfig) => {
 
 export const getFirebaseDb = () => realtimeDb;
 export const getFirestoreDb = () => realtimeDb;
+
+// ==========================================
+// 🛡️ ESPACIO AISLADO 'mon_amour' PARA EVITAR CHOQUES
+// ==========================================
+export const DB_PREFIX = 'mon_amour';
+export const getDbPath = (path: string): string => `${DB_PREFIX}/${path}`;
+
+let migrationStarted = false;
+export const ensureMonAmourNamespaceMigrated = async (db: any) => {
+  if (migrationStarted) return;
+  migrationStarted = true;
+
+  try {
+    const { ref, get, set } = await import('firebase/database');
+    const monAmourSnap = await get(ref(db, `${DB_PREFIX}/rooms`));
+    if (!monAmourSnap.exists()) {
+      console.log(`📦 [Firebase] Copiando datos existentes al espacio aislado "${DB_PREFIX}"...`);
+      const collections = [
+        'rooms',
+        'products',
+        'motel_config',
+        'expenses',
+        'incomes',
+        'shifts',
+        'stays',
+        'completed_stays',
+        'staff_consumptions',
+        'staff_settlements',
+        'extra_consumptions',
+        'inventory_logs',
+      ];
+
+      for (const col of collections) {
+        try {
+          const snap = await get(ref(db, col));
+          if (snap.exists()) {
+            await set(ref(db, `${DB_PREFIX}/${col}`), snap.val());
+          }
+        } catch (e) {
+          console.warn(`Aviso migrando ${col}:`, e);
+        }
+      }
+      console.log(`✅ [Firebase] Datos del motel protegidos y aislados bajo "${DB_PREFIX}" con éxito.`);
+    }
+  } catch (err) {
+    console.warn('Aviso en verificación de namespace mon_amour:', err);
+  }
+};
 
 // ==========================================
 // 🔄 LISTENERS EN TIEMPO REAL (onValue)
@@ -163,7 +214,7 @@ export const subscribeToRooms = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const roomsRef = ref(db, 'rooms');
+    const roomsRef = ref(db, getDbPath('rooms'));
 
     const listener = onValue(
       roomsRef,
@@ -227,7 +278,7 @@ export const subscribeToProducts = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const prodRef = ref(db, 'products');
+    const prodRef = ref(db, getDbPath('products'));
 
     const listener = onValue(
       prodRef,
@@ -262,7 +313,7 @@ export const subscribeToTariffs = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const tariffRef = ref(db, 'motel_config/tariffs');
+    const tariffRef = ref(db, getDbPath('motel_config/tariffs'));
 
     const listener = onValue(
       tariffRef,
@@ -293,7 +344,7 @@ export const subscribeToExpenses = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const expRef = ref(db, 'expenses');
+    const expRef = ref(db, getDbPath('expenses'));
 
     const listener = onValue(
       expRef,
@@ -320,6 +371,44 @@ export const subscribeToExpenses = async (
   }
 };
 
+export const subscribeToIncomes = async (
+  onData: (incomes: ShiftIncome[]) => void,
+  onError?: (err: any) => void
+): Promise<(() => void) | null> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return null;
+
+  try {
+    const { ref, onValue, off } = await import('firebase/database');
+    const incRef = ref(db, getDbPath('incomes'));
+
+    const listener = onValue(
+      incRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const incList: ShiftIncome[] = Array.isArray(val)
+            ? val.filter(Boolean)
+            : Object.values(val);
+          incList.sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1));
+          onData(incList);
+        } else {
+          onData([]);
+        }
+      },
+      (err) => {
+        console.warn('Error en listener de incomes:', err);
+        onError?.(err);
+      }
+    );
+
+    return () => off(incRef, 'value', listener);
+  } catch (err) {
+    console.warn('Error suscribiendo a incomes:', err);
+    return null;
+  }
+};
+
 // Sincronización completa de turnos (Activos + Cerrados) para el Administrador
 export const subscribeToAllShifts = async (
   onData: (shifts: Shift[]) => void,
@@ -330,7 +419,7 @@ export const subscribeToAllShifts = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const shiftsRef = ref(db, 'shifts');
+    const shiftsRef = ref(db, getDbPath('shifts'));
 
     const listener = onValue(
       shiftsRef,
@@ -372,7 +461,7 @@ export const subscribeToAllStays = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const staysRef = ref(db, 'stays');
+    const staysRef = ref(db, getDbPath('stays'));
 
     const listener = onValue(
       staysRef,
@@ -423,7 +512,7 @@ export const syncRoomToFirestore = async (room: Room): Promise<void> => {
   try {
     const { ref, set } = await import('firebase/database');
     const cleanRoom = sanitizeForFirebase({ ...room, updatedAt: new Date().toISOString() });
-    await set(ref(db, `rooms/${room.id}`), cleanRoom);
+    await set(ref(db, getDbPath(`rooms/${room.id}`)), cleanRoom);
   } catch (err) {
     console.error(`Error guardando room ${room.id} en Firebase:`, err);
   }
@@ -435,7 +524,7 @@ export const syncProductToFirestore = async (product: Product): Promise<void> =>
   try {
     const { ref, set } = await import('firebase/database');
     const cleanProd = sanitizeForFirebase({ ...product, updatedAt: new Date().toISOString() });
-    await set(ref(db, `products/${product.id}`), cleanProd);
+    await set(ref(db, getDbPath(`products/${product.id}`)), cleanProd);
   } catch (err) {
     console.error(`Error guardando product ${product.id} en Firebase:`, err);
   }
@@ -446,7 +535,7 @@ export const deleteProductFromFirestore = async (productId: string): Promise<voi
   if (!db) return;
   try {
     const { ref, remove } = await import('firebase/database');
-    await remove(ref(db, `products/${productId}`));
+    await remove(ref(db, getDbPath(`products/${productId}`)));
   } catch (err) {
     console.error(`Error eliminando product ${productId} de Firebase:`, err);
   }
@@ -458,7 +547,7 @@ export const syncTariffsToFirestore = async (tariffs: TariffCatalog): Promise<vo
   try {
     const { ref, set } = await import('firebase/database');
     const cleanTariffs = sanitizeForFirebase({ ...tariffs, updatedAt: new Date().toISOString() });
-    await set(ref(db, 'motel_config/tariffs'), cleanTariffs);
+    await set(ref(db, getDbPath('motel_config/tariffs')), cleanTariffs);
   } catch (err) {
     console.error('Error guardando tariffs en Firebase:', err);
   }
@@ -470,7 +559,7 @@ export const syncShiftToFirestore = async (shift: Shift): Promise<void> => {
   try {
     const { ref, set } = await import('firebase/database');
     const cleanShift = sanitizeForFirebase(shift);
-    await set(ref(db, `shifts/${shift.id}`), cleanShift);
+    await set(ref(db, getDbPath(`shifts/${shift.id}`)), cleanShift);
   } catch (err) {
     console.error(`Error guardando shift ${shift.id} en Firebase:`, err);
   }
@@ -481,7 +570,7 @@ export const deleteShiftFromFirebase = async (shiftId: string): Promise<void> =>
   if (!db) return;
   try {
     const { ref, remove } = await import('firebase/database');
-    await remove(ref(db, `shifts/${shiftId}`));
+    await remove(ref(db, getDbPath(`shifts/${shiftId}`)));
     console.log(`[Firebase] Turno ${shiftId} eliminado.`);
   } catch (err) {
     console.error(`Error eliminando shift ${shiftId} de Firebase:`, err);
@@ -494,9 +583,9 @@ export const syncStayToFirebase = async (stay: Stay): Promise<void> => {
   try {
     const { ref, set } = await import('firebase/database');
     const cleanStay = sanitizeForFirebase(stay);
-    await set(ref(db, `stays/${stay.id}`), cleanStay);
+    await set(ref(db, getDbPath(`stays/${stay.id}`)), cleanStay);
     if (stay.status === 'completed') {
-      await set(ref(db, `completed_stays/${stay.id}`), cleanStay);
+      await set(ref(db, getDbPath(`completed_stays/${stay.id}`)), cleanStay);
     }
   } catch (err) {
     console.error(`Error guardando stay ${stay.id} en Firebase:`, err);
@@ -510,8 +599,8 @@ export const deleteStayFromFirebase = async (stayId: string): Promise<void> => {
   if (!db) return;
   try {
     const { ref, remove } = await import('firebase/database');
-    await remove(ref(db, `stays/${stayId}`));
-    await remove(ref(db, `completed_stays/${stayId}`));
+    await remove(ref(db, getDbPath(`stays/${stayId}`)));
+    await remove(ref(db, getDbPath(`completed_stays/${stayId}`)));
   } catch (err) {
     console.error(`Error eliminando stay ${stayId} en Firebase:`, err);
   }
@@ -523,9 +612,43 @@ export const syncExpenseToFirestore = async (expense: Expense): Promise<void> =>
   try {
     const { ref, set } = await import('firebase/database');
     const cleanExpense = sanitizeForFirebase(expense);
-    await set(ref(db, `expenses/${expense.id}`), cleanExpense);
+    await set(ref(db, getDbPath(`expenses/${expense.id}`)), cleanExpense);
   } catch (err) {
     console.error(`Error guardando expense ${expense.id} en Firebase:`, err);
+  }
+};
+
+export const deleteExpenseFromFirebase = async (expenseId: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, getDbPath(`expenses/${expenseId}`)));
+  } catch (err) {
+    console.error(`Error eliminando expense ${expenseId} en Firebase:`, err);
+  }
+};
+
+export const syncIncomeToFirestore = async (income: ShiftIncome): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, set } = await import('firebase/database');
+    const cleanIncome = sanitizeForFirebase(income);
+    await set(ref(db, getDbPath(`incomes/${income.id}`)), cleanIncome);
+  } catch (err) {
+    console.error(`Error guardando income ${income.id} en Firebase:`, err);
+  }
+};
+
+export const deleteIncomeFromFirebase = async (incomeId: string): Promise<void> => {
+  const db = realtimeDb || (await initializeFirebaseClient())?.db;
+  if (!db) return;
+  try {
+    const { ref, remove } = await import('firebase/database');
+    await remove(ref(db, getDbPath(`incomes/${incomeId}`)));
+  } catch (err) {
+    console.error(`Error eliminando income ${incomeId} en Firebase:`, err);
   }
 };
 
@@ -548,17 +671,17 @@ export const uploadAllDataToFirebase = async (data: {
     data.rooms.forEach((r) => {
       roomsMap[r.id] = r;
     });
-    await set(ref(db, 'rooms'), sanitizeForFirebase(roomsMap));
+    await set(ref(db, getDbPath('rooms')), sanitizeForFirebase(roomsMap));
 
     // 2. Productos
     const prodMap: Record<string, Product> = {};
     data.products.forEach((p) => {
       prodMap[p.id] = p;
     });
-    await set(ref(db, 'products'), sanitizeForFirebase(prodMap));
+    await set(ref(db, getDbPath('products')), sanitizeForFirebase(prodMap));
 
     // 3. Tarifas
-    await set(ref(db, 'motel_config/tariffs'), sanitizeForFirebase(data.tariffs));
+    await set(ref(db, getDbPath('motel_config/tariffs')), sanitizeForFirebase(data.tariffs));
 
     // 4. Turnos si existen
     if (data.shiftsHistory && data.shiftsHistory.length > 0) {
@@ -566,7 +689,7 @@ export const uploadAllDataToFirebase = async (data: {
       data.shiftsHistory.forEach((s) => {
         shiftsMap[s.id] = s;
       });
-      await set(ref(db, 'shifts'), sanitizeForFirebase(shiftsMap));
+      await set(ref(db, getDbPath('shifts')), sanitizeForFirebase(shiftsMap));
     }
 
     // 5. Estadías si existen
@@ -575,8 +698,8 @@ export const uploadAllDataToFirebase = async (data: {
       data.stays.forEach((s) => {
         staysMap[s.id] = s;
       });
-      await set(ref(db, 'stays'), sanitizeForFirebase(staysMap));
-      await set(ref(db, 'completed_stays'), sanitizeForFirebase(staysMap));
+      await set(ref(db, getDbPath('stays')), sanitizeForFirebase(staysMap));
+      await set(ref(db, getDbPath('completed_stays')), sanitizeForFirebase(staysMap));
     }
 
     // 6. Gastos si existen
@@ -585,7 +708,7 @@ export const uploadAllDataToFirebase = async (data: {
       data.expenses.forEach((e) => {
         expMap[e.id] = e;
       });
-      await set(ref(db, 'expenses'), sanitizeForFirebase(expMap));
+      await set(ref(db, getDbPath('expenses')), sanitizeForFirebase(expMap));
     }
 
     return { success: true, message: 'Todos los datos se subieron a Firebase con éxito.' };
@@ -608,7 +731,7 @@ export const subscribeToStaffConsumptions = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const staffRef = ref(db, 'staff_consumptions');
+    const staffRef = ref(db, getDbPath('staff_consumptions'));
 
     const listener = onValue(
       staffRef,
@@ -643,7 +766,7 @@ export const syncStaffConsumptionToFirestore = async (consumption: StaffConsumpt
   try {
     const { ref, set } = await import('firebase/database');
     const clean = sanitizeForFirebase(consumption);
-    await set(ref(db, `staff_consumptions/${consumption.id}`), clean);
+    await set(ref(db, getDbPath(`staff_consumptions/${consumption.id}`)), clean);
   } catch (err) {
     console.error(`Error guardando staff_consumption ${consumption.id} en Firebase:`, err);
   }
@@ -654,7 +777,7 @@ export const deleteStaffConsumptionFromFirebase = async (id: string): Promise<vo
   if (!db) return;
   try {
     const { ref, remove } = await import('firebase/database');
-    await remove(ref(db, `staff_consumptions/${id}`));
+    await remove(ref(db, getDbPath(`staff_consumptions/${id}`)));
   } catch (err) {
     console.error(`Error eliminando staff_consumption ${id} en Firebase:`, err);
   }
@@ -669,7 +792,7 @@ export const subscribeToStaffSettlements = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const settlementsRef = ref(db, 'staff_settlements');
+    const settlementsRef = ref(db, getDbPath('staff_settlements'));
 
     const listener = onValue(
       settlementsRef,
@@ -704,7 +827,7 @@ export const syncStaffSettlementToFirestore = async (settlement: StaffSettlement
   try {
     const { ref, set } = await import('firebase/database');
     const clean = sanitizeForFirebase(settlement);
-    await set(ref(db, `staff_settlements/${settlement.id}`), clean);
+    await set(ref(db, getDbPath(`staff_settlements/${settlement.id}`)), clean);
   } catch (err) {
     console.error(`Error guardando staff_settlement ${settlement.id} en Firebase:`, err);
   }
@@ -723,7 +846,7 @@ export const subscribeToExtraConsumptions = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const extraRef = ref(db, 'extra_consumptions');
+    const extraRef = ref(db, getDbPath('extra_consumptions'));
 
     const listener = onValue(
       extraRef,
@@ -758,7 +881,7 @@ export const syncExtraConsumptionToFirestore = async (consumption: ExtraConsumpt
   try {
     const { ref, set } = await import('firebase/database');
     const clean = sanitizeForFirebase(consumption);
-    await set(ref(db, `extra_consumptions/${consumption.id}`), clean);
+    await set(ref(db, getDbPath(`extra_consumptions/${consumption.id}`)), clean);
   } catch (err) {
     console.error(`Error guardando extra_consumption ${consumption.id} en Firebase:`, err);
   }
@@ -769,7 +892,7 @@ export const deleteExtraConsumptionFromFirebase = async (id: string): Promise<vo
   if (!db) return;
   try {
     const { ref, remove } = await import('firebase/database');
-    await remove(ref(db, `extra_consumptions/${id}`));
+    await remove(ref(db, getDbPath(`extra_consumptions/${id}`)));
   } catch (err) {
     console.error(`Error eliminando extra_consumption ${id} en Firebase:`, err);
   }
@@ -788,7 +911,7 @@ export const subscribeToInventoryLogs = async (
 
   try {
     const { ref, onValue, off } = await import('firebase/database');
-    const logsRef = ref(db, 'inventory_logs');
+    const logsRef = ref(db, getDbPath('inventory_logs'));
 
     const listener = onValue(
       logsRef,
@@ -823,7 +946,7 @@ export const syncInventoryLogToFirestore = async (log: InventoryMovementLog): Pr
   try {
     const { ref, set } = await import('firebase/database');
     const clean = sanitizeForFirebase(log);
-    await set(ref(db, `inventory_logs/${log.id}`), clean);
+    await set(ref(db, getDbPath(`inventory_logs/${log.id}`)), clean);
   } catch (err) {
     console.error(`Error guardando inventory_log ${log.id} en Firebase:`, err);
   }
@@ -834,7 +957,7 @@ export const deleteInventoryLogFromFirebase = async (id: string): Promise<void> 
   if (!db) return;
   try {
     const { ref, remove } = await import('firebase/database');
-    await remove(ref(db, `inventory_logs/${id}`));
+    await remove(ref(db, getDbPath(`inventory_logs/${id}`)));
   } catch (err) {
     console.error(`Error eliminando inventory_log ${id} en Firebase:`, err);
   }

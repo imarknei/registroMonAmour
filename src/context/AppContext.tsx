@@ -20,6 +20,8 @@ import {
   ConsumptionItem,
   Expense,
   ExpenseCategory,
+  ShiftIncome,
+  IncomeCategory,
   PlanType,
   StaffMember,
   StaffConsumption,
@@ -55,6 +57,7 @@ import {
   subscribeToProducts,
   subscribeToTariffs,
   subscribeToExpenses,
+  subscribeToIncomes,
   subscribeToAllShifts,
   subscribeToAllStays,
   subscribeToStaffConsumptions,
@@ -77,6 +80,8 @@ import {
   syncStayToFirebase,
   syncCompletedStayToFirebase,
   syncExpenseToFirestore,
+  syncIncomeToFirestore,
+  deleteIncomeFromFirebase,
   getFirebaseDb,
   getStoredFirebaseConfig,
 } from '../services/firebase';
@@ -91,6 +96,7 @@ interface AppContextType {
   shiftsHistory: Shift[];
   completedStays: Stay[];
   expenses: Expense[];
+  incomes: ShiftIncome[];
   staffConsumptions: StaffConsumption[];
   staffSettlements: StaffSettlement[];
   staffMembers: StaffMember[];
@@ -204,6 +210,17 @@ interface AppContextType {
     notes?: string;
   }) => void;
 
+  // Incomes / Cash Inflows (Alquileres, cambio de compras, dinero para cambio)
+  addIncomeToShift: (incomeData: {
+    description: string;
+    category: IncomeCategory;
+    amount: number;
+    paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+    receiptNumber?: string;
+    notes?: string;
+  }) => void;
+  removeIncomeFromShift: (id: string) => void;
+
   // Extra Consumptions / Direct Counter Sales
   addExtraConsumption: (data: {
     description: string;
@@ -310,6 +327,7 @@ const STORAGE_KEYS = {
   ACTIVE_SHIFTS: 'mon_amour_active_shifts_v1',
   COMPLETED_STAYS: 'mon_amour_completed_stays_v1',
   EXPENSES: 'mon_amour_expenses_v1',
+  INCOMES: 'mon_amour_incomes_v1',
   SOUND_ENABLED: 'mon_amour_sound_enabled_v1',
   STAFF_CONSUMPTIONS: 'mon_amour_staff_consumptions_v1',
   STAFF_SETTLEMENTS: 'mon_amour_staff_settlements_v1',
@@ -418,6 +436,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [incomes, setIncomes] = useState<ShiftIncome[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.INCOMES);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [staffConsumptions, setStaffConsumptions] = useState<StaffConsumption[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.STAFF_CONSUMPTIONS);
@@ -509,6 +536,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
   }, [expenses]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.INCOMES, JSON.stringify(incomes));
+  }, [incomes]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STAFF_CONSUMPTIONS, JSON.stringify(staffConsumptions));
@@ -621,6 +652,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       if (unsubExp) unsubs.push(unsubExp);
+
+      // Incomes
+      const unsubIncomes = await subscribeToIncomes((firestoreIncomes) => {
+        if (firestoreIncomes) {
+          setIncomes(firestoreIncomes);
+        }
+      });
+      if (unsubIncomes) unsubs.push(unsubIncomes);
 
       // Shifts
       const unsubShifts = await subscribeToAllShifts((firestoreShifts) => {
@@ -918,15 +957,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
 
+      // 4. Consumos de personal pagados en el acto en este turno
+      staffConsumptions.forEach((sc) => {
+        if (!sc.isPaid) return;
+        const scTime = new Date(sc.date).getTime();
+        const isThisShiftStaff =
+          sc.shiftId === targetShift.id ||
+          (!sc.shiftId && scTime >= shiftStartTime && scTime <= shiftEndTime);
+
+        if (isThisShiftStaff) {
+          if (sc.paymentMethod === 'efectivo' || !sc.paymentMethod) {
+            liveCashSales += sc.totalAmount;
+          } else if (sc.paymentMethod === 'qr_vendis' || sc.paymentMethod === 'qr') {
+            liveQrVendisSales += sc.totalAmount;
+          } else if (sc.paymentMethod === 'qr_union') {
+            liveQrUnionSales += sc.totalAmount;
+          }
+          liveSalesCount++;
+        }
+      });
+
+      // 5. Otros Ingresos a Caja (Alquiler, cambio de compras, dinero para cambio)
+      const shiftIncomes = incomes.filter((inc) => {
+        if (inc.shiftId) return inc.shiftId === targetShift.id;
+        const incTime = new Date(inc.timestamp).getTime();
+        return incTime >= shiftStartTime && incTime <= shiftEndTime;
+      });
+
+      let totalIncomesCash = 0;
+      let totalIncomesQrVendis = 0;
+      let totalIncomesQrUnion = 0;
+      let totalIncomesQr = 0;
+
+      shiftIncomes.forEach((inc) => {
+        if (inc.paymentMethod === 'efectivo') {
+          totalIncomesCash += inc.amount;
+        } else if (inc.paymentMethod === 'qr_vendis') {
+          totalIncomesQrVendis += inc.amount;
+          totalIncomesQr += inc.amount;
+        } else if (inc.paymentMethod === 'qr_union') {
+          totalIncomesQrUnion += inc.amount;
+          totalIncomesQr += inc.amount;
+        } else {
+          totalIncomesQr += inc.amount;
+        }
+      });
+
       const expectedCash = liveCashSales;
-      const expectedQrVendis = liveQrVendisSales;
-      const expectedQrUnion = liveQrUnionSales;
+      const expectedQrVendis = liveQrVendisSales + totalIncomesQrVendis;
+      const expectedQrUnion = liveQrUnionSales + totalIncomesQrUnion;
       const expectedQr = expectedQrVendis + expectedQrUnion;
       const salesCount = liveSalesCount;
 
-      // Gastos del turno
+      // Gastos del turno: vinculación estricta por shiftId
       const shiftExpenses = expenses.filter((e) => {
-        if (e.shiftId === targetShift.id) return true;
+        if (e.shiftId) return e.shiftId === targetShift.id;
         const expTime = new Date(e.timestamp).getTime();
         return expTime >= shiftStartTime && expTime <= shiftEndTime;
       });
@@ -962,7 +1047,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       const startingFloat = targetShift.initialCashFloat !== undefined ? targetShift.initialCashFloat : 100;
-      const expectedCashInDrawer = Math.max(0, startingFloat + expectedCash - operationalExpensesCash);
+      const expectedCashInDrawer = Math.max(0, startingFloat + expectedCash + totalIncomesCash - operationalExpensesCash);
 
       return {
         expectedCash,
@@ -978,10 +1063,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         totalExpensesQrVendis,
         totalExpensesQrUnion,
         totalExpensesQr,
+        shiftIncomes,
+        totalIncomesCash,
+        totalIncomesQrVendis,
+        totalIncomesQrUnion,
+        totalIncomesQr,
+        totalIncomes: totalIncomesCash + totalIncomesQr,
         expectedCashInDrawer,
       };
     },
-    [rooms, completedStays, extraConsumptions, expenses]
+    [rooms, completedStays, extraConsumptions, staffConsumptions, expenses, incomes]
   );
 
   // Cálculo en vivo y exacto del total en caja del turno (Caja Chica, Ventas Efectivo, QR y Gastos)
@@ -1005,8 +1096,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalExpensesQrVendis: metrics.totalExpensesQrVendis,
       totalExpensesQrUnion: metrics.totalExpensesQrUnion,
       totalExpensesQr: metrics.totalExpensesQr,
+      incomes: metrics.shiftIncomes,
+      totalIncomesCash: metrics.totalIncomesCash,
+      totalIncomesQrVendis: metrics.totalIncomesQrVendis,
+      totalIncomesQrUnion: metrics.totalIncomesQrUnion,
+      totalIncomesQr: metrics.totalIncomesQr,
+      totalIncomes: metrics.totalIncomes,
     };
-  }, [rawTargetShift, rooms, completedStays, expenses, extraConsumptions]);
+  }, [rawTargetShift, calculateShiftMetrics]);
 
   // Toast Management
   const showToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
@@ -1106,17 +1203,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'active',
     };
 
-    if (isPrepaid && (prepaidCash > 0 || prepaidQr > 0) && currentUser.role !== 'admin') {
+    if (currentUser.role !== 'admin') {
       setActiveShifts((prev) => {
         const active = prev[currentUser.id] || ensureActiveShift(currentUser);
         const updatedShift: Shift = {
           ...active,
-          expectedCash: active.expectedCash + prepaidCash,
-          expectedQrVendis: (active.expectedQrVendis || 0) + prepaidQrVendis,
-          expectedQrUnion: (active.expectedQrUnion || 0) + prepaidQrUnion,
-          expectedQr: active.expectedQr + prepaidQr,
-          salesCount: active.salesCount + 1,
-          stayIds: [...active.stayIds, stayId],
+          stayIds: active.stayIds.includes(stayId) ? active.stayIds : [...active.stayIds, stayId],
         };
         syncShiftToFirestore(updatedShift);
         return {
@@ -1272,28 +1364,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncStayToFirebase(updatedStay);
     setCompletedStays((prev) => prev.map((s) => (s.id === updatedStay.id ? updatedStay : s)));
 
-    // Si se pagó al contado en el momento, sumar a la caja del turno activo inmediatamente
-    if (isPaid && currentUser.role !== 'admin') {
-      setActiveShifts((prev) => {
-        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
-        const addCash = paymentMethod === 'efectivo' ? subtotal : 0;
-        const addVendis = paymentMethod === 'qr_vendis' ? subtotal : 0;
-        const addUnion = paymentMethod === 'qr_union' ? subtotal : 0;
-        const addQr = paymentMethod === 'qr' ? subtotal : (addVendis + addUnion);
-        const updatedShift: Shift = {
-          ...active,
-          expectedCash: active.expectedCash + addCash,
-          expectedQrVendis: (active.expectedQrVendis || 0) + addVendis,
-          expectedQrUnion: (active.expectedQrUnion || 0) + addUnion,
-          expectedQr: active.expectedQr + addQr,
-        };
-        syncShiftToFirestore(updatedShift);
-        return {
-          ...prev,
-          [currentUser.id]: updatedShift,
-        };
-      });
-    }
+    // No mutamos manualmente expectedCash/expectedQr para evitar drift de concurrencia;
+    // calculateShiftMetrics lo deriva en tiempo real directamente de updatedStay.consumptions
 
     playAddConsumptionSound();
     showToast({
@@ -1376,28 +1448,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncStayToFirebase(updatedStay);
     setCompletedStays((prev) => prev.map((s) => (s.id === updatedStay.id ? updatedStay : s)));
 
-    // Si se pagó al contado en el momento, sumar a la caja del turno activo inmediatamente
-    if (isPaid && currentUser.role !== 'admin') {
-      setActiveShifts((prev) => {
-        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
-        const addCash = paymentMethod === 'efectivo' ? subtotal : 0;
-        const addVendis = paymentMethod === 'qr_vendis' ? subtotal : 0;
-        const addUnion = paymentMethod === 'qr_union' ? subtotal : 0;
-        const addQr = paymentMethod === 'qr' ? subtotal : (addVendis + addUnion);
-        const updatedShift: Shift = {
-          ...active,
-          expectedCash: active.expectedCash + addCash,
-          expectedQrVendis: (active.expectedQrVendis || 0) + addVendis,
-          expectedQrUnion: (active.expectedQrUnion || 0) + addUnion,
-          expectedQr: active.expectedQr + addQr,
-        };
-        syncShiftToFirestore(updatedShift);
-        return {
-          ...prev,
-          [currentUser.id]: updatedShift,
-        };
-      });
-    }
+    // calculateShiftMetrics lo deriva en tiempo real directamente de updatedStay.consumptions
 
     playAddConsumptionSound();
     showToast({
@@ -1425,28 +1476,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Reponer stock de forma atómica
     restoreStockForItems([{ productId: item.productId, quantity: item.quantity }]);
-
-    if (item.isPaid && currentUser.role !== 'admin') {
-      setActiveShifts((prev) => {
-        const active = prev[currentUser.id] || ensureActiveShift(currentUser);
-        const remCash = item.paymentMethod === 'efectivo' ? item.subtotal : 0;
-        const remVendis = item.paymentMethod === 'qr_vendis' ? item.subtotal : 0;
-        const remUnion = item.paymentMethod === 'qr_union' ? item.subtotal : 0;
-        const remQr = item.paymentMethod === 'qr' ? item.subtotal : (remVendis + remUnion);
-        const updatedShift: Shift = {
-          ...active,
-          expectedCash: Math.max(0, active.expectedCash - remCash),
-          expectedQrVendis: Math.max(0, (active.expectedQrVendis || 0) - remVendis),
-          expectedQrUnion: Math.max(0, (active.expectedQrUnion || 0) - remUnion),
-          expectedQr: Math.max(0, active.expectedQr - remQr),
-        };
-        syncShiftToFirestore(updatedShift);
-        return {
-          ...prev,
-          [currentUser.id]: updatedShift,
-        };
-      });
-    }
 
     const updatedStay: Stay = {
       ...room.currentStay,
@@ -1599,27 +1628,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCompletedStays((prev) => [completedStay, ...prev]);
     syncCompletedStayToFirebase(completedStay);
 
-    if (finalCash > 0 || finalQr > 0 || !isPrepaid) {
-      const shiftReceptionistId = currentUser.role === 'admin' ? stay.receptionistId : currentUser.id;
-      setActiveShifts((prev) => {
-        const active = prev[shiftReceptionistId] || ensureActiveShift(currentUser);
-        const alreadyCounted = isPrepaid;
-        const updatedShift: Shift = {
-          ...active,
-          expectedCash: active.expectedCash + finalCash,
-          expectedQrVendis: (active.expectedQrVendis || 0) + finalQrVendis,
-          expectedQrUnion: (active.expectedQrUnion || 0) + finalQrUnion,
-          expectedQr: active.expectedQr + finalQr,
-          salesCount: alreadyCounted ? active.salesCount : active.salesCount + 1,
-          stayIds: active.stayIds.includes(completedStay.id) ? active.stayIds : [...active.stayIds, completedStay.id],
-        };
-        syncShiftToFirestore(updatedShift);
-        return {
-          ...prev,
-          [shiftReceptionistId]: updatedShift,
-        };
-      });
-    }
+    const shiftReceptionistId = currentUser.role === 'admin' ? stay.receptionistId : currentUser.id;
+    setActiveShifts((prev) => {
+      const active = prev[shiftReceptionistId] || ensureActiveShift(currentUser);
+      const updatedShift: Shift = {
+        ...active,
+        stayIds: active.stayIds.includes(completedStay.id) ? active.stayIds : [...active.stayIds, completedStay.id],
+      };
+      syncShiftToFirestore(updatedShift);
+      return {
+        ...prev,
+        [shiftReceptionistId]: updatedShift,
+      };
+    });
 
     const setCleaning = checkoutData.setCleaning !== false;
     const updatedRoom: Room = {
@@ -1786,6 +1807,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // INCOMES / CASH INFLOWS (Alquileres, cambio de compras, dinero para cambio)
+  const addIncomeToShift = (incomeData: {
+    description: string;
+    category: IncomeCategory;
+    amount: number;
+    paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+    receiptNumber?: string;
+    notes?: string;
+  }) => {
+    if (!currentShift) {
+      showToast({
+        title: 'Sin turno activo',
+        message: 'Debe haber un turno activo para registrar ingresos a caja.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const incomeId = `inc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newIncome: ShiftIncome = {
+      id: incomeId,
+      description: incomeData.description.trim(),
+      category: incomeData.category,
+      amount: incomeData.amount,
+      paymentMethod: incomeData.paymentMethod,
+      timestamp: getNetworkIsoString(),
+      shiftId: currentShift.id,
+      registeredById: currentUser.id,
+      registeredByName: currentUser.name,
+      receiptNumber: incomeData.receiptNumber?.trim() || undefined,
+      notes: incomeData.notes?.trim() || undefined,
+    };
+
+    setIncomes((prev) => [newIncome, ...prev]);
+    syncIncomeToFirestore(newIncome);
+
+    playSuccessChime();
+    showToast({
+      title: '¡Ingreso a Caja Registrado!',
+      message: `Se registró ingreso de ${formatBs(incomeData.amount)} (${incomeData.description}) en ${getPaymentMethodLabel(incomeData.paymentMethod)}.`,
+      type: 'success',
+    });
+  };
+
+  const removeIncomeFromShift = (id: string) => {
+    const inc = incomes.find((i) => i.id === id);
+    if (!inc) return;
+
+    setIncomes((prev) => prev.filter((i) => i.id !== id));
+    deleteIncomeFromFirebase(id);
+
+    showToast({
+      title: 'Ingreso Anulado',
+      message: `Se anuló el ingreso (${inc.description}).`,
+      type: 'info',
+    });
+  };
+
   // STAFF CONSUMPTIONS & SETTLEMENTS
   const addStaffConsumption = (consumptionData: {
     staffId: string;
@@ -1833,39 +1912,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSettled: isPaid ? true : false,
     };
 
-    if (isPaid && currentShift) {
-      let addCash = 0;
-      let addQrVendis = 0;
-      let addQrUnion = 0;
-      let addQr = 0;
-
-      if (paymentMethod === 'efectivo') {
-        addCash = consumptionData.totalAmount;
-      } else if (paymentMethod === 'qr_vendis') {
-        addQrVendis = consumptionData.totalAmount;
-        addQr = consumptionData.totalAmount;
-      } else if (paymentMethod === 'qr_union') {
-        addQrUnion = consumptionData.totalAmount;
-        addQr = consumptionData.totalAmount;
-      } else if (paymentMethod === 'qr') {
-        addQrVendis = consumptionData.totalAmount;
-        addQr = consumptionData.totalAmount;
-      }
-
-      const updatedShift: Shift = {
-        ...currentShift,
-        expectedCash: currentShift.expectedCash + addCash,
-        expectedQrVendis: (currentShift.expectedQrVendis || 0) + addQrVendis,
-        expectedQrUnion: (currentShift.expectedQrUnion || 0) + addQrUnion,
-        expectedQr: currentShift.expectedQr + addQr,
-        salesCount: (currentShift.salesCount || 0) + 1,
-      };
-      setShiftsHistory((prev) =>
-        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
-      );
-      syncShiftToFirestore(updatedShift);
-    }
-
     // Descontar inventario de forma atómica
     discountStockForItems(consumptionData.items);
 
@@ -1887,39 +1933,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeStaffConsumption = (id: string, restoreInventory = true) => {
     const cons = staffConsumptions.find((c) => c.id === id);
     if (!cons) return;
-
-    if (cons.isPaid && currentShift && cons.shiftId === currentShift.id) {
-      let subCash = 0;
-      let subQrVendis = 0;
-      let subQrUnion = 0;
-      let subQr = 0;
-
-      if (cons.paymentMethod === 'efectivo') {
-        subCash = cons.totalAmount;
-      } else if (cons.paymentMethod === 'qr_vendis') {
-        subQrVendis = cons.totalAmount;
-        subQr = cons.totalAmount;
-      } else if (cons.paymentMethod === 'qr_union') {
-        subQrUnion = cons.totalAmount;
-        subQr = cons.totalAmount;
-      } else if (cons.paymentMethod === 'qr') {
-        subQrVendis = cons.totalAmount;
-        subQr = cons.totalAmount;
-      }
-
-      const updatedShift: Shift = {
-        ...currentShift,
-        expectedCash: Math.max(0, currentShift.expectedCash - subCash),
-        expectedQrVendis: Math.max(0, (currentShift.expectedQrVendis || 0) - subQrVendis),
-        expectedQrUnion: Math.max(0, (currentShift.expectedQrUnion || 0) - subQrUnion),
-        expectedQr: Math.max(0, currentShift.expectedQr - subQr),
-        salesCount: Math.max(0, (currentShift.salesCount || 1) - 1),
-      };
-      setShiftsHistory((prev) =>
-        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
-      );
-      syncShiftToFirestore(updatedShift);
-    }
 
     if (restoreInventory) {
       restoreStockForItems(cons.items);
@@ -1978,40 +1991,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: data.notes?.trim() || undefined,
     };
 
-    // Actualizar caja del turno activo si existe
-    if (currentShift) {
-      let addCash = 0;
-      let addQrVendis = 0;
-      let addQrUnion = 0;
-      let addQr = 0;
-
-      if (data.paymentMethod === 'efectivo') {
-        addCash = data.totalAmount;
-      } else if (data.paymentMethod === 'qr_vendis') {
-        addQrVendis = data.totalAmount;
-        addQr = data.totalAmount;
-      } else if (data.paymentMethod === 'qr_union') {
-        addQrUnion = data.totalAmount;
-        addQr = data.totalAmount;
-      } else if (data.paymentMethod === 'qr') {
-        addQrVendis = data.totalAmount;
-        addQr = data.totalAmount;
-      }
-
-      const updatedShift: Shift = {
-        ...currentShift,
-        expectedCash: currentShift.expectedCash + addCash,
-        expectedQrVendis: (currentShift.expectedQrVendis || 0) + addQrVendis,
-        expectedQrUnion: (currentShift.expectedQrUnion || 0) + addQrUnion,
-        expectedQr: currentShift.expectedQr + addQr,
-        salesCount: (currentShift.salesCount || 0) + 1,
-      };
-      setShiftsHistory((prev) =>
-        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
-      );
-      syncShiftToFirestore(updatedShift);
-    }
-
     // Descontar inventario de forma atómica
     discountStockForItems(data.items);
 
@@ -2031,39 +2010,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeExtraConsumption = (id: string, restoreInventory = true) => {
     const extra = extraConsumptions.find((e) => e.id === id);
     if (!extra) return;
-
-    if (currentShift && extra.shiftId === currentShift.id) {
-      let subCash = 0;
-      let subQrVendis = 0;
-      let subQrUnion = 0;
-      let subQr = 0;
-
-      if (extra.paymentMethod === 'efectivo') {
-        subCash = extra.totalAmount;
-      } else if (extra.paymentMethod === 'qr_vendis') {
-        subQrVendis = extra.totalAmount;
-        subQr = extra.totalAmount;
-      } else if (extra.paymentMethod === 'qr_union') {
-        subQrUnion = extra.totalAmount;
-        subQr = extra.totalAmount;
-      } else if (extra.paymentMethod === 'qr') {
-        subQrVendis = extra.totalAmount;
-        subQr = extra.totalAmount;
-      }
-
-      const updatedShift: Shift = {
-        ...currentShift,
-        expectedCash: Math.max(0, currentShift.expectedCash - subCash),
-        expectedQrVendis: Math.max(0, (currentShift.expectedQrVendis || 0) - subQrVendis),
-        expectedQrUnion: Math.max(0, (currentShift.expectedQrUnion || 0) - subQrUnion),
-        expectedQr: Math.max(0, currentShift.expectedQr - subQr),
-        salesCount: Math.max(0, (currentShift.salesCount || 1) - 1),
-      };
-      setShiftsHistory((prev) =>
-        prev.map((s) => (s.id === updatedShift.id ? updatedShift : s))
-      );
-      syncShiftToFirestore(updatedShift);
-    }
 
     if (restoreInventory) {
       restoreStockForItems(extra.items);
@@ -2194,24 +2140,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const floatLeftForNext = handoverCashFloat !== undefined ? handoverCashFloat : startingCashFloat;
     const deliveredAtClose = cashDeliveredAtClose && cashDeliveredAtClose > 0 ? cashDeliveredAtClose : 0;
 
-    // Total de egresos operativos en efectivo registrados antes del cierre
-    const operationalExpensesCash = shift.operationalExpensesCash !== undefined
-      ? shift.operationalExpensesCash
-      : (shift.totalExpensesCash || 0);
+    // Recalcular métricas frescas y autoritativas directamente de las estadías del turno
+    const metrics = calculateShiftMetrics(shift);
+    const expectedSalesCash = metrics.expectedCash;
+    const totalIncomesCash = metrics.totalIncomesCash;
+    const expectedNetQrVendis = metrics.expectedQrVendis;
+    const expectedNetQrUnion = metrics.expectedQrUnion;
+    const expectedNetQrTotal = metrics.expectedQr;
+    const operationalExpensesCash = metrics.operationalExpensesCash;
 
     // Efectivo que DEBERÍA haber en la gaveta antes de separar el sobre:
-    // Fondo Inicial + Ventas Efectivo - Egresos Operativos en Efectivo
-    const expectedCashInDrawer = Math.max(0, startingCashFloat + shift.expectedCash - operationalExpensesCash);
+    // Fondo Inicial + Ventas Efectivo + Ingresos en Efectivo - Egresos Operativos en Efectivo
+    const expectedCashInDrawer = Math.max(0, startingCashFloat + expectedSalesCash + totalIncomesCash - operationalExpensesCash);
 
     // Diferencia en Efectivo = Lo que contó en gaveta - Lo que debía haber
     const diffCash = totalPhysicalCashInDrawer - expectedCashInDrawer;
-    const declaredSalesCash = Math.max(0, shift.expectedCash + diffCash);
+    const declaredSalesCash = Math.max(0, expectedSalesCash + diffCash);
 
     const declaredQrTotal = declaredQrVendis + declaredQrUnion;
-    const expectedNetQrVendis = shift.expectedQrVendis || 0;
-    const expectedNetQrUnion = shift.expectedQrUnion || 0;
-    const expectedNetQrTotal = shift.expectedQr;
-
     const diffQrVendis = declaredQrVendis - expectedNetQrVendis;
     const diffQrUnion = declaredQrUnion - expectedNetQrUnion;
     const diffQr = declaredQrTotal - expectedNetQrTotal;
@@ -2231,14 +2177,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       handedOverTo: nextReceptionistName.trim(),
       initialCashFloat: startingCashFloat,
       handoverCashFloat: floatLeftForNext,
+      expectedCash: expectedSalesCash,
+      expectedQrVendis: expectedNetQrVendis,
+      expectedQrUnion: expectedNetQrUnion,
+      expectedQr: expectedNetQrTotal,
+      incomes: metrics.shiftIncomes,
+      totalIncomesCash: metrics.totalIncomesCash,
+      totalIncomesQrVendis: metrics.totalIncomesQrVendis,
+      totalIncomesQrUnion: metrics.totalIncomesQrUnion,
+      totalIncomesQr: metrics.totalIncomesQr,
+      totalIncomes: metrics.totalIncomes,
       operationalExpensesCash,
       totalExpensesCash: operationalExpensesCash,
-      cashWithdrawals: shift.cashWithdrawals || 0,
+      cashWithdrawals: metrics.cashWithdrawals || 0,
       cashDeliveredAtClose: deliveredAtClose,
       envelopeStatus: deliveredAtClose > 0 ? 'pendiente' : undefined,
-      totalExpensesQrVendis: shift.totalExpensesQrVendis || 0,
-      totalExpensesQrUnion: shift.totalExpensesQrUnion || 0,
-      totalExpensesQr: shift.totalExpensesQr || 0,
+      totalExpensesQrVendis: metrics.totalExpensesQrVendis || 0,
+      totalExpensesQrUnion: metrics.totalExpensesQrUnion || 0,
+      totalExpensesQr: metrics.totalExpensesQr || 0,
       totalPhysicalCashInDrawer,
       declaredCash: declaredSalesCash,
       declaredQrVendis,
@@ -2253,6 +2209,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       surplusAmount,
       notes,
       handoverActiveRoomsCount,
+      stayIds: metrics.stayIds,
+      salesCount: metrics.salesCount,
+      expenses: metrics.shiftExpenses,
     };
 
     // 1. Guardar en historial local y Firebase
@@ -2907,6 +2866,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         shiftsHistory,
         completedStays,
         expenses,
+        incomes,
         staffConsumptions,
         staffSettlements,
         staffMembers,
@@ -2929,6 +2889,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         changeRoomStatus,
         changeRoom,
         addExpenseToShift,
+        addIncomeToShift,
+        removeIncomeFromShift,
         addExtraConsumption,
         removeExtraConsumption,
         addStaffConsumption,

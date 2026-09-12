@@ -175,6 +175,27 @@ export interface Expense {
   notes?: string;
 }
 
+export type IncomeCategory =
+  | 'alquiler'           // Ej: Pago de alquiler de garaje, espacio, local comercial, antena
+  | 'cambio_compras'     // Ej: Vuelto / cambio de compras devuelto a caja
+  | 'dinero_para_cambio' // Ej: Dinero dejado en caja por administración/dueño para cambio
+  | 'ingreso_extra'      // Ej: Ingreso vario o extraordinario
+  | 'otros';
+
+export interface ShiftIncome {
+  id: string;
+  description: string; // Ej: "Pago alquiler garaje Don Carlos", "Cambio compra insumos", "Dinero para sencillo dejado por Marco"
+  category: IncomeCategory;
+  amount: number;
+  paymentMethod: 'efectivo' | 'qr_vendis' | 'qr_union' | 'qr';
+  timestamp: string;
+  shiftId: string;
+  registeredById: string;
+  registeredByName: string;
+  receiptNumber?: string;
+  notes?: string;
+}
+
 export interface Shift {
   id: string;
   receptionistId: string;
@@ -190,6 +211,12 @@ export interface Shift {
   expectedQrVendis?: number; // Ventas esperadas en QR Vendis
   expectedQrUnion?: number; // Ventas esperadas en QR Banco Unión
   expectedQr: number;   // Ventas esperadas en QR total
+  incomes?: ShiftIncome[]; // Lista de ingresos extraordinarios registrados durante el turno
+  totalIncomesCash?: number; // Total ingresos en efectivo (alquiler, cambio de compras, dinero para cambio)
+  totalIncomesQrVendis?: number; // Total ingresos en QR Vendis
+  totalIncomesQrUnion?: number; // Total ingresos en QR Banco Unión
+  totalIncomesQr?: number; // Total ingresos en QR total
+  totalIncomes?: number; // Total de todos los ingresos registrados en el turno
   expenses?: Expense[]; // Lista de pagos/egresos registrados durante el turno
   operationalExpensesCash?: number; // Egresos de operación pagados en efectivo (excluyendo retiros al dueño)
   totalExpensesCash?: number; // Total egresos y retiros pagados en efectivo
@@ -254,6 +281,12 @@ export interface ShiftReconciledMetrics {
   totalExpensesQrVendis: number;
   totalExpensesQrUnion: number;
   totalExpensesQr: number;
+  shiftIncomes: ShiftIncome[];
+  totalIncomesCash: number;
+  totalIncomesQrVendis: number;
+  totalIncomesQrUnion: number;
+  totalIncomesQr: number;
+  totalIncomes: number;
   expectedCashInDrawer: number;
 }
 

@@ -9,8 +9,10 @@ import { ChangeRoomModal } from './components/ChangeRoomModal';
 import { ShiftCloseModal } from './components/ShiftCloseModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { ExpenseModal } from './components/ExpenseModal';
+import { IncomeModal } from './components/IncomeModal';
 import { StaffConsumptionModal } from './components/StaffConsumptionModal';
 import { ExtraConsumptionModal } from './components/ExtraConsumptionModal';
+import { LiveShiftAuditModal } from './components/LiveShiftAuditModal';
 import { AdminLoginModal, AccessLevel } from './components/AdminLoginModal';
 import { ToastContainer } from './components/Toast';
 import { AdminDashboard } from './components/admin/AdminDashboard';
@@ -49,8 +51,10 @@ export const App: React.FC = () => {
   const [changeRoomTarget, setChangeRoomTarget] = useState<Room | null>(null);
   const [isShiftCloseOpen, setIsShiftCloseOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
   const [isStaffConsumptionModalOpen, setIsStaffConsumptionModalOpen] = useState(false);
   const [isExtraConsumptionModalOpen, setIsExtraConsumptionModalOpen] = useState(false);
+  const [isLiveAuditModalOpen, setIsLiveAuditModalOpen] = useState(false);
   const [receiptStay, setReceiptStay] = useState<Stay | null>(null);
 
   // Check URL path /admin or hash #admin on load & popstate
@@ -214,8 +218,10 @@ export const App: React.FC = () => {
         setCurrentView={setCurrentView}
         onOpenShiftCloseModal={() => setIsShiftCloseOpen(true)}
         onOpenExpenseModal={() => setIsExpenseModalOpen(true)}
+        onOpenIncomeModal={() => setIsIncomeModalOpen(true)}
         onOpenStaffConsumptionModal={() => setIsStaffConsumptionModalOpen(true)}
         onOpenExtraConsumptionModal={() => setIsExtraConsumptionModalOpen(true)}
+        onOpenLiveShiftAuditModal={() => setIsLiveAuditModalOpen(true)}
         onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
         onLockAdmin={handleLockAdmin}
         isAdminAuthenticated={isAdminAuthenticated}
@@ -289,6 +295,13 @@ export const App: React.FC = () => {
         />
       )}
 
+      {isIncomeModalOpen && (
+        <IncomeModal
+          isOpen={isIncomeModalOpen}
+          onClose={() => setIsIncomeModalOpen(false)}
+        />
+      )}
+
       <StaffConsumptionModal
         isOpen={isStaffConsumptionModalOpen}
         onClose={() => setIsStaffConsumptionModalOpen(false)}
@@ -298,6 +311,13 @@ export const App: React.FC = () => {
         isOpen={isExtraConsumptionModalOpen}
         onClose={() => setIsExtraConsumptionModalOpen(false)}
       />
+
+      {isLiveAuditModalOpen && (
+        <LiveShiftAuditModal
+          isOpen={isLiveAuditModalOpen}
+          onClose={() => setIsLiveAuditModalOpen(false)}
+        />
+      )}
 
       {receiptStay && (
         <ReceiptModal

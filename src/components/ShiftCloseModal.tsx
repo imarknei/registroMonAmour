@@ -80,10 +80,11 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
   const totalShiftExpensesCash = currentShift.operationalExpensesCash !== undefined
     ? currentShift.operationalExpensesCash
     : (currentShift.totalExpensesCash || 0);
+  const totalShiftIncomesCash = currentShift.totalIncomesCash || 0;
 
   // Efectivo que DEBERÍA haber físicamente en la gaveta antes de separar sobre
-  // Fondo Inicial + Ventas Efectivo - Pagos/Gastos Operativos en Efectivo
-  const expectedCashInDrawer = Math.max(0, initialFloat + expectedCashSales - totalShiftExpensesCash);
+  // Fondo Inicial + Ventas Efectivo + Otros Ingresos a Caja - Pagos/Gastos Operativos en Efectivo
+  const expectedCashInDrawer = Math.max(0, initialFloat + expectedCashSales + totalShiftIncomesCash - totalShiftExpensesCash);
 
   // Valores numéricos del conteo declarado en Paso 1
   const numTotalPhysicalCash = parseFloat(totalPhysicalCash) || 0;
@@ -396,6 +397,12 @@ export const ShiftCloseModal: React.FC<ShiftCloseModalProps> = ({ isOpen, onClos
                   <span className="text-emerald-400 font-medium">(+) Ventas del Turno en Efectivo:</span>
                   <strong className="font-mono text-emerald-400">+{formatBs(expectedCashSales)}</strong>
                 </div>
+                {totalShiftIncomesCash > 0 && (
+                  <div className="flex justify-between py-0.5">
+                    <span className="text-teal-300 font-medium">(+) Otros Ingresos a Caja (Alquiler/Vueltos):</span>
+                    <strong className="font-mono text-teal-300">+{formatBs(totalShiftIncomesCash)}</strong>
+                  </div>
+                )}
                 {totalShiftExpensesCash > 0 && (
                   <div className="flex justify-between py-0.5">
                     <span className="text-rose-400 font-medium">(-) Pagos / Gastos en Efectivo:</span>
