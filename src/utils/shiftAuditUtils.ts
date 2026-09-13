@@ -90,9 +90,18 @@ export const getStayContribution = (s: Stay, targetShift: Shift): StayContributi
     let fu = s.finalQrUnionPaid;
     if (fc === undefined && fv === undefined && fu === undefined) {
       if (s.isPrepaid) {
-        fc = Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0));
-        fv = Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0));
-        fu = Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0));
+        const totalPaidAtEntry = (s.prepaidCash || 0) + (s.prepaidQrVendis || 0) + (s.prepaidQrUnion || 0) || (s.prepaidAmount || 0);
+        const totalCost = s.totalAmount || (s.baseRoomPrice || 0);
+        // Si la estancia ya estaba 100% prepagada al entrar y no hubo costo adicional en la salida, el cobro de salida es 0
+        if (totalPaidAtEntry >= totalCost && totalCost > 0) {
+          fc = 0;
+          fv = 0;
+          fu = 0;
+        } else {
+          fc = Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0));
+          fv = Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0));
+          fu = Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0));
+        }
       } else {
         fc = s.cashPaid || 0;
         fv = s.qrVendisPaid || 0;

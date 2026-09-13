@@ -956,9 +956,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (finalCash === undefined && finalVendis === undefined && finalUnion === undefined) {
             if (s.isPrepaid) {
-              finalCash = Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0));
-              finalVendis = Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0));
-              finalUnion = Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0));
+              const totalPaidAtEntry = (s.prepaidCash || 0) + (s.prepaidQrVendis || 0) + (s.prepaidQrUnion || 0) || (s.prepaidAmount || 0);
+              const totalCost = s.totalAmount || (s.baseRoomPrice || 0);
+              if (totalPaidAtEntry >= totalCost && totalCost > 0) {
+                finalCash = 0;
+                finalVendis = 0;
+                finalUnion = 0;
+              } else {
+                finalCash = Math.max(0, (s.cashPaid || 0) - (s.prepaidCash || 0));
+                finalVendis = Math.max(0, (s.qrVendisPaid || 0) - (s.prepaidQrVendis || 0));
+                finalUnion = Math.max(0, (s.qrUnionPaid || 0) - (s.prepaidQrUnion || 0));
+              }
             } else {
               finalCash = s.cashPaid || 0;
               finalVendis = s.qrVendisPaid || 0;
