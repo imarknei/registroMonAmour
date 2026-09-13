@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Product, ProductCategory, InventoryMovementLog, InventoryActionType } from '../../types';
 import { formatBs, getCategoryLabel, getStaffDiscountedPrice } from '../../utils/formatUtils';
@@ -47,6 +47,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   // Pestaña activa: 'catalog' (Gestión de Stock) o 'reports' (Informe de Ingresos y Movimientos)
   const [activeTab, setActiveTab] = useState<'catalog' | 'reports'>('catalog');
+
+  // Si no es administrador, forzar estrictamente la pestaña de catálogo y bloquear el informe
+  useEffect(() => {
+    if (currentUser.role !== 'admin' && activeTab !== 'catalog') {
+      setActiveTab('catalog');
+    }
+  }, [currentUser.role, activeTab]);
 
   // --- Estados de Catálogo ---
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
@@ -360,51 +367,55 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={handleOpenCreate}
-              className="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-brand-600/20 transition-all flex items-center justify-center gap-2"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Nuevo Producto</span>
-            </button>
+            {currentUser.role === 'admin' && (
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-brand-600/20 transition-all flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>Nuevo Producto</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Tab Navigation: Catálogo vs Informe de Movimientos */}
-        <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
-          <button
-            type="button"
-            onClick={() => setActiveTab('catalog')}
-            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
-              activeTab === 'catalog'
-                ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Boxes className="w-4 h-4" />
-            <span>📦 Catálogo & Gestión de Stock</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
-              {products.length}
-            </span>
-          </button>
+        {/* Tab Navigation: Catálogo vs Informe de Movimientos (Exclusivo para Administrador) */}
+        {currentUser.role === 'admin' && (
+          <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setActiveTab('catalog')}
+              className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
+                activeTab === 'catalog'
+                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Boxes className="w-4 h-4" />
+              <span>📦 Catálogo & Gestión de Stock</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
+                {products.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('reports')}
-            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
-              activeTab === 'reports'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <History className="w-4 h-4" />
-            <span>📋 Informe de Ingresos y Movimientos</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
-              {inventoryLogs.length}
-            </span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('reports')}
+              className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
+                activeTab === 'reports'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>📋 Informe de Ingresos y Movimientos</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
+                {inventoryLogs.length}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ============================================================== */}
@@ -424,15 +435,17 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               <span className="text-xs text-slate-500">{totalStockUnits} unidades físicas en almacén</span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                Valor de Inventario (PVP)
-              </span>
-              <span className="text-2xl font-extrabold font-mono text-brand-700 block mt-1">
-                {formatBs(totalStockValue)}
-              </span>
-              <span className="text-xs text-slate-500">Precio de venta total</span>
-            </div>
+            {currentUser.role === 'admin' && (
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Valor de Inventario (PVP)
+                </span>
+                <span className="text-2xl font-extrabold font-mono text-brand-700 block mt-1">
+                  {formatBs(totalStockValue)}
+                </span>
+                <span className="text-xs text-slate-500">Precio de venta total</span>
+              </div>
+            )}
 
             <div
               className={`p-4 rounded-2xl border shadow-sm ${
@@ -648,17 +661,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
-                              <button
-                                onClick={() => {
-                                  if (confirm(`¿Eliminar definitivamente el producto "${prod.name}" del catálogo?`)) {
-                                    deleteProductById(prod.id);
-                                  }
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title="Eliminar producto"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {currentUser.role === 'admin' && (
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`¿Eliminar definitivamente el producto "${prod.name}" del catálogo?`)) {
+                                      deleteProductById(prod.id);
+                                    }
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Eliminar producto"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -673,9 +688,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       )}
 
       {/* ============================================================== */}
-      {/* PESTAÑA 2: INFORME DE INGRESOS Y MOVIMIENTOS DE INVENTARIO */}
+      {/* PESTAÑA 2: INFORME DE INGRESOS Y MOVIMIENTOS DE INVENTARIO (Solo Admin) */}
       {/* ============================================================== */}
-      {activeTab === 'reports' && (
+      {activeTab === 'reports' && currentUser.role === 'admin' && (
         <div className="space-y-6 animate-fade-in">
           {/* Métricas del Reporte */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

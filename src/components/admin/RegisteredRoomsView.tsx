@@ -38,6 +38,7 @@ import {
   Moon,
   Sun,
   Users,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const RegisteredRoomsView: React.FC = () => {
@@ -377,20 +378,38 @@ export const RegisteredRoomsView: React.FC = () => {
     searchQuery,
   ]);
 
-  // Manejadores de modales
+  // Manejadores de modales (Estrictamente protegidos para Administrador)
   const handleOpenCancelModal = (stay: Stay) => {
+    if (currentUser.role !== 'admin') return;
     setStayToCancel(stay);
     setIsCancelModalOpen(true);
   };
 
   const handleConfirmCancel = (stayId: string, reason: string, restoreInventory: boolean) => {
+    if (currentUser.role !== 'admin') return;
     cancelStay(stayId, reason, restoreInventory);
   };
 
   const handleOpenEditModal = (stay: Stay) => {
+    if (currentUser.role !== 'admin') return;
     setStayToEdit(stay);
     setIsEditModalOpen(true);
   };
+
+  // Bloqueo total para recepcionistas: el movimiento histórico solo lo ve y modifica el administrador
+  if (currentUser.role !== 'admin') {
+    return (
+      <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h3 className="text-lg font-black text-slate-800">Acceso Exclusivo de Administración</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          El movimiento y registro histórico de habitaciones solo puede ser visualizado y modificado por el Administrador General.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

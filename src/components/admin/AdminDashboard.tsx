@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useApp } from '../../context/AppContext';
 import { InventoryManager } from './InventoryManager';
 import { TariffManager } from './TariffManager';
 import { ShiftHistory } from './ShiftHistory';
@@ -21,6 +22,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBackToRooms,
   onLockInventory,
 }) => {
+  const { currentUser } = useApp();
+
+  // Si no es admin y la vista no es inventario, regresar de inmediato a habitaciones
+  useEffect(() => {
+    if (currentUser.role !== 'admin' && currentView !== 'inventory') {
+      onBackToRooms?.();
+    }
+  }, [currentUser.role, currentView, onBackToRooms]);
+
+  if (currentUser.role !== 'admin' && currentView !== 'inventory') {
+    return null;
+  }
+
   switch (currentView) {
     case 'registered_rooms':
       return <RegisteredRoomsView />;
@@ -39,6 +53,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     case 'firebase':
       return <FirebaseConfigManager />;
     default:
-      return <RegisteredRoomsView />;
+      return currentUser.role === 'admin' ? <RegisteredRoomsView /> : null;
   }
 };

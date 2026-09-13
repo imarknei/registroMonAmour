@@ -84,17 +84,20 @@ export const App: React.FC = () => {
     };
   }, [isAdminAuthenticated]);
 
-  // Protección de rutas: Si no es Admin Global, NO puede acceder a vistas de administración salvo Inventario
+  // Protección estricta de rutas: Solo el Administrador General autenticado puede acceder a vistas de administración
   useEffect(() => {
-    if (
-      currentView !== 'rooms' &&
-      currentView !== 'inventory' &&
-      !isAdminAuthenticated &&
-      currentUser.role !== 'admin'
-    ) {
-      setCurrentView('rooms');
+    const isGlobalAdmin = currentUser.role === 'admin' && isAdminAuthenticated;
+
+    if (currentView === 'inventory') {
+      if (!isGlobalAdmin && !isInventoryUnlocked) {
+        setCurrentView('rooms');
+      }
+    } else if (currentView !== 'rooms') {
+      if (!isGlobalAdmin) {
+        setCurrentView('rooms');
+      }
     }
-  }, [currentView, isAdminAuthenticated, currentUser.role]);
+  }, [currentView, isAdminAuthenticated, currentUser.role, isInventoryUnlocked]);
 
   // Modal handlers
   const handleOpenRegister = (room: Room) => {
