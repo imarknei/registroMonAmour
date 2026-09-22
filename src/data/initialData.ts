@@ -22,6 +22,7 @@ export const INITIAL_TARIFFS: TariffCatalog = {
     price2hNight: 100, // Paquete 2 Horas Suite Noche en 100 Bs
     bonflix2hPrice: 150, // Promo 2 Horas Bonflix en 150 Bs
     bonflix4hPrice: 190, // Promo 4 Horas Bonflix en 190 Bs
+    promo3hPrice: 99, // Promoción 3 Horas por 99 Bs
     priceNight: 180,
     extraHourPrice: 30,
   },
@@ -36,10 +37,13 @@ export const INITIAL_TARIFFS: TariffCatalog = {
     price1h: 85,
     price2h: 140,
     price2hWeekend: 140,
+    promo2hPrice: 99, // Promoción 2 Horas por 99 Bs
     priceNight: 230,
     extraHourPrice: 40,
   },
-  promo3hPrice: 190, // Promoción 3 horas por 190 Bs
+  promo3hPrice: 99, // Promoción 3 horas general (99 Bs)
+  promo2hGoldenPrice: 99, // Promoción 2 Horas Golden Suite (99 Bs)
+  promo3hSuitePrice: 99, // Promoción 3 Horas Suites estándar (99 Bs)
   bonflix2hPrice: 150, // Promo Bonflix 2 Horas por 150 Bs
   bonflix4hPrice: 190, // Promo Bonflix 4 Horas por 190 Bs
 };

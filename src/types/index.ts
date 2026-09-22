@@ -10,12 +10,16 @@ export interface RoomTariffConfig {
   price2hNight?: number; // Paquete 2 Horas Suite Noche (100 Bs)
   bonflix2hPrice?: number; // Promoción 2 Horas con Bonflix (150 Bs)
   bonflix4hPrice?: number; // Promoción 4 Horas con Bonflix (190 Bs)
+  promo2hPrice?: number; // Promoción 2 Horas (ej. 99 Bs en Golden Suite)
+  promo3hPrice?: number; // Promoción 3 Horas (ej. 99 Bs en Suites)
   priceNight?: number; // 12 horas / Noche
   extraHourPrice: number;
 }
 
 export type TariffCatalog = Record<RoomType, RoomTariffConfig> & {
-  promo3hPrice: number; // Promoción 3 horas por 190 Bs
+  promo3hPrice: number; // Promoción 3 horas general (por defecto 99 Bs)
+  promo2hGoldenPrice?: number; // Promoción 2 Horas Golden Suite (por defecto 99 Bs)
+  promo3hSuitePrice?: number; // Promoción 3 Horas Suites estándar (por defecto 99 Bs)
   bonflix2hPrice?: number; // Promoción Bonflix 2 horas por 150 Bs
   bonflix4hPrice?: number; // Promoción Bonflix 4 horas por 190 Bs
 };
@@ -40,6 +44,8 @@ export type PlanType =
   | 'bonflix_4h'
   | 'promo190'
   | 'promo3h'
+  | 'promo2h_golden'
+  | 'promo3h_suite'
   | 'noche12h'
   | 'noche'
   | 'personalizado';

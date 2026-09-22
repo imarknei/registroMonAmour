@@ -1,6 +1,6 @@
 import React from 'react';
 import { Stay } from '../types';
-import { formatBs, getRoomTypeLabel, getPaymentMethodLabel } from '../utils/formatUtils';
+import { formatBs, getRoomTypeLabel, getPaymentMethodLabel, getPlanLabel } from '../utils/formatUtils';
 import { formatDateTime, formatTimeOnly } from '../utils/timeUtils';
 import { X, Printer, Flame } from 'lucide-react';
 
@@ -83,7 +83,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ stay, onClose }) => 
                 <span>
                   Estadía ({stay.isCustomPackage || stay.chosenPlan === 'personalizado'
                     ? (stay.customPackageName || 'PAQUETE PERSONALIZADO').toUpperCase()
-                    : stay.chosenPlan.toUpperCase()}):
+                    : getPlanLabel(stay.chosenPlan).toUpperCase()}):
                 </span>
                 <span>{formatBs(stay.baseRoomPrice)}</span>
               </div>

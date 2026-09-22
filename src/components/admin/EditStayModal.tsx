@@ -354,6 +354,12 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                     if (newPlan === 'personalizado') {
                       setIsCustomPackage(true);
                       if (!customPackageName) setCustomPackageName('Promoción Especial');
+                    } else if (newPlan === 'promo2h_golden') {
+                      setChosenDurationMinutes(120);
+                      setBaseRoomPrice(99);
+                    } else if (newPlan === 'promo3h_suite') {
+                      setChosenDurationMinutes(180);
+                      setBaseRoomPrice(99);
                     }
                   }}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/20"
@@ -365,6 +371,8 @@ export const EditStayModal: React.FC<EditStayModalProps> = ({ stay, isOpen, onCl
                   <option value="bonflix_4h">4h Bonflix (240 min)</option>
                   <option value="3h">3 Horas (180 min)</option>
                   <option value="promo3h">Promo 3 Horas (180 min)</option>
+                  <option value="promo2h_golden">Promo 2h Golden Suite (99 Bs - 120 min)</option>
+                  <option value="promo3h_suite">Promo 3h Suite (99 Bs - 180 min)</option>
                   <option value="noche">Noche Completa (12 Horas)</option>
                   <option value="personalizado">✨ Paquete Personalizado (Libre)</option>
                 </select>

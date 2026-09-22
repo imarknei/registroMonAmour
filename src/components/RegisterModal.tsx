@@ -88,6 +88,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     });
   }
 
+  // ✨ PROMOCIÓN GOLDEN SUITE: 2 Horas por 99 Bs (Configurable por Administrador)
+  if (room.type === 'golden_suite') {
+    const goldenPromo2h = roomTariff?.promo2hPrice || tariffs?.promo2hGoldenPrice || 99;
+    planOptions.push({
+      key: 'promo2h_golden',
+      title: `Promo 2h (${formatBs(goldenPromo2h)})`,
+      subtitle: 'Promoción 2 Horas Golden Suite (120 min)',
+      durationMinutes: 120,
+      price: goldenPromo2h,
+      icon: <Sparkles className="w-4 h-4 text-amber-500" />,
+      isPromo: true,
+    });
+  }
+
   // Paquete 2 Horas Suite Noche (100 Bs) para habitaciones Suite
   if (roomTariff?.price2hNight || room.type === 'suite') {
     const suiteNight2hPrice = roomTariff?.price2hNight || 100;
@@ -99,6 +113,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
       price: suiteNight2hPrice,
       icon: <Moon className="w-4 h-4 text-indigo-600" />,
       isNight: true,
+    });
+  }
+
+  // ✨ PROMOCIÓN SUITES: 3 Horas por 99 Bs en todas las demás Suites (Configurable por Administrador)
+  if (room.type === 'suite') {
+    const suitePromo3h = roomTariff?.promo3hPrice || tariffs?.promo3hSuitePrice || tariffs?.promo3hPrice || 99;
+    planOptions.push({
+      key: 'promo3h_suite',
+      title: `Promo 3h (${formatBs(suitePromo3h)})`,
+      subtitle: 'Promoción 3 Horas Suite (180 min)',
+      durationMinutes: 180,
+      price: suitePromo3h,
+      icon: <Sparkles className="w-4 h-4 text-amber-500" />,
+      isPromo: true,
     });
   }
 
@@ -150,8 +178,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     });
   }
 
-  // Promo 3 Horas estándar si existe
-  if (tariffs?.promo3hPrice) {
+  // Promo 3 Horas estándar en otras habitaciones si existe (Ventilador, Aire, Jacuzzi)
+  if (tariffs?.promo3hPrice && room.type !== 'golden_suite' && room.type !== 'suite') {
     planOptions.push({
       key: 'promo3h',
       title: 'Promo 3 Horas',

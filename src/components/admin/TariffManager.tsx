@@ -20,6 +20,8 @@ export const TariffManager: React.FC = () => {
       | 'price2hNight'
       | 'bonflix2hPrice'
       | 'bonflix4hPrice'
+      | 'promo2hPrice'
+      | 'promo3hPrice'
       | 'priceNight'
       | 'extraHourPrice',
     value: string
@@ -34,11 +36,28 @@ export const TariffManager: React.FC = () => {
     }));
   };
 
-  const handleUpdatePromo = (value: string) => {
-    const num = parseFloat(value) || 0;
+  const handleUpdateGoldenPromo2h = (value: string) => {
+    const num = value === '' ? undefined : parseFloat(value);
     setCurrentTariffs((prev) => ({
       ...prev,
-      promo3hPrice: num,
+      promo2hGoldenPrice: num,
+      golden_suite: {
+        ...prev.golden_suite,
+        promo2hPrice: num,
+      },
+    }));
+  };
+
+  const handleUpdateSuitePromo3h = (value: string) => {
+    const num = value === '' ? undefined : parseFloat(value);
+    setCurrentTariffs((prev) => ({
+      ...prev,
+      promo3hSuitePrice: num,
+      promo3hPrice: num || 99,
+      suite: {
+        ...prev.suite,
+        promo3hPrice: num,
+      },
     }));
   };
 
@@ -274,6 +293,48 @@ export const TariffManager: React.FC = () => {
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                     />
                   </div>
+
+                  {/* Promo 2 Horas (Golden Suite) */}
+                  {type.key === 'golden_suite' ? (
+                    <div className="bg-amber-50/70 p-2 rounded-xl border border-amber-300 col-span-1">
+                      <label className="block text-[11px] font-black text-amber-950 mb-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        Promo 2h (Bs)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={config.promo2hPrice ?? currentTariffs.promo2hGoldenPrice ?? 99}
+                        onChange={(e) => {
+                          handleUpdateField(type.key, 'promo2hPrice', e.target.value);
+                          handleUpdateGoldenPromo2h(e.target.value);
+                        }}
+                        placeholder="99"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 font-mono font-black text-amber-950 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* Promo 3 Horas (Suites) */}
+                  {type.key === 'suite' ? (
+                    <div className="bg-amber-50/70 p-2 rounded-xl border border-amber-300 col-span-1">
+                      <label className="block text-[11px] font-black text-amber-950 mb-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        Promo 3h (Bs)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={config.promo3hPrice ?? currentTariffs.promo3hSuitePrice ?? currentTariffs.promo3hPrice ?? 99}
+                        onChange={(e) => {
+                          handleUpdateField(type.key, 'promo3hPrice', e.target.value);
+                          handleUpdateSuitePromo3h(e.target.value);
+                        }}
+                        placeholder="99"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 font-mono font-black text-amber-950 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Si es Suite: Mostrar inputs de Promociones Bonflix */}
@@ -368,34 +429,83 @@ export const TariffManager: React.FC = () => {
           </div>
         </div>
 
-        {/* Global Promotions Card */}
-        <div className="bg-gradient-to-r from-amber-50 to-rose-50 p-5 rounded-2xl border border-amber-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Tarifa Especial: Promoción 3 Horas
-              </h3>
-              <p className="text-xs text-slate-500">
-                Precio de promoción general disponible en la pantalla de registro para todas las habitaciones del motel (Ventilador, Aire, Suite, Jacuzzi y Golden Suite).
-              </p>
+        {/* Promociones Especiales (Tarifas 99 Bs) */}
+        <div className="bg-gradient-to-r from-amber-50 via-rose-50 to-orange-50 p-5 rounded-2xl border border-amber-300 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-amber-200/80 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    Promociones Especiales de Habitaciones (Tarifas 99 Bs)
+                  </h3>
+                  <span className="bg-amber-100 text-amber-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-300">
+                    Activas para Recepción
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Precios de promoción oficial para que las recepcionistas los seleccionen al registrar entradas.
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-700">Precio Promoción:</span>
-            <div className="w-32">
-              <input
-                type="number"
-                min="0"
-                value={currentTariffs.promo3hPrice}
-                onChange={(e) => handleUpdatePromo(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-amber-300 font-mono font-extrabold text-brand-800 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-              />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Promo Golden Suite: 2 Horas */}
+            <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs flex items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-black text-slate-800 block">
+                  👑 Golden Suite • Promo 2 Horas
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Estadía de 2 Horas (120 min) en Golden Suite
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="w-24">
+                  <input
+                    type="number"
+                    min="0"
+                    value={currentTariffs.golden_suite?.promo2hPrice ?? currentTariffs.promo2hGoldenPrice ?? 99}
+                    onChange={(e) => {
+                      handleUpdateField('golden_suite', 'promo2hPrice', e.target.value);
+                      handleUpdateGoldenPromo2h(e.target.value);
+                    }}
+                    className="w-full px-3 py-1.5 rounded-xl border border-amber-300 font-mono font-black text-brand-800 text-sm bg-amber-50/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-500">Bs</span>
+              </div>
             </div>
-            <span className="text-xs font-bold text-slate-500">Bs</span>
+
+            {/* Promo Suites: 3 Horas */}
+            <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-xs flex items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-black text-slate-800 block">
+                  ✨ Suites Estándar • Promo 3 Horas
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Estadía de 3 Horas (180 min) en Habitaciones 1, 5, 6, 11, 13, 15 y 16
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="w-24">
+                  <input
+                    type="number"
+                    min="0"
+                    value={currentTariffs.suite?.promo3hPrice ?? currentTariffs.promo3hSuitePrice ?? currentTariffs.promo3hPrice ?? 99}
+                    onChange={(e) => {
+                      handleUpdateField('suite', 'promo3hPrice', e.target.value);
+                      handleUpdateSuitePromo3h(e.target.value);
+                    }}
+                    className="w-full px-3 py-1.5 rounded-xl border border-rose-300 font-mono font-black text-brand-800 text-sm bg-rose-50/40 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-500">Bs</span>
+              </div>
+            </div>
           </div>
         </div>
 

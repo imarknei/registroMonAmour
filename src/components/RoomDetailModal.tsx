@@ -3,7 +3,7 @@ import { Room, Product, PaymentMethod, Stay, ConsumptionItem } from '../types';
 import { useApp } from '../context/AppContext';
 import { getNetworkTimestamp } from '../services/firebase';
 import { calculateStayTime, formatDateTime, formatTimeOnly, formatTimerDisplay } from '../utils/timeUtils';
-import { formatBs, getRoomTypeBadge, getPaymentMethodLabel } from '../utils/formatUtils';
+import { formatBs, getRoomTypeBadge, getPaymentMethodLabel, getPlanLabel } from '../utils/formatUtils';
 import {
   X,
   PlusCircle,
@@ -317,7 +317,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
               <p className="text-[11px] sm:text-xs text-slate-300 font-medium">
                 {stay.isCustomPackage || stay.chosenPlan === 'personalizado'
                   ? `✨ ${stay.customPackageName || 'PAQUETE PERSONALIZADO'} (${stay.chosenDurationMinutes} min)`
-                  : stay.chosenPlan.toUpperCase()} • Ingreso: {formatTimeOnly(stay.startTime)} • Atendido por: {stay.receptionistName}
+                  : getPlanLabel(stay.chosenPlan).toUpperCase()} • Ingreso: {formatTimeOnly(stay.startTime)} • Atendido por: {stay.receptionistName}
               </p>
             </div>
           </div>
@@ -503,7 +503,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
               {/* Financial Calculation Breakdown */}
               <div className="bg-slate-900 text-white rounded-2xl p-4 space-y-2">
                 <div className="flex justify-between text-xs text-slate-300">
-                  <span>Tarifa Habitación ({stay.chosenPlan.toUpperCase()}):</span>
+                  <span>Tarifa Habitación ({stay.isCustomPackage || stay.chosenPlan === 'personalizado' ? (stay.customPackageName || 'Personalizado') : getPlanLabel(stay.chosenPlan)}):</span>
                   <span className="font-mono font-semibold">{formatBs(stay.baseRoomPrice)}</span>
                 </div>
 
