@@ -22,7 +22,14 @@ export const RoomGrid: React.FC<RoomGridProps> = ({
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | RoomStatus>('all');
 
-  const filteredRooms = rooms.filter((r) => {
+  // Ordenar habitaciones por número (1,2,3...16, Golden al final) — orden fijo siempre
+  const sortedRooms = [...rooms].sort((a, b) => {
+    const numA = parseInt(a.id.replace(/\D/g, '')) || 9999;
+    const numB = parseInt(b.id.replace(/\D/g, '')) || 9999;
+    return numA - numB;
+  });
+
+  const filteredRooms = sortedRooms.filter((r) => {
     if (statusFilter === 'all') return true;
     return r.status === statusFilter;
   });

@@ -979,7 +979,11 @@ export const fetchInitialDataRest = async (): Promise<InitialRestData | null> =>
                   : [],
               }
             : undefined,
-        }))
+        })).sort((a: any, b: any) => {
+          const numA = parseInt((a.id || '').replace(/\D/g, '')) || 999;
+          const numB = parseInt((b.id || '').replace(/\D/g, '')) || 999;
+          return numA - numB;
+        })
       : [];
 
     const incomesList: ShiftIncome[] = incRes
