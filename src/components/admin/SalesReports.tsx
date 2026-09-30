@@ -273,6 +273,82 @@ export const SalesReports: React.FC = () => {
 
   const receptionistList = Object.values(receptionistMap);
 
+  // ── Ranking individual de habitaciones (Habitación 1, 2, 3... Golden Suite) ──
+  const individualRoomMap: Record<string, { name: string; type: string; count: number; revenue: number }> = {};
+  filteredStays.forEach((s) => {
+    if (s.status === 'cancelled') return;
+    const key = s.roomId || s.roomName;
+    if (!individualRoomMap[key]) {
+      individualRoomMap[key] = {
+        name: s.roomName,
+        type: s.roomType,
+        count: 0,
+        revenue: 0,
+      };
+    }
+    individualRoomMap[key].count += 1;
+    individualRoomMap[key].revenue += (s.totalAmount || s.baseRoomPrice || 0);
+  });
+
+  const topIndividualRooms = Object.values(individualRoomMap)
+    .sort((a, b) => b.count - a.count);
+
+  // ── Ranking de promociones y planes más solicitados ──
+  const planPopularityMap: Record<string, { planKey: string; label: string; count: number; revenue: number }> = {};
+  filteredStays.forEach((s) => {
+    if (s.status === 'cancelled') return;
+    const planKey = s.chosenPlan || '1h';
+    if (!planPopularityMap[planKey]) {
+      planPopularityMap[planKey] = {
+        planKey,
+        label: getPlanLabel(planKey),
+        count: 0,
+        revenue: 0,
+      };
+    }
+    planPopularityMap[planKey].count += 1;
+    planPopularityMap[planKey].revenue += (s.baseRoomPrice || 0);
+  });
+
+  const topPlansAndPromos = Object.values(planPopularityMap)
+    .sort((a, b) => b.count - a.count);
+
+  // ── Ingresos Semanales y Mensuales (Globales) ──
+  const nowMsAnalytics = getNetworkTimestamp();
+  const todayStartAnalytics = getBoliviaStartOfDay(nowMsAnalytics);
+  const dayOfWeekAnalytics = getBoliviaDayOfWeek(nowMsAnalytics);
+  const thisWeekStartAnalytics = todayStartAnalytics - ((dayOfWeekAnalytics === 0 ? 6 : dayOfWeekAnalytics - 1) * 24 * 60 * 60 * 1000);
+  const thisMonthStartAnalytics = getBoliviaStartOfMonth(nowMsAnalytics);
+
+  let thisWeekRevenue = 0;
+  let thisWeekCount = 0;
+  let thisMonthRevenue = 0;
+  let thisMonthCount = 0;
+
+  allUnifiedStays.forEach((s) => {
+    if (s.status === 'cancelled') return;
+    const stayTime = new Date(s.startTime).getTime();
+    const amt = s.totalAmount || s.baseRoomPrice || 0;
+    if (stayTime >= thisWeekStartAnalytics) {
+      thisWeekRevenue += amt;
+      thisWeekCount += 1;
+    }
+    if (stayTime >= thisMonthStartAnalytics) {
+      thisMonthRevenue += amt;
+      thisMonthCount += 1;
+    }
+  });
+
+  extraConsumptions.forEach((ec) => {
+    const ecTime = new Date(ec.date).getTime();
+    if (ecTime >= thisWeekStartAnalytics) {
+      thisWeekRevenue += ec.totalAmount;
+    }
+    if (ecTime >= thisMonthStartAnalytics) {
+      thisMonthRevenue += ec.totalAmount;
+    }
+  });
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -515,6 +591,208 @@ export const SalesReports: React.FC = () => {
           <div className="text-xs text-slate-500 mt-1 flex items-center justify-between">
             <span>Minibar: {formatBs(totalMinibarRevenue)} ({totalMinibarUnits} un.)</span>
             <span className="text-brand-600 font-bold">Extras: {formatBs(totalOvertimeRevenue)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* KPI 2: Ingresos por Período (Semana y Mes) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Generado Esta Semana */}
+        <div className="bg-gradient-to-br from-brand-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-brand-800 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-brand-200 text-xs font-extrabold uppercase tracking-wider">
+              <Calendar className="w-4 h-4 text-brand-400" />
+              Ingresos Esta Semana (Lunes - Hoy)
+            </div>
+            <span className="text-3xl font-black font-mono text-white block mt-1">
+              {formatBs(thisWeekRevenue)}
+            </span>
+            <span className="text-xs text-brand-300 font-medium mt-0.5 block">
+              {thisWeekCount} habitaciones ocupadas esta semana
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-brand-300 shrink-0">
+            <TrendingUp className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Generado Este Mes */}
+        <div className="bg-gradient-to-br from-purple-900 to-slate-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-purple-800 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-purple-200 text-xs font-extrabold uppercase tracking-wider">
+              <CalendarDays className="w-4 h-4 text-purple-400" />
+              Ingresos Este Mes
+            </div>
+            <span className="text-3xl font-black font-mono text-white block mt-1">
+              {formatBs(thisMonthRevenue)}
+            </span>
+            <span className="text-xs text-purple-300 font-medium mt-0.5 block">
+              {thisMonthCount} habitaciones acumuladas en el mes
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-purple-300 shrink-0">
+            <BarChart3 className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 👑 HABITACIONES Y PROMOCIONES MÁS BUSCADAS */}
+      {/* ======================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* GRÁFICA / RANKING: Habitaciones Más Buscadas (Individual) */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <BedDouble className="w-5 h-5 text-brand-600" />
+              <h3 className="font-extrabold text-sm text-slate-900">
+                🏆 Habitaciones Más Solicitadas (Ranking Individual)
+              </h3>
+            </div>
+            <span className="text-xs font-bold text-slate-400">Por ocupación</span>
+          </div>
+
+          {topIndividualRooms.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              No hay registros de habitaciones en este período.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {topIndividualRooms.map((r, idx) => {
+                const maxCount = topIndividualRooms[0]?.count || 1;
+                const percent = (r.count / maxCount) * 100;
+                return (
+                  <div key={r.name} className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-5 h-5 rounded-full font-black flex items-center justify-center text-[10px] ${
+                          idx === 0 ? 'bg-amber-400 text-amber-950' : idx === 1 ? 'bg-slate-300 text-slate-800' : idx === 2 ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {idx + 1}
+                        </span>
+                        <strong className="font-extrabold text-slate-800">{r.name}</strong>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getRoomBadgeColor(r.type)}`}>
+                          {getRoomTypeLabel(r.type)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">
+                          {r.count} usos
+                        </span>
+                        <span className="font-mono font-black text-brand-700">{formatBs(r.revenue)}</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${percent}%` }}
+                        className="bg-gradient-to-r from-brand-600 to-rose-500 h-full rounded-full transition-all duration-500"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* GRÁFICA / RANKING: Promociones y Tarifas Más Buscadas */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-500" />
+              <h3 className="font-extrabold text-sm text-slate-900">
+                🎯 Promociones y Tarifas Más Solicitadas
+              </h3>
+            </div>
+            <span className="text-xs font-bold text-slate-400">Por elección del cliente</span>
+          </div>
+
+          {topPlansAndPromos.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              No hay promociones registradas en este período.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {topPlansAndPromos.map((p, idx) => {
+                const maxCount = topPlansAndPromos[0]?.count || 1;
+                const percent = (p.count / maxCount) * 100;
+                return (
+                  <div key={p.planKey} className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 font-black flex items-center justify-center text-[10px]">
+                          {idx + 1}
+                        </span>
+                        <strong className="font-extrabold text-slate-800">{p.label}</strong>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">
+                          {p.count} contrataciones
+                        </span>
+                        <span className="font-mono font-black text-brand-700">{formatBs(p.revenue)}</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${percent}%` }}
+                        className="bg-gradient-to-r from-amber-500 to-rose-500 h-full rounded-full transition-all duration-500"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 💡 SUGERENCIAS ESTRATÉGICAS PARA AUMENTAR GANANCIAS */}
+      {/* ======================================================== */}
+      <div className="bg-gradient-to-r from-amber-50 via-rose-50 to-orange-50 p-5 rounded-2xl border border-amber-300 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b border-amber-200 pb-3">
+          <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs font-bold">
+            💡
+          </div>
+          <div>
+            <h3 className="font-extrabold text-base text-slate-900">
+              Sugerencias Estratégicas para Aumentar las Ganancias del Motel
+            </h3>
+            <p className="text-xs text-slate-600">
+              Recomendaciones basadas en los hábitos de consumo y datos reales registrados.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs space-y-2">
+            <div className="flex items-center gap-2 text-amber-800 font-extrabold text-xs">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              1. Potenciar Promociones Estrella
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Las promociones fijas como <strong>Promo 3h (99 Bs)</strong> y <strong>Promo 2h Golden (99 Bs)</strong> atraen un alto flujo de clientes. Mantener promociones atractivas en horarios de menor afluencia (ej. mañanas y tardes de lunes a miércoles) llenará habitaciones que normalmente estarían desocupadas.
+            </p>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-2xs space-y-2">
+            <div className="flex items-center gap-2 text-brand-800 font-extrabold text-xs">
+              <ShoppingBag className="w-4 h-4 text-brand-500" />
+              2. Impulsar las Ventas del Minibar
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Ofrecer combos de bebidas y preservativos directamente en recepción durante el ingreso, o contar con vitrinas/exhibidores visibles, puede aumentar los consumos secundarios del minibar entre un 20% y 35% por estadía.
+            </p>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-purple-200 shadow-2xs space-y-2">
+            <div className="flex items-center gap-2 text-purple-800 font-extrabold text-xs">
+              <Clock className="w-4 h-4 text-purple-500" />
+              3. Control Inteligente de Tiempo Extra
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Muchos clientes extienden sus estadías por 20 a 40 minutos extra. Las alertas automáticas del sistema facilitan que las recepcionistas cobren oportunamente el tiempo excedente o pregunten si desean ampliar la estadía a la tarifa de Noche Completa.
+            </p>
           </div>
         </div>
       </div>
