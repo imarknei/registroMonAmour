@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../../data/initialData';
 
-type DateFilterRange = 'today' | 'yesterday' | 'week' | 'month' | 'all';
+type DateFilterRange = 'today' | 'yesterday' | 'week' | 'month' | 'last_month' | 'custom' | 'all';
 type StatusFilter = 'all' | 'active' | 'completed' | 'cancelled';
 
 export const SalesReports: React.FC = () => {
@@ -45,7 +45,9 @@ export const SalesReports: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filters State
-  const [dateRange, setDateRange] = useState<DateFilterRange>('all');
+  const [dateRange, setDateRange] = useState<DateFilterRange>('month');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [selectedReceptionist, setSelectedReceptionist] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -84,6 +86,16 @@ export const SalesReports: React.FC = () => {
     const weekStart = todayStart - ((dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
     const monthStart = getBoliviaStartOfMonth(nowMs);
 
+    // Mes anterior (Bolivia timezone)
+    const nowD = new Date(nowMs);
+    const prevMonthRef = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1);
+    const lastMonthStart = getBoliviaStartOfMonth(prevMonthRef.getTime());
+    const lastMonthEnd = monthStart - 1;
+
+    // Rango personalizado
+    const customStartMs = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : 0;
+    const customEndMs = customEndDate ? new Date(`${customEndDate}T23:59:59.999`).getTime() : Infinity;
+
     return allUnifiedStays.filter((s) => {
       const stayTime = new Date(s.startTime).getTime();
 
@@ -92,6 +104,11 @@ export const SalesReports: React.FC = () => {
       if (dateRange === 'yesterday' && (stayTime < yesterdayStart || stayTime >= todayStart)) return false;
       if (dateRange === 'week' && stayTime < weekStart) return false;
       if (dateRange === 'month' && stayTime < monthStart) return false;
+      if (dateRange === 'last_month' && (stayTime < lastMonthStart || stayTime > lastMonthEnd)) return false;
+      if (dateRange === 'custom') {
+        if (customStartMs && stayTime < customStartMs) return false;
+        if (customEndMs && stayTime > customEndMs) return false;
+      }
 
       // Receptionist filter
       if (selectedReceptionist !== 'all') {
@@ -118,7 +135,7 @@ export const SalesReports: React.FC = () => {
 
       return true;
     });
-  }, [allUnifiedStays, dateRange, selectedReceptionist, statusFilter, searchQuery]);
+  }, [allUnifiedStays, dateRange, customStartDate, customEndDate, selectedReceptionist, statusFilter, searchQuery]);
 
   // Filtered extra consumptions (Bolivia timezone)
   const filteredExtraConsumptions = useMemo(() => {
@@ -129,6 +146,14 @@ export const SalesReports: React.FC = () => {
     const weekStart = todayStart - ((dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
     const monthStart = getBoliviaStartOfMonth(nowMs);
 
+    const nowD = new Date(nowMs);
+    const prevMonthRef = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1);
+    const lastMonthStart = getBoliviaStartOfMonth(prevMonthRef.getTime());
+    const lastMonthEnd = monthStart - 1;
+
+    const customStartMs = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : 0;
+    const customEndMs = customEndDate ? new Date(`${customEndDate}T23:59:59.999`).getTime() : Infinity;
+
     return extraConsumptions.filter((ec) => {
       const ecTime = new Date(ec.date).getTime();
 
@@ -136,6 +161,11 @@ export const SalesReports: React.FC = () => {
       if (dateRange === 'yesterday' && (ecTime < yesterdayStart || ecTime >= todayStart)) return false;
       if (dateRange === 'week' && ecTime < weekStart) return false;
       if (dateRange === 'month' && ecTime < monthStart) return false;
+      if (dateRange === 'last_month' && (ecTime < lastMonthStart || ecTime > lastMonthEnd)) return false;
+      if (dateRange === 'custom') {
+        if (customStartMs && ecTime < customStartMs) return false;
+        if (customEndMs && ecTime > customEndMs) return false;
+      }
 
       if (selectedReceptionist !== 'all') {
         const matchRecep =
@@ -154,7 +184,7 @@ export const SalesReports: React.FC = () => {
 
       return true;
     });
-  }, [extraConsumptions, dateRange, selectedReceptionist, searchQuery]);
+  }, [extraConsumptions, dateRange, customStartDate, customEndDate, selectedReceptionist, searchQuery]);
 
   // Valid non-cancelled stays for financial totals
   const validStays = filteredStays.filter((s) => s.status !== 'cancelled');
@@ -320,10 +350,17 @@ export const SalesReports: React.FC = () => {
   const thisWeekStartAnalytics = todayStartAnalytics - ((dayOfWeekAnalytics === 0 ? 6 : dayOfWeekAnalytics - 1) * 24 * 60 * 60 * 1000);
   const thisMonthStartAnalytics = getBoliviaStartOfMonth(nowMsAnalytics);
 
+  const nowD = new Date(nowMsAnalytics);
+  const prevMonthRef = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1);
+  const lastMonthStartAnalytics = getBoliviaStartOfMonth(prevMonthRef.getTime());
+  const lastMonthEndAnalytics = thisMonthStartAnalytics - 1;
+
   let thisWeekRevenue = 0;
   let thisWeekCount = 0;
   let thisMonthRevenue = 0;
   let thisMonthCount = 0;
+  let lastMonthRevenue = 0;
+  let lastMonthCount = 0;
 
   allUnifiedStays.forEach((s) => {
     if (s.status === 'cancelled') return;
@@ -336,6 +373,9 @@ export const SalesReports: React.FC = () => {
     if (stayTime >= thisMonthStartAnalytics) {
       thisMonthRevenue += amt;
       thisMonthCount += 1;
+    } else if (stayTime >= lastMonthStartAnalytics && stayTime <= lastMonthEndAnalytics) {
+      lastMonthRevenue += amt;
+      lastMonthCount += 1;
     }
   });
 
@@ -346,8 +386,35 @@ export const SalesReports: React.FC = () => {
     }
     if (ecTime >= thisMonthStartAnalytics) {
       thisMonthRevenue += ec.totalAmount;
+    } else if (ecTime >= lastMonthStartAnalytics && ecTime <= lastMonthEndAnalytics) {
+      lastMonthRevenue += ec.totalAmount;
     }
   });
+
+  const monthGrowthPercent = lastMonthRevenue > 0 ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
+
+  // ── Tendencia de Ingresos Diarios (Para Gráfico de Barras) ──
+  const dailyTrendList = useMemo(() => {
+    const map: Record<string, { dateStr: string; label: string; totalBs: number; count: number }> = {};
+    validStays.forEach((s) => {
+      const d = new Date(s.startTime);
+      const year = d.getFullYear();
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      const day = d.getDate().toString().padStart(2, '0');
+      const dateKey = `${year}-${month}-${day}`;
+      const label = `${day}/${month}`;
+
+      if (!map[dateKey]) {
+        map[dateKey] = { dateStr: dateKey, label, totalBs: 0, count: 0 };
+      }
+      map[dateKey].totalBs += (s.totalAmount || s.baseRoomPrice || 0);
+      map[dateKey].count += 1;
+    });
+
+    const list = Object.values(map).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+    const maxRevenue = Math.max(...list.map((item) => item.totalBs), 1);
+    return { list, maxRevenue };
+  }, [validStays]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -453,11 +520,13 @@ export const SalesReports: React.FC = () => {
               onChange={(e) => setDateRange(e.target.value as DateFilterRange)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
-              <option value="all">📅 Todo el Histórico</option>
+              <option value="month">🗓️ Este Mes (Actual)</option>
+              <option value="last_month">⏪ Mes Anterior (Pasado)</option>
+              <option value="custom">🛠️ Rango Personalizado</option>
+              <option value="week">📆 Esta Semana (Lunes a Dom)</option>
               <option value="today">☀️ Hoy (Turnos del Día)</option>
               <option value="yesterday">🌙 Ayer</option>
-              <option value="week">📆 Esta Semana (Lunes a Dom)</option>
-              <option value="month">🗓️ Este Mes</option>
+              <option value="all">📅 Todo el Histórico</option>
             </select>
           </div>
 
@@ -511,6 +580,36 @@ export const SalesReports: React.FC = () => {
             />
           </div>
         </div>
+
+        {/* Rango Personalizado Date Pickers */}
+        {dateRange === 'custom' && (
+          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in bg-amber-50/70 p-3 rounded-xl border border-amber-200">
+            <div>
+              <label className="block text-[11px] font-extrabold text-amber-950 mb-1 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                Fecha Inicio (Desde):
+              </label>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-extrabold text-amber-950 mb-1 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                Fecha Fin (Hasta):
+              </label>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -595,20 +694,20 @@ export const SalesReports: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI 2: Ingresos por Período (Semana y Mes) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* KPI 2: Comparativa "Este Mes" vs "Mes Anterior" y "Esta Semana" */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Generado Esta Semana */}
         <div className="bg-gradient-to-br from-brand-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-brand-800 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-brand-200 text-xs font-extrabold uppercase tracking-wider">
               <Calendar className="w-4 h-4 text-brand-400" />
-              Ingresos Esta Semana (Lunes - Hoy)
+              Esta Semana (Lunes - Hoy)
             </div>
             <span className="text-3xl font-black font-mono text-white block mt-1">
               {formatBs(thisWeekRevenue)}
             </span>
             <span className="text-xs text-brand-300 font-medium mt-0.5 block">
-              {thisWeekCount} habitaciones ocupadas esta semana
+              {thisWeekCount} habitaciones esta semana
             </span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-brand-300 shrink-0">
@@ -616,25 +715,102 @@ export const SalesReports: React.FC = () => {
           </div>
         </div>
 
-        {/* Generado Este Mes */}
-        <div className="bg-gradient-to-br from-purple-900 to-slate-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-purple-800 flex items-center justify-between">
+        {/* Generado Este Mes (Mes Actual) */}
+        <div className="bg-gradient-to-br from-purple-900 to-slate-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-purple-800 flex items-center justify-between relative overflow-hidden">
           <div>
             <div className="flex items-center gap-2 text-purple-200 text-xs font-extrabold uppercase tracking-wider">
               <CalendarDays className="w-4 h-4 text-purple-400" />
-              Ingresos Este Mes
+              Este Mes (Mes Actual)
             </div>
             <span className="text-3xl font-black font-mono text-white block mt-1">
               {formatBs(thisMonthRevenue)}
             </span>
-            <span className="text-xs text-purple-300 font-medium mt-0.5 block">
-              {thisMonthCount} habitaciones acumuladas en el mes
-            </span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-purple-200 font-medium">
+                {thisMonthCount} estancias acumuladas
+              </span>
+              {lastMonthRevenue > 0 && (
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  monthGrowthPercent >= 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                }`}>
+                  {monthGrowthPercent >= 0 ? `▲ +${monthGrowthPercent.toFixed(1)}%` : `▼ ${monthGrowthPercent.toFixed(1)}%`} vs Mes Pasado
+                </span>
+              )}
+            </div>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-purple-300 shrink-0">
             <BarChart3 className="w-6 h-6" />
           </div>
         </div>
+
+        {/* Generado Mes Anterior (Mes Pasado) */}
+        <div className="bg-gradient-to-br from-slate-800 to-slate-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-700 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-slate-300 text-xs font-extrabold uppercase tracking-wider">
+              <History className="w-4 h-4 text-slate-400" />
+              Mes Anterior (Pasado)
+            </div>
+            <span className="text-3xl font-black font-mono text-slate-100 block mt-1">
+              {formatBs(lastMonthRevenue)}
+            </span>
+            <span className="text-xs text-slate-400 font-medium mt-0.5 block">
+              {lastMonthCount} estancias cerradas el mes pasado
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-slate-400 shrink-0">
+            <Clock className="w-6 h-6" />
+          </div>
+        </div>
       </div>
+
+      {/* 📈 GRÁFICA DE TENDENCIA DIARIA / CRONOLÓGICA */}
+      {dailyTrendList.list.length > 0 && (
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-brand-600" />
+              <h3 className="font-extrabold text-sm text-slate-900">
+                Gráfica de Tendencia: Evolución Diaria de Ventas
+              </h3>
+            </div>
+            <span className="text-xs font-bold text-slate-400">
+              {dailyTrendList.list.length} días graficados
+            </span>
+          </div>
+
+          {/* Bar Chart Visual */}
+          <div className="pt-4 pb-2">
+            <div className="flex items-end justify-between gap-1.5 h-44 px-2">
+              {dailyTrendList.list.map((item) => {
+                const heightPercent = Math.max(8, (item.totalBs / dailyTrendList.maxRevenue) * 100);
+                return (
+                  <div key={item.dateStr} className="flex-1 flex flex-col items-center gap-1 group relative">
+                    {/* Tooltip on hover */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                      {item.label}: {formatBs(item.totalBs)} ({item.count} hab.)
+                    </div>
+
+                    <span className="text-[9px] font-mono font-bold text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {formatBs(item.totalBs)}
+                    </span>
+
+                    <div className="w-full max-w-[28px] bg-slate-100 rounded-t-lg overflow-hidden flex items-end h-full">
+                      <div
+                        style={{ height: `${heightPercent}%` }}
+                        className="w-full bg-gradient-to-t from-brand-600 to-rose-400 group-hover:from-brand-500 group-hover:to-rose-300 transition-all rounded-t-lg"
+                      />
+                    </div>
+
+                    <span className="text-[10px] font-bold text-slate-600 truncate max-w-[32px]">
+                      {item.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* 👑 HABITACIONES Y PROMOCIONES MÁS BUSCADAS */}
