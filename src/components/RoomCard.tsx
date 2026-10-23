@@ -206,6 +206,9 @@ export const RoomCard: React.FC<RoomCardProps> = ({
     priceNight,
     baseRoomPrice: stay.baseRoomPrice,
     chosenPlan: stay.chosenPlan,
+    roomType: room.type,
+    roomId: room.id,
+    roomName: room.name,
   });
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
   const paidConsumptionsTotal = stay.consumptions
@@ -226,6 +229,8 @@ export const RoomCard: React.FC<RoomCardProps> = ({
       className={`rounded-2xl border-2 p-5 shadow-md flex flex-col justify-between relative overflow-hidden transition-all ${
         timeCalc.autoNightConverted && !timeCalc.isOvertime
           ? 'bg-gradient-to-br from-indigo-50/90 via-purple-50/70 to-slate-50 border-indigo-300 shadow-indigo-500/10'
+          : timeCalc.auto2hConverted && !timeCalc.isOvertime
+          ? 'bg-gradient-to-br from-amber-50/90 via-amber-100/50 to-slate-50 border-amber-300 shadow-amber-500/10'
           : timeCalc.isOvertime
           ? 'bg-rose-50/90 border-brand-500 shadow-brand-500/15'
           : timeCalc.isWarning
@@ -295,6 +300,8 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               ? 'bg-gradient-to-br from-slate-950 via-purple-950 to-fuchsia-950 text-white border-fuchsia-900'
               : timeCalc.autoNightConverted && !timeCalc.isOvertime
               ? 'bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 text-white border-indigo-900'
+              : timeCalc.auto2hConverted && !timeCalc.isOvertime
+              ? 'bg-gradient-to-br from-slate-900 via-amber-950 to-yellow-950 text-white border-amber-800'
               : timeCalc.isOvertime
               ? timeCalc.gracePeriodActive
                 ? 'bg-amber-600 text-white border-amber-700'
@@ -310,6 +317,8 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               ? `Paquete: ${stay.customPackageName || 'Personalizado'}`
               : timeCalc.autoNightConverted && !timeCalc.isOvertime
               ? 'Tiempo Restante Noche (12h)'
+              : timeCalc.auto2hConverted && !timeCalc.isOvertime
+              ? 'Tiempo Restante 2da Hora (2h)'
               : timeCalc.isOvertime
               ? timeCalc.gracePeriodActive
                 ? 'Cronómetro de Espera'
@@ -323,15 +332,21 @@ export const RoomCard: React.FC<RoomCardProps> = ({
               : formatTimerDisplay(timeCalc.remainingMinutes, timeCalc.remainingSeconds)}
           </div>
 
-          {/* Overtime penalty charge badge OR Auto-night badge */}
+          {/* Overtime penalty charge badge OR Auto-night badge OR Auto-2h badge */}
           {timeCalc.autoNightConverted ? (
             <div className="mt-1.5 inline-block bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 text-[11px] font-extrabold px-3 py-0.5 rounded-full">
               Tarifa Noche: {formatBs(stay.baseRoomPrice + timeCalc.overtimeCharge)} (Cubre 12h)
+            </div>
+          ) : timeCalc.auto2hConverted && !timeCalc.isOvertime ? (
+            <div className="mt-1.5 inline-block bg-amber-500/30 text-amber-200 border border-amber-400/40 text-[11px] font-extrabold px-3 py-0.5 rounded-full">
+              Tarifa 2 Horas: {formatBs(stay.baseRoomPrice + timeCalc.overtimeCharge)} (Cubre 2h)
             </div>
           ) : timeCalc.isOvertime ? (
             <div className="mt-1.5 inline-block bg-white text-brand-700 text-xs font-black px-3 py-1 rounded-full shadow-sm">
               {timeCalc.gracePeriodActive ? (
                 'Espera / Tolerancia (10 min) • 0 Bs'
+              ) : room.type === 'golden_suite' ? (
+                `+${formatBs(timeCalc.overtimeCharge)} Extra (${timeCalc.extraHoursCount}h x 40 Bs)`
               ) : (
                 `+${formatBs(timeCalc.overtimeCharge)} Extra (${timeCalc.extraBlocksCount} x 20 min)`
               )}
@@ -347,6 +362,8 @@ export const RoomCard: React.FC<RoomCardProps> = ({
                     ? 'bg-fuchsia-400'
                     : timeCalc.autoNightConverted
                     ? 'bg-indigo-400'
+                    : timeCalc.auto2hConverted
+                    ? 'bg-amber-400'
                     : timeCalc.isWarning
                     ? 'bg-amber-200'
                     : 'bg-emerald-400'

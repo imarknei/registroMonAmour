@@ -224,6 +224,9 @@ export const RegisteredRoomsView: React.FC = () => {
         priceNight,
         baseRoomPrice: s.baseRoomPrice,
         chosenPlan: s.chosenPlan,
+        roomType: s.roomType,
+        roomId: s.roomId,
+        roomName: s.roomName,
       });
       const consSum = s.consumptions ? s.consumptions.reduce((sum, c) => sum + c.subtotal, 0) : 0;
       const stayOvertime = s.overtimeCharge !== undefined ? s.overtimeCharge : timeCalc.overtimeCharge;
@@ -824,6 +827,9 @@ export const RegisteredRoomsView: React.FC = () => {
               priceNight,
               baseRoomPrice: stay.baseRoomPrice,
               chosenPlan: stay.chosenPlan,
+              roomType: stay.roomType,
+              roomId: stay.roomId,
+              roomName: stay.roomName,
             });
             const consumptionsTotal = stay.consumptions ? stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0) : 0;
             const paidConsumptionsTotal = stay.consumptions
@@ -968,7 +974,7 @@ export const RegisteredRoomsView: React.FC = () => {
                     {isActive ? (
                       timeCalc.isOvertime ? (
                         <span className="text-rose-700 font-black bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
-                          +{formatBs(timeCalc.overtimeCharge)} Extra ({timeCalc.extraBlocksCount} bloques)
+                          +{formatBs(timeCalc.overtimeCharge)} Extra ({stay.roomType === 'golden_suite' ? `${timeCalc.extraHoursCount}h` : `${timeCalc.extraBlocksCount} bloques`})
                         </span>
                       ) : (
                         <span className="text-emerald-700 font-mono font-bold">

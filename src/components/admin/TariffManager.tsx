@@ -113,7 +113,7 @@ export const TariffManager: React.FC = () => {
     {
       key: 'golden_suite',
       label: 'Golden Suite (Karaoke & Bar)',
-      desc: 'Habitación Golden Suite',
+      desc: 'Habitación Golden Suite • Si pasa a 2da hora: 140 Bs • 3ra hora+: 40 Bs/h extra',
     },
   ];
 

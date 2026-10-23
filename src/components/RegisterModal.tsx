@@ -69,7 +69,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     planOptions.push({
       key: '1h',
       title: '1 Hora',
-      subtitle: 'Estadía Rápida (60 min)',
+      subtitle: room.type === 'golden_suite' ? 'Estadía 1h (60 min • Si pasa a 2da h: 140 Bs)' : 'Estadía Rápida (60 min)',
       durationMinutes: 60,
       price: roomTariff.price1h,
       icon: <Clock className="w-4 h-4 text-emerald-600" />,
@@ -80,7 +80,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ room, onClose }) =
     planOptions.push({
       key: '2h',
       title: isWeekend ? '2 Horas (Fin de Semana)' : '2 Horas',
-      subtitle: isWeekend ? `Estadía 2h (Vie, Sáb y Dom • ${formatBs(effective2hPrice)})` : 'Estadía Estándar (120 min)',
+      subtitle: isWeekend
+        ? `Estadía 2h (Vie, Sáb y Dom • ${formatBs(effective2hPrice)})`
+        : room.type === 'golden_suite'
+        ? 'Estadía 2h (120 min • Extra: 40 Bs/h)'
+        : 'Estadía Estándar (120 min)',
       durationMinutes: 120,
       price: effective2hPrice,
       icon: <Clock className="w-4 h-4 text-brand-600" />,

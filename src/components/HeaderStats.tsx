@@ -21,6 +21,9 @@ export const HeaderStats: React.FC = () => {
         priceNight,
         baseRoomPrice: r.currentStay.baseRoomPrice,
         chosenPlan: r.currentStay.chosenPlan,
+        roomType: r.type,
+        roomId: r.id,
+        roomName: r.name,
       });
       return calc.isOvertime;
     }

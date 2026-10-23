@@ -90,6 +90,9 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
     priceNight,
     baseRoomPrice: stay.baseRoomPrice,
     chosenPlan: stay.chosenPlan,
+    roomType: room.type,
+    roomId: room.id,
+    roomName: room.name,
   });
 
   // Consumos desglosados (pagados en el momento vs pendientes)
@@ -390,6 +393,21 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 </div>
               )}
 
+              {/* Auto 2h Conversion Notice (Golden Suite) */}
+              {timeCalc.auto2hConverted && !timeCalc.isOvertime && (
+                <div className="p-4 bg-gradient-to-r from-amber-900 via-amber-800 to-slate-900 text-white rounded-2xl border border-amber-400 shadow-md space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <strong className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                      Pasa Automáticamente a 2 Horas (140 Bs)
+                    </strong>
+                  </div>
+                  <p className="text-xs text-amber-100 leading-relaxed">
+                    La habitación Golden Suite superó la 1ra hora. El sistema ajustó automáticamente la tarifa a <strong>140 Bs</strong>, otorgándole permanencia hasta completar las 2 horas ({formatTimerDisplay(timeCalc.remainingMinutes, timeCalc.remainingSeconds)} restantes).
+                  </p>
+                </div>
+              )}
+
               {/* Overtime Notice */}
               {timeCalc.isOvertime && (
                 <div
@@ -414,6 +432,8 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                       <span className="text-[11px] text-slate-600">
                         {timeCalc.gracePeriodActive
                           ? 'Durante los 10 minutos de espera no se cobra nada (0 Bs de recargo).'
+                          : room.type === 'golden_suite'
+                          ? `Superó la tolerancia. A partir de la 3ra hora se cobra 40 Bs por cada hora extra (+${formatBs(timeCalc.overtimeCharge)}).`
                           : `Superó los 10 min de espera. Se aplica recargo automático de 10 Bs por cada 20 min (+${formatBs(timeCalc.overtimeCharge)}).`}
                       </span>
                     </div>
@@ -522,6 +542,10 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                     <span>
                       {timeCalc.autoNightConverted
                         ? `Ajuste Automático a Tarifa de Noche (12 Horas por superar 3h):`
+                        : timeCalc.auto2hConverted && !timeCalc.isOvertime
+                        ? `Ajuste Automático a Tarifa 2 Horas (140 Bs):`
+                        : room.type === 'golden_suite'
+                        ? `Recargo Horas Extras (+${timeCalc.overtimeMinutes} min • ${timeCalc.extraHoursCount}h x 40 Bs):`
                         : `Recargo Tiempo Extra (+${timeCalc.overtimeMinutes} min • ${timeCalc.extraBlocksCount} x 20 min):`}
                     </span>
                     <span className="font-mono font-semibold">+{formatBs(timeCalc.overtimeCharge)}</span>

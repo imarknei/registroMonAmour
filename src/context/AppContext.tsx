@@ -646,6 +646,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 priceNight,
                 baseRoomPrice: room.currentStay.baseRoomPrice,
                 chosenPlan: room.currentStay.chosenPlan,
+                roomType: room.type,
+                roomId: room.id,
+                roomName: room.name,
               }
             );
 
@@ -1588,6 +1591,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       priceNight,
       baseRoomPrice: stay.baseRoomPrice,
       chosenPlan: stay.chosenPlan,
+      roomType: room.type,
+      roomId: room.id,
+      roomName: room.name,
     });
     const consumptionsTotal = stay.consumptions.reduce((sum, item) => sum + item.subtotal, 0);
     const paidConsumptionsCash = stay.consumptions

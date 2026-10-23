@@ -59,6 +59,9 @@ export const ChangeRoomModal: React.FC<ChangeRoomModalProps> = ({
     priceNight,
     baseRoomPrice: stay.baseRoomPrice,
     chosenPlan: stay.chosenPlan,
+    roomType: sourceRoom.type,
+    roomId: sourceRoom.id,
+    roomName: sourceRoom.name,
   });
   const consumptionsTotal = stay.consumptions.reduce((sum, c) => sum + c.subtotal, 0);
 

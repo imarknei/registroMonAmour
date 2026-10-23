@@ -19,6 +19,7 @@ export interface OvertimeCalculation {
   nightPriceApplied?: number; // Precio de noche de la habitación
   totalElapsedMinutes: number; // Minutos totales transcurridos desde que ingresó
   effectiveDurationMinutes: number; // Minutos totales asignados (ej. 60, 120 o 720)
+  auto2hConverted?: boolean; // True si superó la primera hora en Golden Suite y pasó automáticamente a 2 horas (140 Bs)
 }
 
 /**
@@ -33,6 +34,11 @@ export interface OvertimeCalculation {
  *    - El huésped recibe las 12 horas completas de permanencia y el cronómetro/temporizador
  *      cuenta el tiempo restante hasta completar las 12 horas.
  * 4. Si supera las 12 horas (720 min), aplican horas extras sobre la tarifa de noche.
+ *
+ * EXCEPCIÓN GOLDEN SUITE (Karaoke & Bar):
+ * - Hora 1: 85 Bs (60 min).
+ * - Si pasa a la 2da hora: Pasa automáticamente a 140 Bs y cubre 2 horas (120 min).
+ * - A partir de la 3ra hora (> 120 min): 40 Bs por cada hora extra.
  */
 export function calculateStayTime(
   startTimeIso: string,
@@ -43,12 +49,20 @@ export function calculateStayTime(
     priceNight?: number;
     baseRoomPrice?: number;
     chosenPlan?: string;
+    roomType?: string;
+    roomId?: string;
+    roomName?: string;
   }
 ): OvertimeCalculation {
   const start = new Date(startTimeIso).getTime();
   const now = nowMs !== undefined ? nowMs : getNetworkTimestamp();
   const elapsedMs = Math.max(0, now - start);
   const totalElapsedMinutes = Math.floor(elapsedMs / (60 * 1000));
+
+  const isGoldenSuite =
+    options?.roomType === 'golden_suite' ||
+    options?.roomId === 'hab-golden' ||
+    Boolean(options?.roomName?.toLowerCase().includes('golden'));
 
   const isAlreadyNightPlan = options?.chosenPlan === 'noche' || durationMinutes >= 720;
   const isCustomPlan =
@@ -64,6 +78,290 @@ export function calculateStayTime(
 
   const priceNight = options?.priceNight || 140;
   const baseRoomPrice = options?.baseRoomPrice !== undefined ? options.baseRoomPrice : 45;
+
+  // =========================================================================
+  // REGLA ESPECIAL EXCLUSIVA PARA HABITACIÓN: GOLDEN SUITE (KARAOKE & BAR)
+  // =========================================================================
+  if (isGoldenSuite) {
+    const goldenPrice2h = 140;
+    const goldenExtraHourRate = 40;
+
+    // CASO G1: Plan de noche de 12 horas contratado desde el inicio
+    if (isAlreadyNightPlan) {
+      const totalAllocatedMs = 720 * 60 * 1000;
+      const diffMs = totalAllocatedMs - elapsedMs;
+      const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
+
+      if (diffMs >= 0) {
+        const totalRemainingSec = Math.floor(diffMs / 1000);
+        const remainingMinutes = Math.floor(totalRemainingSec / 60);
+        const remainingSeconds = totalRemainingSec % 60;
+        return {
+          isOvertime: false,
+          overtimeMinutes: 0,
+          overtimeSeconds: 0,
+          gracePeriodActive: false,
+          extraBlocksCount: 0,
+          extraBlockRate: goldenExtraHourRate,
+          extraHoursCount: 0,
+          extraHourRate: goldenExtraHourRate,
+          overtimeCharge: 0,
+          remainingMinutes,
+          remainingSeconds,
+          isWarning: remainingMinutes < 10,
+          percentElapsed,
+          autoNightConverted: false,
+          totalElapsedMinutes,
+          effectiveDurationMinutes: 720,
+        };
+      } else {
+        const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
+        const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
+        const overtimeSeconds = totalOvertimeSec % 60;
+
+        if (overtimeMinutes <= 10) {
+          return {
+            isOvertime: true,
+            overtimeMinutes,
+            overtimeSeconds,
+            gracePeriodActive: true,
+            extraBlocksCount: 0,
+            extraBlockRate: goldenExtraHourRate,
+            extraHoursCount: 0,
+            extraHourRate: goldenExtraHourRate,
+            overtimeCharge: 0,
+            remainingMinutes: 0,
+            remainingSeconds: 0,
+            isWarning: false,
+            percentElapsed: 100,
+            autoNightConverted: false,
+            totalElapsedMinutes,
+            effectiveDurationMinutes: 720,
+          };
+        } else {
+          const extraHoursCount = Math.floor((overtimeMinutes - 10 - 1) / 60) + 1;
+          const overtimeCharge = extraHoursCount * goldenExtraHourRate;
+          return {
+            isOvertime: true,
+            overtimeMinutes,
+            overtimeSeconds,
+            gracePeriodActive: false,
+            extraBlocksCount: extraHoursCount,
+            extraBlockRate: goldenExtraHourRate,
+            extraHoursCount,
+            extraHourRate: goldenExtraHourRate,
+            overtimeCharge,
+            remainingMinutes: 0,
+            remainingSeconds: 0,
+            isWarning: false,
+            percentElapsed: 100,
+            autoNightConverted: false,
+            totalElapsedMinutes,
+            effectiveDurationMinutes: 720,
+          };
+        }
+      }
+    }
+
+    // CASO G2: Plan Personalizado acordado
+    if (isCustomPlan) {
+      const totalAllocatedMs = durationMinutes * 60 * 1000;
+      const diffMs = totalAllocatedMs - elapsedMs;
+      const percentElapsed = Math.min(100, (elapsedMs / totalAllocatedMs) * 100);
+
+      if (diffMs >= 0) {
+        const totalRemainingSec = Math.floor(diffMs / 1000);
+        const remainingMinutes = Math.floor(totalRemainingSec / 60);
+        const remainingSeconds = totalRemainingSec % 60;
+        return {
+          isOvertime: false,
+          overtimeMinutes: 0,
+          overtimeSeconds: 0,
+          gracePeriodActive: false,
+          extraBlocksCount: 0,
+          extraBlockRate: goldenExtraHourRate,
+          extraHoursCount: 0,
+          extraHourRate: goldenExtraHourRate,
+          overtimeCharge: 0,
+          remainingMinutes,
+          remainingSeconds,
+          isWarning: remainingMinutes < 10,
+          percentElapsed,
+          autoNightConverted: false,
+          totalElapsedMinutes,
+          effectiveDurationMinutes: durationMinutes,
+        };
+      } else {
+        const totalOvertimeSec = Math.floor(Math.abs(diffMs) / 1000);
+        const overtimeMinutes = Math.floor(totalOvertimeSec / 60);
+        const overtimeSeconds = totalOvertimeSec % 60;
+
+        if (overtimeMinutes <= 10) {
+          return {
+            isOvertime: true,
+            overtimeMinutes,
+            overtimeSeconds,
+            gracePeriodActive: true,
+            extraBlocksCount: 0,
+            extraBlockRate: goldenExtraHourRate,
+            extraHoursCount: 0,
+            extraHourRate: goldenExtraHourRate,
+            overtimeCharge: 0,
+            remainingMinutes: 0,
+            remainingSeconds: 0,
+            isWarning: false,
+            percentElapsed: 100,
+            autoNightConverted: false,
+            totalElapsedMinutes,
+            effectiveDurationMinutes: durationMinutes,
+          };
+        } else {
+          const extraHoursCount = Math.floor((overtimeMinutes - 10 - 1) / 60) + 1;
+          const overtimeCharge = extraHoursCount * goldenExtraHourRate;
+          return {
+            isOvertime: true,
+            overtimeMinutes,
+            overtimeSeconds,
+            gracePeriodActive: false,
+            extraBlocksCount: extraHoursCount,
+            extraBlockRate: goldenExtraHourRate,
+            extraHoursCount,
+            extraHourRate: goldenExtraHourRate,
+            overtimeCharge,
+            remainingMinutes: 0,
+            remainingSeconds: 0,
+            isWarning: false,
+            percentElapsed: 100,
+            autoNightConverted: false,
+            totalElapsedMinutes,
+            effectiveDurationMinutes: durationMinutes,
+          };
+        }
+      }
+    }
+
+    // CASO G3: Estadía normal por horas en Golden Suite (1h, 2h o promo)
+    // 1. Si contrató 1 hora (60 min) y está dentro de la 1ra hora (<= 60 min):
+    const is1hPlan = durationMinutes <= 60 && options?.chosenPlan !== 'promo2h_golden' && options?.chosenPlan !== '2h';
+
+    if (is1hPlan && totalElapsedMinutes <= 60) {
+      const allocatedMs = 60 * 60 * 1000;
+      const diffMs = allocatedMs - elapsedMs;
+      const percentElapsed = Math.min(100, (elapsedMs / allocatedMs) * 100);
+      const totalRemainingSec = Math.max(0, Math.floor(diffMs / 1000));
+      const remainingMinutes = Math.floor(totalRemainingSec / 60);
+      const remainingSeconds = totalRemainingSec % 60;
+
+      return {
+        isOvertime: false,
+        overtimeMinutes: 0,
+        overtimeSeconds: 0,
+        gracePeriodActive: false,
+        extraBlocksCount: 0,
+        extraBlockRate: goldenExtraHourRate,
+        extraHoursCount: 0,
+        extraHourRate: goldenExtraHourRate,
+        overtimeCharge: 0,
+        remainingMinutes,
+        remainingSeconds,
+        isWarning: remainingMinutes < 10,
+        percentElapsed,
+        autoNightConverted: false,
+        auto2hConverted: false,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: 60,
+      };
+    }
+
+    // 2. Si está en la 2da hora (minutos 61 a 120):
+    // Si venía de 1h, pasa AUTOMÁTICAMENTE a 140 Bs y cubre las 2 horas (120 min)
+    if (totalElapsedMinutes <= 120) {
+      const allocated2hMs = 120 * 60 * 1000;
+      const diffMs = allocated2hMs - elapsedMs;
+      const percentElapsed = Math.min(100, (elapsedMs / allocated2hMs) * 100);
+      const totalRemainingSec = Math.max(0, Math.floor(diffMs / 1000));
+      const remainingMinutes = Math.floor(totalRemainingSec / 60);
+      const remainingSeconds = totalRemainingSec % 60;
+
+      const auto2hCharge = is1hPlan ? Math.max(0, goldenPrice2h - baseRoomPrice) : 0;
+
+      return {
+        isOvertime: false,
+        overtimeMinutes: 0,
+        overtimeSeconds: 0,
+        gracePeriodActive: false,
+        extraBlocksCount: 0,
+        extraBlockRate: goldenExtraHourRate,
+        extraHoursCount: 0,
+        extraHourRate: goldenExtraHourRate,
+        overtimeCharge: auto2hCharge,
+        remainingMinutes,
+        remainingSeconds,
+        isWarning: remainingMinutes < 10,
+        percentElapsed,
+        autoNightConverted: false,
+        auto2hConverted: is1hPlan,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: 120,
+      };
+    }
+
+    // 3. A PARTIR DE LA 3RA HORA (> 120 min):
+    // Recargo base para completar los 140 Bs si venía de 1h
+    const baseTo2hAdjustment = is1hPlan ? Math.max(0, goldenPrice2h - baseRoomPrice) : 0;
+
+    const overtimeSecPast2h = Math.floor(Math.abs(elapsedMs - (120 * 60 * 1000)) / 1000);
+    const overtimeMinutesPast2h = Math.floor(overtimeSecPast2h / 60);
+    const overtimeSecondsPast2h = overtimeSecPast2h % 60;
+
+    if (overtimeMinutesPast2h <= 10) {
+      // Tolerancia gratuita de 10 min de la 2da hora
+      return {
+        isOvertime: true,
+        overtimeMinutes: overtimeMinutesPast2h,
+        overtimeSeconds: overtimeSecondsPast2h,
+        gracePeriodActive: true,
+        extraBlocksCount: 0,
+        extraBlockRate: goldenExtraHourRate,
+        extraHoursCount: 0,
+        extraHourRate: goldenExtraHourRate,
+        overtimeCharge: baseTo2hAdjustment,
+        remainingMinutes: 0,
+        remainingSeconds: 0,
+        isWarning: false,
+        percentElapsed: 100,
+        autoNightConverted: false,
+        auto2hConverted: is1hPlan,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: 120,
+      };
+    } else {
+      // Superó la tolerancia: 40 Bs por cada hora extra a partir de la 3ra hora
+      const extraHoursCount = Math.floor((overtimeMinutesPast2h - 10 - 1) / 60) + 1;
+      const extraHoursCharge = extraHoursCount * goldenExtraHourRate;
+      const totalOvertimeCharge = baseTo2hAdjustment + extraHoursCharge;
+
+      return {
+        isOvertime: true,
+        overtimeMinutes: overtimeMinutesPast2h,
+        overtimeSeconds: overtimeSecondsPast2h,
+        gracePeriodActive: false,
+        extraBlocksCount: extraHoursCount,
+        extraBlockRate: goldenExtraHourRate,
+        extraHoursCount,
+        extraHourRate: goldenExtraHourRate,
+        overtimeCharge: totalOvertimeCharge,
+        remainingMinutes: 0,
+        remainingSeconds: 0,
+        isWarning: false,
+        percentElapsed: 100,
+        autoNightConverted: false,
+        auto2hConverted: is1hPlan,
+        totalElapsedMinutes,
+        effectiveDurationMinutes: 120,
+      };
+    }
+  }
 
   // CASO 1: Ya era un plan de noche de 12 horas contratado desde el inicio
   if (isAlreadyNightPlan) {
