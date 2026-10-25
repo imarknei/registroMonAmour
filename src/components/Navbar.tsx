@@ -73,7 +73,19 @@ export const Navbar: React.FC<NavbarProps> = ({
     nowTimestamp,
     isFirestoreConnected,
     shiftsHistory,
+    staffConsumptions,
   } = useApp();
+
+  const canViewDiscounts =
+    currentUser.role === 'admin' ||
+    currentUser.role === 'recepcionista_dia' ||
+    currentUser.id === 'user-admin' ||
+    currentUser.id === 'user-recep-dia' ||
+    isAdminAuthenticated;
+
+  const pendingDiscountsCount = (staffConsumptions || []).filter(
+    (c) => !c.isPaid && !c.isSettled
+  ).length;
 
   const pendingEnvelopesCount = (shiftsHistory || []).filter(
     (s) => s.status === 'closed' && (s.cashDeliveredAtClose || 0) > 0 && s.envelopeStatus !== 'recogido'
@@ -119,33 +131,33 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
       {/* Top Main Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20">
+      <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 lg:px-6">
+        <div className="flex items-center justify-between h-16 sm:h-20 gap-2 sm:gap-3">
           {/* Brand Logo & Cloud Status */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               onClick={() => {
                 window.history.pushState({}, '', '/');
                 setCurrentView('rooms');
               }}
-              className="flex items-center gap-2.5 text-left group"
+              className="flex items-center gap-2 sm:gap-2.5 text-left group shrink-0"
             >
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-brand-700 via-brand-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-brand-500/25 group-hover:scale-105 transition-transform">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-brand-700 via-brand-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-brand-500/25 group-hover:scale-105 transition-transform shrink-0">
                 <Flame className="w-6 h-6 fill-white" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-2">
                   <span className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-brand-700 via-brand-600 to-rose-600 bg-clip-text text-transparent">
                     MON AMOUR
                   </span>
                   {isFirestoreConnected && (
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       En vivo (Nube)
                     </span>
                   )}
                 </div>
-                <span className="block text-[10px] sm:text-xs font-semibold tracking-widest text-slate-400 uppercase -mt-1">
+                <span className="block text-[10px] sm:text-xs font-semibold tracking-widest text-slate-400 uppercase -mt-0.5 sm:-mt-1">
                   Motel • Sistema de Registro
                 </span>
               </div>
@@ -153,32 +165,32 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Center: Live Clock and Active Shift Cash indicator */}
-          <div className="hidden md:flex items-center gap-4 lg:gap-6">
+          <div className="hidden lg:flex items-center gap-2.5 xl:gap-3 shrink-0">
             {/* Clock */}
-            <div className="text-center px-3 py-1 rounded-lg bg-slate-50 border border-slate-200/80">
-              <span className="text-xs text-slate-500 font-medium capitalize block">{formattedDate}</span>
-              <span className="text-sm font-bold font-mono text-slate-800 tracking-wide">{formattedTime}</span>
+            <div className="text-center px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200/80 shrink-0 whitespace-nowrap">
+              <span className="text-[11px] text-slate-500 font-medium capitalize block leading-tight">{formattedDate}</span>
+              <span className="text-xs font-bold font-mono text-slate-800 tracking-wide block leading-tight">{formattedTime}</span>
             </div>
 
             {/* Current Shift Info for Receptionist */}
             {currentUser.role !== 'admin' && currentShift && (
               <div
-                className="flex items-center gap-2.5 bg-rose-50/80 border border-rose-200/80 rounded-xl px-3 py-1.5 shadow-xs text-left"
+                className="flex items-center gap-2 bg-rose-50/90 border border-rose-200/90 rounded-xl px-2.5 py-1.5 shadow-2xs text-left shrink-0 whitespace-nowrap"
               >
                 <div className="flex items-center gap-1.5 text-slate-700">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-bold block leading-none">Sesión</span>
-                    <span className="text-xs font-black text-brand-800">{currentUser.shiftName}</span>
+                    <span className="text-[9px] text-slate-400 uppercase font-bold block leading-none">Sesión</span>
+                    <span className="text-xs font-black text-brand-800">{currentUser.name}</span>
                   </div>
                 </div>
 
-                <div className="h-6 w-px bg-rose-200" />
-                <div className="flex items-center gap-1.5 text-slate-700">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                <div className="h-5 w-px bg-rose-200 shrink-0" />
+                <div className="flex items-center gap-1 text-slate-700">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block leading-none">Caja Chica</span>
-                    <span className="text-xs font-bold font-mono">{formatBs(currentShift.initialCashFloat || 100)}</span>
+                    <span className="text-[9px] text-slate-400 uppercase font-semibold block leading-none">Caja Chica</span>
+                    <span className="text-xs font-bold font-mono text-emerald-800">{formatBs(currentShift.initialCashFloat || 100)}</span>
                   </div>
                 </div>
               </div>
@@ -189,10 +201,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onOpenLiveShiftAuditModal}
-                className="flex items-center gap-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl px-3 py-1.5 shadow-sm text-left cursor-pointer transition-all hover:scale-[1.02]"
+                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl px-2.5 py-1.5 shadow-sm text-left cursor-pointer transition-all hover:scale-[1.02] shrink-0 whitespace-nowrap"
                 title="Haga clic para ver el desglose en vivo de caja y habitaciones"
               >
-                <div className="flex items-center gap-1.5 text-emerald-400">
+                <div className="flex items-center gap-1 text-emerald-400">
                   <DollarSign className="w-3.5 h-3.5" />
                   <div>
                     <span className="text-[9px] text-slate-400 uppercase font-semibold block leading-none">Efec.</span>
@@ -200,8 +212,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
 
-                <div className="h-5 w-px bg-slate-700" />
-                <div className="flex items-center gap-1.5 text-sky-300">
+                <div className="h-4 w-px bg-slate-700" />
+                <div className="flex items-center gap-1 text-sky-300">
                   <QrCode className="w-3.5 h-3.5" />
                   <div>
                     <span className="text-[9px] text-slate-400 uppercase font-semibold block leading-none">QR Total</span>
@@ -211,8 +223,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {totalShiftExpenses > 0 && (
                   <>
-                    <div className="h-5 w-px bg-slate-700" />
-                    <div className="flex items-center gap-1.5 text-rose-400">
+                    <div className="h-4 w-px bg-slate-700" />
+                    <div className="flex items-center gap-1 text-rose-400">
                       <MinusCircle className="w-3.5 h-3.5" />
                       <div>
                         <span className="text-[9px] text-rose-300 uppercase font-semibold block leading-none">Pagos</span>
@@ -222,7 +234,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </>
                 )}
 
-                <div className="h-5 w-px bg-slate-700" />
+                <div className="h-4 w-px bg-slate-700" />
                 <div className="flex items-center gap-1 bg-slate-800 px-1.5 py-0.5 rounded-lg border border-slate-700 text-slate-200 text-[10px] font-bold">
                   <Coins className="w-3 h-3 text-teal-400" />
                   <span>Detalle</span>
@@ -232,7 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right Action Tools: Inventory, Extra Consumptions, Staff, Expenses, Sound Toggle, Shift Close & User Dropdown */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* BOTÓN INVENTARIO */}
             <button
               onClick={() => {
@@ -242,7 +254,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onOpenAdminLogin();
                 }
               }}
-              className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95 shadow-xs ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95 shadow-xs shrink-0 whitespace-nowrap ${
                 currentView === 'inventory'
                   ? 'bg-brand-600 text-white shadow-brand-500/20'
                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-300'
@@ -256,43 +268,51 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* BOTÓN CONSUMO EXTRA / VENTA DIRECTA */}
             <button
               onClick={onOpenExtraConsumptionModal}
-              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-950 border border-purple-300 shadow-xs active:scale-95 transition-all flex items-center gap-1.5"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-950 border border-purple-300 shadow-xs active:scale-95 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
               title="Registrar consumo de habitación ya cerrada o venta directa en recepción"
             >
               <ShoppingBag className="w-3.5 h-3.5 text-purple-700" />
-              <span className="hidden sm:inline">Consumo Extra</span>
-              <span className="sm:hidden">Extra</span>
+              <span className="hidden xl:inline">Consumo Extra</span>
+              <span className="xl:hidden">Extra</span>
             </button>
 
             {/* BOTÓN CONSUMO DEL PERSONAL */}
             <button
               onClick={onOpenStaffConsumptionModal}
-              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold bg-rose-50 hover:bg-rose-100 text-brand-800 border border-rose-200 shadow-xs active:scale-95 transition-all flex items-center gap-1.5"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold bg-rose-50 hover:bg-rose-100 text-brand-800 border border-rose-200 shadow-xs active:scale-95 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
               title="Registrar consumo de minibar tomado por el personal (para descontar en pago semanal)"
             >
               <Coffee className="w-3.5 h-3.5 text-brand-600" />
-              <span className="hidden sm:inline">Consumo Personal</span>
-              <span className="sm:hidden">Personal</span>
+              <span className="hidden xl:inline">Consumo Personal</span>
+              <span className="xl:hidden">Personal</span>
             </button>
 
-            {/* BOTONES PAGOS & INGRESOS (Ingresos debajo del botón Pagos) */}
-            <div className="flex flex-col gap-1 shrink-0">
+            {/* BOTONES PAGOS & INGRESOS */}
+            <div className="flex flex-col gap-0.5 sm:gap-1 shrink-0">
               <button
                 onClick={onOpenExpenseModal}
-                className="px-2.5 sm:px-3 py-1 rounded-lg text-[11px] font-black bg-amber-500 hover:bg-amber-600 text-white shadow-2xs active:scale-95 transition-all flex items-center justify-center gap-1.5 border border-amber-600 leading-tight"
-                title="Registrar pagos y salidas de turno o retiros de efectivo a administración"
+                className="px-2 sm:px-2.5 py-1 rounded-lg text-[11px] font-black bg-amber-500 hover:bg-amber-600 text-white shadow-2xs active:scale-95 transition-all flex items-center justify-center gap-1 border border-amber-600 leading-tight shrink-0 whitespace-nowrap relative"
+                title="Registrar pagos y salidas de turno o revisar descuentos de personal"
               >
-                <Receipt className="w-3.5 h-3.5" />
+                <Receipt className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span className="hidden sm:inline">Pagos / Salidas</span>
                 <span className="sm:hidden">Pagos</span>
+                {canViewDiscounts && pendingDiscountsCount > 0 && (
+                  <span
+                    className="ml-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-600 text-white shadow-xs animate-pulse"
+                    title={`${pendingDiscountsCount} descuentos pendientes de personal`}
+                  >
+                    {pendingDiscountsCount}
+                  </span>
+                )}
               </button>
 
               <button
                 onClick={onOpenIncomeModal}
-                className="px-2.5 sm:px-3 py-1 rounded-lg text-[11px] font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs active:scale-95 transition-all flex items-center justify-center gap-1.5 border border-emerald-700 leading-tight"
+                className="px-2 sm:px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs active:scale-95 transition-all flex items-center justify-center gap-1 border border-emerald-700 leading-tight shrink-0 whitespace-nowrap"
                 title="Registrar ingresos a caja: alquileres, cambio de compras, dinero para cambio"
               >
-                <PlusCircle className="w-3.5 h-3.5" />
+                <PlusCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span className="hidden sm:inline">Ingresos a Caja</span>
                 <span className="sm:hidden">Ingresos</span>
               </button>
@@ -301,7 +321,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Sound Toggle */}
             <button
               onClick={toggleSoundAlerts}
-              className={`p-2 sm:p-2.5 rounded-xl border transition-colors ${
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors shrink-0 ${
                 soundAlertsEnabled
                   ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
                   : 'bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100'
@@ -311,12 +331,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               {soundAlertsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
 
-
             {/* Close Shift Button (Only for Receptionists) */}
             {currentUser.role !== 'admin' && (
               <button
                 onClick={onOpenShiftCloseModal}
-                className="px-3 sm:px-4 py-2 rounded-xl text-xs font-black bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20 active:scale-95 transition-all flex items-center gap-1.5"
+                className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-black bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-400" />
                 <span className="hidden sm:inline">Cerrar Turno</span>
@@ -328,22 +347,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isAdminAuthenticated && (
               <button
                 onClick={onLockAdmin}
-                className="p-2 sm:px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors flex items-center gap-1"
+                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap"
                 title="Bloquear sesión de Administrador"
               >
-                <Unlock className="w-4 h-4 text-amber-600" />
-                <span className="hidden lg:inline">Admin Activo</span>
+                <Unlock className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden xl:inline">Admin Activo</span>
               </button>
             )}
 
             {/* User Selector Dropdown */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
-                className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors text-left"
+                className="flex items-center gap-1.5 sm:gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors text-left shrink-0 whitespace-nowrap"
               >
                 <div
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white ${
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0 ${
                     currentUser.role === 'admin'
                       ? 'bg-purple-600'
                       : currentUser.role === 'recepcionista_dia'
@@ -353,13 +372,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   {currentUser.name.charAt(0)}
                 </div>
-                <div className="hidden sm:block">
+                <div className="hidden xl:block">
                   <span className="text-xs font-extrabold text-slate-900 block leading-tight">
                     {currentUser.name}
                   </span>
-                  <span className="text-[10px] text-slate-500 block leading-none">{currentUser.shiftName}</span>
+                  <span className="text-[10px] text-slate-500 block leading-none">
+                    {currentUser.role === 'admin' ? 'Administrador' : 'Recepcionista'}
+                  </span>
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               </button>
 
               {/* Dropdown Menu */}

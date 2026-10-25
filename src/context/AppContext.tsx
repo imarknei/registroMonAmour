@@ -259,6 +259,16 @@ interface AppContextType {
     notes?: string;
   }) => StaffConsumption;
   removeStaffConsumption: (id: string, restoreInventory?: boolean) => void;
+  toggleStaffConsumptionPaid: (id: string, isPaid: boolean) => void;
+  updateStaffConsumption: (id: string, updates: Partial<StaffConsumption>) => void;
+  addDirectStaffDiscount: (data: {
+    staffId: string;
+    staffName: string;
+    concept: string;
+    amount: number;
+    isPaid?: boolean;
+    notes?: string;
+  }) => StaffConsumption;
   recordStaffSettlement: (settlementData: {
     staffId: string;
     staffName: string;
@@ -2017,6 +2027,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const updateStaffConsumption = (id: string, updates: Partial<StaffConsumption>) => {
+    setStaffConsumptions((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          const updated = { ...c, ...updates };
+          syncStaffConsumptionToFirestore(updated);
+          return updated;
+        }
+        return c;
+      })
+    );
+  };
+
+  const toggleStaffConsumptionPaid = (id: string, isPaid: boolean) => {
+    setStaffConsumptions((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          const updated: StaffConsumption = {
+            ...c,
+            isPaid,
+            isSettled: isPaid,
+            paymentType: isPaid ? 'pagado_ahora' : 'descuento_semanal',
+            settledAt: isPaid ? getNetworkIsoString() : undefined,
+          };
+          syncStaffConsumptionToFirestore(updated);
+          return updated;
+        }
+        return c;
+      })
+    );
+    showToast({
+      title: isPaid ? '✓ Descuento Pagado' : '⏳ Descuento Pendiente',
+      message: isPaid
+        ? 'El descuento fue marcado como PAGADO correctamente.'
+        : 'El descuento quedó registrado como PENDIENTE de pago.',
+      type: isPaid ? 'success' : 'info',
+    });
+  };
+
+  const addDirectStaffDiscount = (data: {
+    staffId: string;
+    staffName: string;
+    concept: string;
+    amount: number;
+    isPaid?: boolean;
+    notes?: string;
+  }): StaffConsumption => {
+    const id = `staff-disc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const isPaid = !!data.isPaid;
+    const newConsumption: StaffConsumption = {
+      id,
+      staffId: data.staffId,
+      staffName: data.staffName,
+      date: getNetworkIsoString(),
+      items: [
+        {
+          id: `item-${Date.now()}`,
+          productId: 'custom-discount',
+          productName: data.concept.trim() || 'Descuento / Adelanto',
+          quantity: 1,
+          unitPrice: data.amount,
+          subtotal: data.amount,
+        },
+      ],
+      totalAmount: data.amount,
+      notes: data.notes?.trim() || undefined,
+      shiftId: currentShift?.id,
+      recordedBy: currentUser.name,
+      isPaid,
+      paymentType: isPaid ? 'pagado_ahora' : 'descuento_semanal',
+      isSettled: isPaid,
+      settledAt: isPaid ? getNetworkIsoString() : undefined,
+    };
+
+    setStaffConsumptions((prev) => [newConsumption, ...prev]);
+    syncStaffConsumptionToFirestore(newConsumption);
+
+    showToast({
+      title: isPaid ? '¡Descuento Registrado como Pagado!' : '¡Descuento Registrado!',
+      message: `Se registró un descuento de ${formatBs(data.amount)} para ${data.staffName} (${newConsumption.items[0].productName}).`,
+      type: 'success',
+    });
+
+    return newConsumption;
+  };
+
   // EXTRA CONSUMPTIONS & DIRECT COUNTER SALES
   const addExtraConsumption = (data: {
     description: string;
@@ -2965,6 +3061,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeExtraConsumption,
         addStaffConsumption,
         removeStaffConsumption,
+        updateStaffConsumption,
+        toggleStaffConsumptionPaid,
+        addDirectStaffDiscount,
         recordStaffSettlement,
         saveStaffMember,
         closeCurrentShift,
