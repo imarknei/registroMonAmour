@@ -8,8 +8,18 @@ import { SalesReports } from './SalesReports';
 import { FirebaseConfigManager } from './FirebaseConfigManager';
 import { RegisteredRoomsView } from './RegisteredRoomsView';
 import { EnvelopesManager } from './EnvelopesManager';
+import { StaffReports } from './StaffReports';
 
-export type AdminSubView = 'registered_rooms' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase' | 'envelopes';
+export type AdminSubView =
+  | 'registered_rooms'
+  | 'inventory'
+  | 'tariffs'
+  | 'shifts'
+  | 'weekly'
+  | 'reports'
+  | 'firebase'
+  | 'envelopes'
+  | 'staff_reports';
 
 interface AdminDashboardProps {
   currentView: AdminSubView;
@@ -24,14 +34,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const { currentUser } = useApp();
 
-  // Si no es admin y la vista no es inventario, regresar de inmediato a habitaciones
+  const canAccessStaffReports =
+    currentUser.role === 'admin' ||
+    currentUser.role === 'recepcionista_dia' ||
+    currentUser.id === 'user-admin' ||
+    currentUser.id === 'user-recep-dia';
+
+  // Si no es admin y no está autorizado para inventario o informe de personal, regresar de inmediato a habitaciones
   useEffect(() => {
-    if (currentUser.role !== 'admin' && currentView !== 'inventory') {
+    if (currentUser.role !== 'admin') {
+      if (currentView === 'inventory') return;
+      if (currentView === 'staff_reports' && canAccessStaffReports) return;
       onBackToRooms?.();
     }
-  }, [currentUser.role, currentView, onBackToRooms]);
+  }, [currentUser.role, currentView, onBackToRooms, canAccessStaffReports]);
 
-  if (currentUser.role !== 'admin' && currentView !== 'inventory') {
+  if (currentUser.role !== 'admin') {
+    if (currentView === 'inventory') {
+      return <InventoryManager onBackToRooms={onBackToRooms} onLockInventory={onLockInventory} />;
+    }
+    if (currentView === 'staff_reports' && canAccessStaffReports) {
+      return <StaffReports onBackToRooms={onBackToRooms} />;
+    }
     return null;
   }
 
@@ -52,6 +76,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return <SalesReports />;
     case 'firebase':
       return <FirebaseConfigManager />;
+    case 'staff_reports':
+      return <StaffReports onBackToRooms={onBackToRooms} />;
     default:
       return currentUser.role === 'admin' ? <RegisteredRoomsView /> : null;
   }

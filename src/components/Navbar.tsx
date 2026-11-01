@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
-export type AdminViewType = 'rooms' | 'registered_rooms' | 'envelopes' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase';
+export type AdminViewType = 'rooms' | 'registered_rooms' | 'envelopes' | 'inventory' | 'tariffs' | 'shifts' | 'weekly' | 'reports' | 'firebase' | 'staff_reports';
 
 interface NavbarProps {
   currentView: AdminViewType;
@@ -82,6 +82,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     currentUser.id === 'user-admin' ||
     currentUser.id === 'user-recep-dia' ||
     isAdminAuthenticated;
+
+  const canViewStaffReport = canViewDiscounts;
 
   const pendingDiscountsCount = (staffConsumptions || []).filter(
     (c) => !c.isPaid && !c.isSettled
@@ -264,6 +266,25 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Package className={`w-3.5 h-3.5 ${currentView === 'inventory' ? 'text-white' : 'text-emerald-700'}`} />
               <span>{currentView === 'inventory' ? '← HABITACIONES' : 'INVENTARIO'}</span>
             </button>
+
+            {/* BOTÓN INFORME DE PERSONAL / RECEPCIONISTAS */}
+            {canViewStaffReport && (
+              <button
+                onClick={() => {
+                  setCurrentView(currentView === 'staff_reports' ? 'rooms' : 'staff_reports');
+                }}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95 shadow-xs shrink-0 whitespace-nowrap ${
+                  currentView === 'staff_reports'
+                    ? 'bg-indigo-600 text-white shadow-indigo-500/20'
+                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-300'
+                }`}
+                title="Informe de personal de cada recepcionista: cuánto debe, cómo cerró caja (7, 15, 30 días), consumos y observaciones"
+              >
+                <UserCheck className={`w-3.5 h-3.5 ${currentView === 'staff_reports' ? 'text-white' : 'text-indigo-700'}`} />
+                <span className="hidden xl:inline">{currentView === 'staff_reports' ? '← HABITACIONES' : 'INFORME PERSONAL'}</span>
+                <span className="xl:hidden">{currentView === 'staff_reports' ? '← HAB.' : 'PERSONAL'}</span>
+              </button>
+            )}
 
             {/* BOTÓN CONSUMO EXTRA / VENTA DIRECTA */}
             <button
@@ -525,6 +546,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <CalendarDays className="w-3.5 h-3.5" />
               Descuentos Semanales
+            </button>
+
+            <button
+              onClick={() => setCurrentView('staff_reports')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                currentView === 'staff_reports'
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20'
+                  : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border border-indigo-200'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+              Informe Recepcionistas (Cajas & Deudas)
             </button>
 
             <button
