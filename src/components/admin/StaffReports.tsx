@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Shift, StaffMember, StaffConsumption } from '../../types';
+import { Shift, StaffMember, StaffConsumption, PaymentMethod } from '../../types';
 import { formatBs, getPaymentMethodLabel, getCategoryLabel } from '../../utils/formatUtils';
 import { formatDateTime, formatDateOnly, formatTimeOnly } from '../../utils/timeUtils';
 import { getNetworkTimestamp } from '../../services/firebase';
@@ -37,6 +37,10 @@ import {
   ArrowRightLeft,
   Mail,
   RefreshCw,
+  Check,
+  RotateCcw,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 type TimeFilterOption = '7d' | '15d' | '30d' | 'all';
@@ -64,6 +68,9 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
     staffSettlements,
     reloadFromFirebase,
     showToast,
+    toggleStaffConsumptionPaid,
+    removeStaffConsumption,
+    updateShiftInHistory,
   } = useApp();
 
   // Control de acceso de seguridad estricto
@@ -79,6 +86,33 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedShiftId, setExpandedShiftId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Estados para filtro y control de pago de consumos
+  const [consumptionStatusFilter, setConsumptionStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
+  const [consumptionToMarkPaid, setConsumptionToMarkPaid] = useState<StaffConsumption | null>(null);
+  const [payModalMethod, setPayModalMethod] = useState<PaymentMethod>('efectivo');
+  const [payModalNote, setPayModalNote] = useState<string>('');
+
+  const handleOpenPayModal = (c: StaffConsumption) => {
+    setConsumptionToMarkPaid(c);
+    setPayModalMethod('efectivo');
+    setPayModalNote('');
+  };
+
+  const handleConfirmPayModal = () => {
+    if (!consumptionToMarkPaid) return;
+    const finalNotes = payModalNote.trim()
+      ? (consumptionToMarkPaid.notes ? `${consumptionToMarkPaid.notes} | ${payModalNote.trim()}` : payModalNote.trim())
+      : consumptionToMarkPaid.notes;
+    toggleStaffConsumptionPaid(consumptionToMarkPaid.id, true, payModalMethod, finalNotes);
+    setConsumptionToMarkPaid(null);
+  };
+
+  const handleToggleUnpaid = (c: StaffConsumption) => {
+    if (confirm(`¿Marcar este consumo de ${c.staffName} (${formatBs(c.totalAmount)}) como PENDIENTE nuevamente?\n\nVolverá a figurar en la lista de deudas pendientes de cobro.`)) {
+      toggleStaffConsumptionPaid(c.id, false);
+    }
+  };
 
   // 1. Obtener lista consolidada de todos los recepcionistas registrados
   const receptionistsList: ReceptionistProfile[] = useMemo(() => {
@@ -387,6 +421,46 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
       return staff.includes(q) || notes.includes(q) || items.includes(q);
     });
   }, [currentSelectedData, staffConsumptions, filterDateThresholdMs, searchQuery]);
+
+  // Métricas de control de consumos (Total, Pendientes/Debe, Pagados)
+  const consumptionMetrics = useMemo(() => {
+    let pendingCount = 0;
+    let pendingSum = 0;
+    let paidCount = 0;
+    let paidSum = 0;
+    let totalSum = 0;
+
+    filteredConsumptions.forEach((c) => {
+      totalSum += c.totalAmount || 0;
+      if (c.isPaid || c.isSettled) {
+        paidCount++;
+        paidSum += c.totalAmount || 0;
+      } else {
+        pendingCount++;
+        pendingSum += c.totalAmount || 0;
+      }
+    });
+
+    return {
+      totalCount: filteredConsumptions.length,
+      totalSum,
+      pendingCount,
+      pendingSum,
+      paidCount,
+      paidSum,
+    };
+  }, [filteredConsumptions]);
+
+  // Lista de consumos filtrada según estado (Todos / Solo pendientes / Solo pagados)
+  const displayedConsumptions = useMemo(() => {
+    if (consumptionStatusFilter === 'pending') {
+      return filteredConsumptions.filter((c) => !c.isPaid && !c.isSettled);
+    }
+    if (consumptionStatusFilter === 'paid') {
+      return filteredConsumptions.filter((c) => c.isPaid || c.isSettled);
+    }
+    return filteredConsumptions;
+  }, [filteredConsumptions, consumptionStatusFilter]);
 
   // Manejo de sincronización desde la nube
   const handleCloudSync = async () => {
@@ -963,6 +1037,11 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
         >
           <Coffee className="w-3.5 h-3.5" />
           <span>Consumo de Minibar ({filteredConsumptions.length})</span>
+          {consumptionMetrics.pendingCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white">
+              {consumptionMetrics.pendingCount} pendientes
+            </span>
+          )}
         </button>
       </div>
 
@@ -1128,7 +1207,7 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
                       {currentSelectedData.pendingShortageShifts.map((s) => (
                         <div
                           key={s.id}
-                          className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100"
+                          className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100 gap-2"
                         >
                           <div>
                             <span className="font-bold text-slate-800 block">
@@ -1143,9 +1222,29 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
                               </span>
                             )}
                           </div>
-                          <span className="font-black text-rose-700 font-mono">
-                            -{formatBs(s.discountAmount)}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-black text-rose-700 font-mono">
+                              -{formatBs(s.discountAmount)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`¿Marcar como pagado el faltante de ${formatBs(s.discountAmount || 0)} de ${currentSelectedData.profile.name}?`)) {
+                                  updateShiftInHistory(s.id, { isSettled: true });
+                                  showToast({
+                                    title: '✓ Faltante Pagado',
+                                    message: `El faltante de ${formatBs(s.discountAmount || 0)} fue marcado como pagado.`,
+                                    type: 'success',
+                                  });
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                              title="Marcar faltante como pagado"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Marcar Pagado</span>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1170,7 +1269,7 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
                       {currentSelectedData.pendingConsumptions.map((c) => (
                         <div
                           key={c.id}
-                          className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100"
+                          className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100 gap-2"
                         >
                           <div>
                             <span className="font-bold text-slate-800 block">
@@ -1180,9 +1279,20 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
                               {c.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
                             </span>
                           </div>
-                          <span className="font-black text-amber-800 font-mono">
-                            {formatBs(c.totalAmount)}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-black text-amber-800 font-mono">
+                              {formatBs(c.totalAmount)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPayModal(c)}
+                              className="px-2 py-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                              title="Marcar como pagado"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Marcar Pagado</span>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1473,17 +1583,118 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
       {/* C. SUB-PESTAÑA: CONSUMO DE MINIBAR */}
       {activeSubTab === 'consumptions' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-black text-slate-500 uppercase tracking-wider">
-              {filteredConsumptions.length} Consumos de Personal Registrados
-            </span>
+          {/* HEADER DE LA SECCIÓN CON FILTROS Y CONTROL RÁPIDO */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-1">
+            <div>
+              <div className="flex items-center gap-2">
+                <Coffee className="w-4 h-4 text-purple-700" />
+                <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  {currentSelectedData ? `Consumos de ${currentSelectedData.profile.name}` : 'Consumos de Personal Registrados'}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500 block mt-0.5">
+                {timeFilter === '7d' ? 'Últimos 7 días' : timeFilter === '15d' ? 'Últimos 15 días' : timeFilter === '30d' ? 'Últimos 30 días' : 'Todo el historial'} • Use los botones para marcar o desmarcar lo pagado
+              </span>
+            </div>
+
+            {/* BOTONES DE FILTRO RÁPIDO: TODOS / PENDIENTES (DEBE) / PAGADOS */}
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200 shrink-0 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setConsumptionStatusFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                  consumptionStatusFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Todos ({consumptionMetrics.totalCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsumptionStatusFilter('pending')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  consumptionStatusFilter === 'pending'
+                    ? 'bg-amber-500 text-white shadow-2xs'
+                    : 'text-amber-800 hover:bg-amber-100/60'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>Pendientes / Debe ({consumptionMetrics.pendingCount})</span>
+                <span className="font-mono text-[11px] opacity-90">• {formatBs(consumptionMetrics.pendingSum)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsumptionStatusFilter('paid')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  consumptionStatusFilter === 'paid'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-emerald-800 hover:bg-emerald-100/60'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Pagados ({consumptionMetrics.paidCount})</span>
+                <span className="font-mono text-[11px] opacity-90">• {formatBs(consumptionMetrics.paidSum)}</span>
+              </button>
+            </div>
           </div>
 
-          {filteredConsumptions.length === 0 ? (
+          {/* TARJETAS RÁPIDAS DE CONTROL: TOTAL / PENDIENTE / PAGADO */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                Total Consumido ({timeFilter})
+              </span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
+                  {formatBs(consumptionMetrics.totalSum)}
+                </span>
+                <span className="text-xs font-bold text-slate-500">
+                  {consumptionMetrics.totalCount} consumos
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/80 rounded-2xl p-4 border border-amber-200/90 shadow-2xs flex flex-col justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-amber-700" />
+                <span>Saldo Pendiente (Por Cobrar / Debe)</span>
+              </span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xl sm:text-2xl font-black text-amber-900 font-mono">
+                  {formatBs(consumptionMetrics.pendingSum)}
+                </span>
+                <span className="text-xs font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                  {consumptionMetrics.pendingCount} pendientes
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-200/90 shadow-2xs flex flex-col justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-900 block mb-1 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                <span>Total Pagado / Saldado</span>
+              </span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
+                  {formatBs(consumptionMetrics.paidSum)}
+                </span>
+                <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  {consumptionMetrics.paidCount} pagados
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {displayedConsumptions.length === 0 ? (
             <div className="bg-white rounded-3xl p-8 text-center border border-slate-200">
               <Coffee className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-bold text-slate-700">
-                No hay consumos de minibar registrados en este período.
+                {consumptionStatusFilter === 'pending'
+                  ? '¡Excelente! No hay consumos pendientes por cobrar.'
+                  : consumptionStatusFilter === 'paid'
+                  ? 'No hay consumos marcados como pagados en este período.'
+                  : 'No hay consumos de minibar registrados en este período.'}
               </p>
             </div>
           ) : (
@@ -1499,10 +1710,11 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
                       <th className="py-3 px-3 text-center">Estado</th>
                       <th className="py-3 px-4 text-right">Total</th>
                       <th className="py-3 px-4">Observaciones</th>
+                      <th className="py-3 px-4 text-center">Acciones / Control</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredConsumptions.map((c) => (
+                    {displayedConsumptions.map((c) => (
                       <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <span className="font-bold text-slate-900 block leading-tight">
@@ -1535,28 +1747,30 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
 
                         <td className="py-3.5 px-3 text-center whitespace-nowrap">
                           {c.isPaid ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
-                              Pagado al Contado
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Pagado ({getPaymentMethodLabel(c.paymentMethod || 'efectivo')})
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
                               Descuento Semanal
                             </span>
                           )}
                         </td>
 
                         <td className="py-3.5 px-3 text-center whitespace-nowrap">
-                          {c.isSettled ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
-                              Liquidado
+                          {c.isPaid ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Pagado
                             </span>
-                          ) : c.isPaid ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
-                              Cancelado
+                          ) : c.isSettled ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
+                              Liquidado en Planilla
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 animate-pulse">
-                              Pendiente
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Pendiente (Debe)
                             </span>
                           )}
                         </td>
@@ -1579,6 +1793,49 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
                             Reg: {c.recordedBy}
                           </span>
                         </td>
+
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {!c.isPaid && !c.isSettled && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPayModal(c)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer"
+                                title="Marcar este consumo como pagado"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Marcar Pagado</span>
+                              </button>
+                            )}
+
+                            {c.isPaid && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnpaid(c)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all active:scale-95 cursor-pointer"
+                                title="Desmarcar pago y volver a dejar como pendiente"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Desmarcar</span>
+                              </button>
+                            )}
+
+                            {!c.isSettled && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`¿Anular y eliminar este consumo de ${c.staffName} (${formatBs(c.totalAmount)})?\n\nLos productos consumidos volverán al stock del inventario.`)) {
+                                    removeStaffConsumption(c.id, true);
+                                  }
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Anular consumo y devolver productos a stock"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1586,6 +1843,145 @@ export const StaffReports: React.FC<StaffReportsProps> = ({ onBackToRooms }) => 
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* MODAL PARA MARCAR CONSUMO COMO PAGADO */}
+      {consumptionToMarkPaid && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-scale-in">
+            {/* Header del modal */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-600 to-teal-700 text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-white">Marcar Consumo como Pagado</h3>
+                  <p className="text-[11px] text-emerald-100">Registrar cobro y saldar deuda del personal</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConsumptionToMarkPaid(null)}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Contenido del modal */}
+            <div className="p-5 space-y-4">
+              {/* Resumen del consumo */}
+              <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-bold">Personal / Empleado:</span>
+                  <span className="font-extrabold text-slate-900">{consumptionToMarkPaid.staffName}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-bold">Fecha del Consumo:</span>
+                  <span className="font-medium text-slate-700">{formatDateTime(consumptionToMarkPaid.date)}</span>
+                </div>
+                <div className="pt-2 border-t border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Detalle de Productos:</span>
+                  <div className="space-y-1">
+                    {consumptionToMarkPaid.items.map((it, idx) => (
+                      <div key={idx} className="flex justify-between text-xs text-slate-700">
+                        <span>{it.quantity}x {it.productName}</span>
+                        <span className="font-mono font-bold">{formatBs(it.subtotal)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                  <span className="text-xs font-black text-slate-900 uppercase">Monto a Saldar:</span>
+                  <span className="text-lg font-black text-emerald-700 font-mono">
+                    {formatBs(consumptionToMarkPaid.totalAmount)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Selector de Método de Pago */}
+              <div>
+                <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-2">
+                  Método con el que canceló:
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayModalMethod('efectivo')}
+                    className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
+                      payModalMethod === 'efectivo'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-black ring-2 ring-emerald-600/20'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold'
+                    }`}
+                  >
+                    <Coins className="w-5 h-5 mx-auto mb-1 text-emerald-600" />
+                    <span className="text-xs block">Efectivo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPayModalMethod('qr_vendis')}
+                    className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
+                      payModalMethod === 'qr_vendis'
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-950 font-black ring-2 ring-indigo-600/20'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold'
+                    }`}
+                  >
+                    <QrCode className="w-5 h-5 mx-auto mb-1 text-indigo-600" />
+                    <span className="text-xs block leading-tight">QR Vendis</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPayModalMethod('qr_union')}
+                    className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
+                      payModalMethod === 'qr_union'
+                        ? 'border-blue-600 bg-blue-50 text-blue-950 font-black ring-2 ring-blue-600/20'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold'
+                    }`}
+                  >
+                    <QrCode className="w-5 h-5 mx-auto mb-1 text-blue-600" />
+                    <span className="text-xs block leading-tight">QR Unión</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Nota u observación adicional */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Nota / Detalle del Pago (Opcional):
+                </label>
+                <input
+                  type="text"
+                  value={payModalNote}
+                  onChange={(e) => setPayModalNote(e.target.value)}
+                  placeholder="Ej: Pagó al contado, transferido..."
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
+                />
+              </div>
+            </div>
+
+            {/* Footer de confirmación */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConsumptionToMarkPaid(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPayModal}
+                className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirmar Pago de {formatBs(consumptionToMarkPaid.totalAmount)}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

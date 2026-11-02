@@ -29,6 +29,7 @@ import {
   CreditCard,
   Edit3,
   ArrowRightLeft,
+  RotateCcw,
 } from 'lucide-react';
 import { StaffSettlementReceiptModal } from '../StaffSettlementReceiptModal';
 import { ShiftAdjustmentModal } from './ShiftAdjustmentModal';
@@ -41,6 +42,7 @@ export const WeeklyDiscounts: React.FC = () => {
     staffMembers,
     recordStaffSettlement,
     removeStaffConsumption,
+    toggleStaffConsumptionPaid,
     currentUser,
     updateShiftInHistory,
     recalculateShiftSales,
@@ -1059,19 +1061,47 @@ export const WeeklyDiscounts: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        {!cons.isSettled && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`¿Eliminar este consumo de ${cons.staffName} y reponer el stock?`)) {
-                                removeStaffConsumption(cons.id, true);
-                              }
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-auto"
-                            title="Anular y reponer stock"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!cons.isPaid && !cons.isSettled && (
+                            <button
+                              onClick={() => {
+                                toggleStaffConsumptionPaid(cons.id, true);
+                              }}
+                              className="px-2.5 py-1 rounded-xl text-[11px] font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                              title="Marcar como pagado"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Marcar Pagado</span>
+                            </button>
+                          )}
+                          {cons.isPaid && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`¿Marcar este consumo de ${cons.staffName} como PENDIENTE nuevamente?`)) {
+                                  toggleStaffConsumptionPaid(cons.id, false);
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center gap-1 active:scale-95 cursor-pointer"
+                              title="Desmarcar pago y volver a dejar pendiente"
+                            >
+                              <RotateCcw className="w-3 h-3 text-slate-500" />
+                              <span>Desmarcar</span>
+                            </button>
+                          )}
+                          {!cons.isSettled && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`¿Eliminar este consumo de ${cons.staffName} y reponer el stock?`)) {
+                                  removeStaffConsumption(cons.id, true);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Anular y reponer stock"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))

@@ -259,7 +259,12 @@ interface AppContextType {
     notes?: string;
   }) => StaffConsumption;
   removeStaffConsumption: (id: string, restoreInventory?: boolean) => void;
-  toggleStaffConsumptionPaid: (id: string, isPaid: boolean) => void;
+  toggleStaffConsumptionPaid: (
+    id: string,
+    isPaid: boolean,
+    paymentMethod?: PaymentMethod,
+    notes?: string
+  ) => void;
   updateStaffConsumption: (id: string, updates: Partial<StaffConsumption>) => void;
   addDirectStaffDiscount: (data: {
     staffId: string;
@@ -2040,7 +2045,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const toggleStaffConsumptionPaid = (id: string, isPaid: boolean) => {
+  const toggleStaffConsumptionPaid = (
+    id: string,
+    isPaid: boolean,
+    paymentMethod: PaymentMethod = 'efectivo',
+    notes?: string
+  ) => {
     setStaffConsumptions((prev) =>
       prev.map((c) => {
         if (c.id === id) {
@@ -2049,7 +2059,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isPaid,
             isSettled: isPaid,
             paymentType: isPaid ? 'pagado_ahora' : 'descuento_semanal',
+            paymentMethod: isPaid ? (paymentMethod || c.paymentMethod || 'efectivo') : undefined,
             settledAt: isPaid ? getNetworkIsoString() : undefined,
+            notes: notes !== undefined ? notes : c.notes,
           };
           syncStaffConsumptionToFirestore(updated);
           return updated;
@@ -2058,10 +2070,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
     showToast({
-      title: isPaid ? '✓ Descuento Pagado' : '⏳ Descuento Pendiente',
+      title: isPaid ? '✓ Consumo Pagado' : '⏳ Consumo Pendiente',
       message: isPaid
-        ? 'El descuento fue marcado como PAGADO correctamente.'
-        : 'El descuento quedó registrado como PENDIENTE de pago.',
+        ? `El consumo fue marcado como PAGADO (${getPaymentMethodLabel(paymentMethod || 'efectivo')}).`
+        : 'El consumo quedó registrado como PENDIENTE de pago.',
       type: isPaid ? 'success' : 'info',
     });
   };
