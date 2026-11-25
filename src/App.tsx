@@ -224,7 +224,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/70 flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+    <div className="min-h-screen bg-slate-100/70 flex flex-col font-sans selection:bg-brand-500 selection:text-white overflow-x-hidden">
       {/* Navbar with brand identity & user session */}
       <Navbar
         currentView={currentView}
@@ -243,7 +243,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 sm:space-y-6">
         {/* KPI Top Stats (Always visible or in room view) */}
         {currentView === 'rooms' && <HeaderStats />}
 

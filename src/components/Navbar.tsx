@@ -28,6 +28,8 @@ import {
   ShoppingBag,
   Mail,
   PlusCircle,
+  Menu,
+  X,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../data/initialData';
 
@@ -94,6 +96,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ).length;
 
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const formattedTime = new Date(nowTimestamp).toLocaleTimeString('es-BO', {
     timeZone: 'America/La_Paz',
@@ -133,33 +136,35 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
       {/* Top Main Bar */}
-      <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 lg:px-6">
-        <div className="flex items-center justify-between h-16 sm:h-20 gap-2 sm:gap-3">
+      <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
+        <div className="flex items-center justify-between h-14 sm:h-16 lg:h-20 gap-2 sm:gap-3">
           {/* Brand Logo & Cloud Status */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => {
                 window.history.pushState({}, '', '/');
                 setCurrentView('rooms');
+                setShowMobileMenu(false);
               }}
-              className="flex items-center gap-2 sm:gap-2.5 text-left group shrink-0"
+              className="flex items-center gap-2 sm:gap-2.5 text-left group min-w-0"
             >
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-brand-700 via-brand-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-brand-500/25 group-hover:scale-105 transition-transform shrink-0">
-                <Flame className="w-6 h-6 fill-white" />
+              <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-11 lg:h-11 rounded-xl bg-gradient-to-tr from-brand-700 via-brand-600 to-rose-500 flex items-center justify-center text-white shadow-md shadow-brand-500/25 group-hover:scale-105 transition-transform shrink-0">
+                <Flame className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
               </div>
-              <div className="shrink-0">
+              <div className="min-w-0">
                 <div className="flex items-center gap-1.5 sm:gap-2">
-                  <span className="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-brand-700 via-brand-600 to-rose-600 bg-clip-text text-transparent">
+                  <span className="text-lg sm:text-xl lg:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-brand-700 via-brand-600 to-rose-600 bg-clip-text text-transparent truncate">
                     MON AMOUR
                   </span>
                   {isFirestoreConnected && (
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      En vivo (Nube)
+                      <span className="hidden sm:inline">En vivo (Nube)</span>
+                      <span className="sm:hidden">Nube</span>
                     </span>
                   )}
                 </div>
-                <span className="block text-[10px] sm:text-xs font-semibold tracking-widest text-slate-400 uppercase -mt-0.5 sm:-mt-1">
+                <span className="block text-[9px] sm:text-[10px] lg:text-xs font-semibold tracking-wider sm:tracking-widest text-slate-400 uppercase -mt-0.5 truncate">
                   Motel • Sistema de Registro
                 </span>
               </div>
@@ -245,9 +250,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Right Action Tools: Inventory, Extra Consumptions, Staff, Expenses, Sound Toggle, Shift Close & User Dropdown */}
+          {/* Right Action Tools: Desktop Full Bar + Always-Visible Compact Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* BOTÓN INVENTARIO */}
+            {/* Desktop Action Tools */}
+            <div className="hidden lg:flex items-center gap-1.5 xl:gap-2 shrink-0">
+              {/* BOTÓN INVENTARIO */}
             <button
               onClick={() => {
                 if (isAdminAuthenticated || currentUser.role === 'admin' || isInventoryUnlocked) {
@@ -339,32 +346,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             </div>
 
-            {/* Sound Toggle */}
-            <button
-              onClick={toggleSoundAlerts}
-              className={`p-1.5 sm:p-2 rounded-xl border transition-colors shrink-0 ${
-                soundAlertsEnabled
-                  ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                  : 'bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100'
-              }`}
-              title={soundAlertsEnabled ? 'Alertas sonoras activadas' : 'Alertas sonoras silenciadas'}
-            >
-              {soundAlertsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-            </button>
-
-            {/* Close Shift Button (Only for Receptionists) */}
+            {/* Close Shift Button (Only for Receptionists, Desktop) */}
             {currentUser.role !== 'admin' && (
               <button
                 onClick={onOpenShiftCloseModal}
-                className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-black bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+                className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                <span className="hidden sm:inline">Cerrar Turno</span>
-                <span className="sm:hidden">Cerrar</span>
+                <span>Cerrar Turno</span>
               </button>
             )}
 
-            {/* Admin Lock / Unlock Status Toggle */}
+            {/* Admin Lock / Unlock Status Toggle (Desktop) */}
             {isAdminAuthenticated && (
               <button
                 onClick={onLockAdmin}
@@ -375,6 +368,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="hidden xl:inline">Admin Activo</span>
               </button>
             )}
+            </div>
+
+            {/* Sound Toggle */}
+            <button
+              onClick={toggleSoundAlerts}
+              className={`p-2 rounded-xl border transition-colors shrink-0 ${
+                soundAlertsEnabled
+                  ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                  : 'bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100'
+              }`}
+              title={soundAlertsEnabled ? 'Alertas sonoras activadas' : 'Alertas sonoras silenciadas'}
+            >
+              {soundAlertsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
 
             {/* User Selector Dropdown */}
             <div className="relative shrink-0">
@@ -453,12 +460,237 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Mobile Menu Toggle Button (< lg) */}
+            <button
+              type="button"
+              onClick={() => setShowMobileMenu((prev) => !prev)}
+              aria-label={showMobileMenu ? 'Cerrar menú de funciones' : 'Abrir menú de funciones'}
+              aria-expanded={showMobileMenu}
+              className={`lg:hidden relative flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-extrabold transition-all active:scale-95 shrink-0 ${
+                showMobileMenu
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-brand-50 text-brand-800 border-brand-200 hover:bg-brand-100'
+              }`}
+            >
+              {showMobileMenu ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              <span className="hidden xs:inline">{showMobileMenu ? 'Cerrar' : 'Menú'}</span>
+              {!showMobileMenu && ((canViewDiscounts && pendingDiscountsCount > 0) || (currentUser.role === 'admin' && pendingEnvelopesCount > 0)) && (
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Admin Navigation Tabs */}
+        {/* Mobile & Tablet Live Status Strip (< lg) */}
+        <div className="lg:hidden flex items-center justify-between gap-2 py-2 border-t border-slate-100 text-xs">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-bold text-slate-500 capitalize truncate">{formattedDate}</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-[11px] font-mono font-bold text-slate-800 shrink-0">{formattedTime}</span>
+          </div>
+
+          {currentUser.role === 'admin' && currentShift ? (
+            <button
+              type="button"
+              onClick={onOpenLiveShiftAuditModal}
+              className="flex items-center gap-2 bg-slate-900 text-white rounded-xl px-2.5 py-1 text-[11px] font-bold shrink-0 active:scale-95"
+            >
+              <span className="text-emerald-400 font-mono">+{formatBs(currentShift.expectedCash)}</span>
+              <span className="text-slate-600">|</span>
+              <span className="text-sky-300 font-mono">QR +{formatBs(currentShift.expectedQr)}</span>
+              <Coins className="w-3.5 h-3.5 text-teal-400" />
+            </button>
+          ) : currentShift ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="inline-flex items-center gap-1 bg-rose-50 border border-rose-200 text-brand-800 font-bold px-2 py-1 rounded-lg text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {currentUser.name}
+              </span>
+              <button
+                type="button"
+                onClick={onOpenShiftCloseModal}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-black text-[11px] flex items-center gap-1 active:scale-95"
+              >
+                <LogOut className="w-3 h-3 text-rose-400" />
+                Cerrar
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Mobile & Tablet Expandable Functions Drawer (< lg) */}
+        {showMobileMenu && (
+          <div className="lg:hidden py-3 border-t border-slate-200 bg-slate-50/80 -mx-3 sm:-mx-4 px-3 sm:px-4 space-y-4">
+            {/* Operational Quick Actions */}
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">
+                Funciones Operativas
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    if (isAdminAuthenticated || currentUser.role === 'admin' || isInventoryUnlocked) {
+                      setCurrentView(currentView === 'inventory' ? 'rooms' : 'inventory');
+                    } else {
+                      onOpenAdminLogin();
+                    }
+                  }}
+                  className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-95 ${
+                    currentView === 'inventory'
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'bg-white text-emerald-950 border border-emerald-300'
+                  }`}
+                >
+                  <Package className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{currentView === 'inventory' ? '← Habitaciones' : 'Inventario'}</span>
+                </button>
+
+                {canViewStaffReport && (
+                  <button
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      setCurrentView(currentView === 'staff_reports' ? 'rooms' : 'staff_reports');
+                    }}
+                    className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-95 ${
+                      currentView === 'staff_reports'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-white text-indigo-950 border border-indigo-300'
+                    }`}
+                  >
+                    <UserCheck className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{currentView === 'staff_reports' ? '← Habitaciones' : 'Informe Personal'}</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    onOpenExtraConsumptionModal();
+                  }}
+                  className="min-h-[44px] px-3 py-2 rounded-xl text-xs font-extrabold bg-white text-purple-950 border border-purple-300 flex items-center gap-2 active:scale-95"
+                >
+                  <ShoppingBag className="w-4 h-4 text-purple-700 shrink-0" />
+                  <span className="truncate">Consumo Extra</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    onOpenStaffConsumptionModal();
+                  }}
+                  className="min-h-[44px] px-3 py-2 rounded-xl text-xs font-extrabold bg-white text-brand-800 border border-rose-200 flex items-center gap-2 active:scale-95"
+                >
+                  <Coffee className="w-4 h-4 text-brand-600 shrink-0" />
+                  <span className="truncate">Consumo Personal</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    onOpenExpenseModal();
+                  }}
+                  className="min-h-[44px] px-3 py-2 rounded-xl text-xs font-black bg-amber-500 text-white border border-amber-600 flex items-center justify-between gap-1 active:scale-95"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <Receipt className="w-4 h-4 shrink-0" />
+                    Pagos / Salidas
+                  </span>
+                  {canViewDiscounts && pendingDiscountsCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white shrink-0">
+                      {pendingDiscountsCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    onOpenIncomeModal();
+                  }}
+                  className="min-h-[44px] px-3 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white border border-emerald-700 flex items-center gap-2 active:scale-95"
+                >
+                  <PlusCircle className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Ingresos a Caja</span>
+                </button>
+
+                {currentUser.role !== 'admin' && (
+                  <button
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      onOpenShiftCloseModal();
+                    }}
+                    className="col-span-2 min-h-[44px] px-3 py-2 rounded-xl text-xs font-black bg-slate-900 text-white flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                    Cerrar Turno ({currentUser.name})
+                  </button>
+                )}
+
+                {isAdminAuthenticated && (
+                  <button
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      onLockAdmin();
+                    }}
+                    className="col-span-2 min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold bg-amber-100 border border-amber-300 text-amber-950 flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <Unlock className="w-4 h-4 text-amber-700" />
+                    Bloquear Sesión de Administrador
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Admin Views Grid on Mobile */}
+            {currentUser.role === 'admin' && isAdminAuthenticated && (
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">
+                  Panel de Administración
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'rooms' as AdminViewType, label: 'Panel Habitaciones', icon: BedDouble },
+                    { id: 'registered_rooms' as AdminViewType, label: 'Hab. & Precios (Vivo)', icon: BedDouble },
+                    { id: 'reports' as AdminViewType, label: 'Reportes e Ingresos', icon: BarChart3 },
+                    { id: 'envelopes' as AdminViewType, label: `Sobres (${pendingEnvelopesCount})`, icon: Mail },
+                    { id: 'shifts' as AdminViewType, label: 'Historial de Cajas', icon: History },
+                    { id: 'staff_reports' as AdminViewType, label: 'Informe Personal', icon: UserCheck },
+                    { id: 'inventory' as AdminViewType, label: 'Inventario', icon: Package },
+                    { id: 'tariffs' as AdminViewType, label: 'Tarifas & Precios', icon: Sliders },
+                    { id: 'weekly' as AdminViewType, label: 'Descuentos Semanales', icon: CalendarDays },
+                    { id: 'firebase' as AdminViewType, label: 'Base de Datos', icon: Cloud },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    const isActive = currentView === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setCurrentView(item.id);
+                          setShowMobileMenu(false);
+                        }}
+                        className={`min-h-[42px] px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 text-left transition-all ${
+                          isActive
+                            ? 'bg-brand-600 text-white shadow-sm'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Admin Navigation Tabs (Desktop) */}
         {currentUser.role === 'admin' && isAdminAuthenticated && (
-          <nav className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 border-t border-slate-100 no-scrollbar">
+          <nav className="hidden lg:flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 border-t border-slate-100 no-scrollbar">
             <button
               onClick={() => setCurrentView('rooms')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${

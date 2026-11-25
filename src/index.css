@@ -3,9 +3,18 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply antialiased text-slate-800 bg-slate-100;
+  html, body {
+    @apply antialiased text-slate-800 bg-slate-100 overflow-x-hidden;
   }
+}
+
+/* Hide scrollbar for horizontal pill lists */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Custom modern scrollbar */

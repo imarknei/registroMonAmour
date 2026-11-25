@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatBs, getRoomTypeLabel, getPlanLabel } from '../../utils/formatUtils';
-import { formatDateTime, formatTimeOnly, getBoliviaStartOfDay, getBoliviaDayOfWeek, getBoliviaStartOfMonth } from '../../utils/timeUtils';
+import { formatDateTime, formatTimeOnly, getBoliviaStartOfDay, getBoliviaDayOfWeek, getBoliviaStartOfMonth, getBoliviaDateKey, getBoliviaHour } from '../../utils/timeUtils';
 import { getNetworkTimestamp } from '../../services/firebase';
 import { Stay, PaymentMethod } from '../../types';
 import {
@@ -27,6 +27,10 @@ import {
   Layers,
   Sparkles,
   Ban,
+  Sun,
+  ArrowUpRight,
+  ArrowDownRight,
+  Activity,
 } from 'lucide-react';
 import { SYSTEM_USERS } from '../../data/initialData';
 
@@ -53,6 +57,7 @@ export const SalesReports: React.FC = () => {
   const [selectedReceptionist, setSelectedReceptionist] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [reportPeriodTab, setReportPeriodTab] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   // Unify all stays (both active in rooms and completed in history)
   const allUnifiedStays: Stay[] = useMemo(() => {
@@ -240,24 +245,30 @@ export const SalesReports: React.FC = () => {
 
   const totalRevenue = totalBaseRoomRevenue + totalOvertimeRevenue + totalMinibarRevenue;
 
-  // Cash vs QR breakdown
+  // Cash vs QR breakdown (handles qr, qr_vendis, qr_union, efectivo, mixto accurately)
+  const getStayPaymentSplit = (s: Stay) => {
+    const consumptionsSum = (s.consumptions || []).reduce((sum, c) => sum + c.subtotal, 0);
+    const total = s.totalAmount || (s.baseRoomPrice || 0) + (s.overtimeCharge || 0) + consumptionsSum;
+    if (s.cashPaid !== undefined || s.qrPaid !== undefined || s.qrVendisPaid !== undefined || s.qrUnionPaid !== undefined) {
+      const cash = s.cashPaid || 0;
+      const qr = s.qrPaid !== undefined ? s.qrPaid : (s.qrVendisPaid || 0) + (s.qrUnionPaid || 0);
+      return { cash, qr, total };
+    }
+    if (s.paymentMethod === 'efectivo') return { cash: total, qr: 0, total };
+    if (s.paymentMethod === 'qr' || s.paymentMethod === 'qr_vendis' || s.paymentMethod === 'qr_union') {
+      return { cash: 0, qr: total, total };
+    }
+    const half = Math.round(total / 2);
+    return { cash: half, qr: total - half, total };
+  };
+
   let totalCash = 0;
   let totalQr = 0;
 
-  filteredStays.forEach((s) => {
-    if (s.cashPaid !== undefined || s.qrPaid !== undefined) {
-      totalCash += s.cashPaid || 0;
-      totalQr += s.qrPaid || 0;
-    } else if (s.paymentMethod === 'efectivo') {
-      totalCash += s.totalAmount || s.baseRoomPrice;
-    } else if (s.paymentMethod === 'qr') {
-      totalQr += s.totalAmount || s.baseRoomPrice;
-    } else {
-      // Mixed or default
-      const half = Math.round((s.totalAmount || s.baseRoomPrice) / 2);
-      totalCash += half;
-      totalQr += (s.totalAmount || s.baseRoomPrice) - half;
-    }
+  validStays.forEach((s) => {
+    const split = getStayPaymentSplit(s);
+    totalCash += split.cash;
+    totalQr += split.qr;
   });
 
   // Add extra consumptions cash / QR
@@ -345,11 +356,13 @@ export const SalesReports: React.FC = () => {
   const topPlansAndPromos = Object.values(planPopularityMap)
     .sort((a, b) => b.count - a.count);
 
-  // ── Ingresos Semanales y Mensuales (Globales) ──
+  // ── Ingresos Diarios, Semanales y Mensuales (Globales en hora de Bolivia) ──
   const nowMsAnalytics = getNetworkTimestamp();
   const todayStartAnalytics = getBoliviaStartOfDay(nowMsAnalytics);
+  const yesterdayStartAnalytics = todayStartAnalytics - 24 * 60 * 60 * 1000;
   const dayOfWeekAnalytics = getBoliviaDayOfWeek(nowMsAnalytics);
   const thisWeekStartAnalytics = todayStartAnalytics - ((dayOfWeekAnalytics === 0 ? 6 : dayOfWeekAnalytics - 1) * 24 * 60 * 60 * 1000);
+  const lastWeekStartAnalytics = thisWeekStartAnalytics - 7 * 24 * 60 * 60 * 1000;
   const thisMonthStartAnalytics = getBoliviaStartOfMonth(nowMsAnalytics);
 
   const nowD = new Date(nowMsAnalytics);
@@ -357,59 +370,355 @@ export const SalesReports: React.FC = () => {
   const lastMonthStartAnalytics = getBoliviaStartOfMonth(prevMonthRef.getTime());
   const lastMonthEndAnalytics = thisMonthStartAnalytics - 1;
 
-  let thisWeekRevenue = 0;
-  let thisWeekCount = 0;
-  let thisMonthRevenue = 0;
-  let thisMonthCount = 0;
-  let lastMonthRevenue = 0;
-  let lastMonthCount = 0;
+  const periodAnalytics = useMemo(() => {
+    let todayRev = 0, todayCash = 0, todayQr = 0, todayCount = 0;
+    let yesterdayRev = 0, yesterdayCount = 0;
+    let thisWeekRev = 0, thisWeekCash = 0, thisWeekQr = 0, thisWeekCount = 0;
+    let lastWeekRev = 0, lastWeekCount = 0;
+    let thisMonthRev = 0, thisMonthCash = 0, thisMonthQr = 0, thisMonthCount = 0;
+    let lastMonthRev = 0, lastMonthCount = 0;
 
-  allUnifiedStays.forEach((s) => {
-    if (s.status === 'cancelled') return;
-    const stayTime = new Date(s.startTime).getTime();
-    const amt = s.totalAmount || s.baseRoomPrice || 0;
-    if (stayTime >= thisWeekStartAnalytics) {
-      thisWeekRevenue += amt;
-      thisWeekCount += 1;
-    }
-    if (stayTime >= thisMonthStartAnalytics) {
-      thisMonthRevenue += amt;
-      thisMonthCount += 1;
-    } else if (stayTime >= lastMonthStartAnalytics && stayTime <= lastMonthEndAnalytics) {
-      lastMonthRevenue += amt;
-      lastMonthCount += 1;
-    }
-  });
+    // Hourly buckets for today (0..23)
+    const hourlyToday = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      label: `${h.toString().padStart(2, '0')}h`,
+      totalBs: 0,
+      count: 0,
+    }));
 
-  extraConsumptions.forEach((ec) => {
-    const ecTime = new Date(ec.date).getTime();
-    if (ecTime >= thisWeekStartAnalytics) {
-      thisWeekRevenue += ec.totalAmount;
-    }
-    if (ecTime >= thisMonthStartAnalytics) {
-      thisMonthRevenue += ec.totalAmount;
-    } else if (ecTime >= lastMonthStartAnalytics && ecTime <= lastMonthEndAnalytics) {
-      lastMonthRevenue += ec.totalAmount;
-    }
-  });
+    // Weekday comparison (0=Lun .. 6=Dom)
+    const weekdayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    const weekdayComparison = weekdayNames.map((label, idx) => ({
+      dayIdx: idx,
+      label,
+      thisWeekBs: 0,
+      lastWeekBs: 0,
+      thisWeekCount: 0,
+    }));
 
-  const monthGrowthPercent = lastMonthRevenue > 0 ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
+    // Daily map (all dates in Bolivia timezone)
+    const dailyMap: Record<string, {
+      dateKey: string;
+      label: string;
+      totalBs: number;
+      cash: number;
+      qr: number;
+      roomRev: number;
+      minibarAndExtrasRev: number;
+      count: number;
+    }> = {};
 
-  // ── Tendencia de Ingresos Diarios (Para Gráfico de Barras) ──
+    // Weekly map (key = Monday YYYY-MM-DD)
+    const weeklyMap: Record<string, {
+      weekKey: string;
+      label: string;
+      totalBs: number;
+      cash: number;
+      qr: number;
+      count: number;
+    }> = {};
+
+    // Monthly map (key = YYYY-MM)
+    const monthNamesEs = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const monthlyMap: Record<string, {
+      monthKey: string;
+      label: string;
+      totalBs: number;
+      cash: number;
+      qr: number;
+      roomRev: number;
+      minibarAndExtrasRev: number;
+      count: number;
+    }> = {};
+
+    const ensureDay = (dateKey: string) => {
+      if (!dailyMap[dateKey]) {
+        const [, m, d] = dateKey.split('-');
+        dailyMap[dateKey] = {
+          dateKey,
+          label: `${d}/${m}`,
+          totalBs: 0,
+          cash: 0,
+          qr: 0,
+          roomRev: 0,
+          minibarAndExtrasRev: 0,
+          count: 0,
+        };
+      }
+      return dailyMap[dateKey];
+    };
+
+    const ensureWeek = (ts: number) => {
+      const dayStart = getBoliviaStartOfDay(ts);
+      const dow = getBoliviaDayOfWeek(ts);
+      const mondayStart = dayStart - ((dow === 0 ? 6 : dow - 1) * 24 * 60 * 60 * 1000);
+      const sundayEnd = mondayStart + 6 * 24 * 60 * 60 * 1000;
+      const weekKey = getBoliviaDateKey(mondayStart);
+      if (!weeklyMap[weekKey]) {
+        const [, m1, d1] = weekKey.split('-');
+        const [, m2, d2] = getBoliviaDateKey(sundayEnd).split('-');
+        weeklyMap[weekKey] = {
+          weekKey,
+          label: `${d1}/${m1}–${d2}/${m2}`,
+          totalBs: 0,
+          cash: 0,
+          qr: 0,
+          count: 0,
+        };
+      }
+      return weeklyMap[weekKey];
+    };
+
+    const ensureMonth = (dateKey: string) => {
+      const monthKey = dateKey.slice(0, 7);
+      if (!monthlyMap[monthKey]) {
+        const [y, m] = monthKey.split('-');
+        const mIdx = Math.max(0, Math.min(11, parseInt(m, 10) - 1));
+        monthlyMap[monthKey] = {
+          monthKey,
+          label: `${monthNamesEs[mIdx]} ${y.slice(2)}`,
+          totalBs: 0,
+          cash: 0,
+          qr: 0,
+          roomRev: 0,
+          minibarAndExtrasRev: 0,
+          count: 0,
+        };
+      }
+      return monthlyMap[monthKey];
+    };
+
+    allUnifiedStays.forEach((s) => {
+      if (s.status === 'cancelled') return;
+      const stayTime = new Date(s.startTime).getTime();
+      if (Number.isNaN(stayTime)) return;
+      const split = getStayPaymentSplit(s);
+      const consumptionsSum = (s.consumptions || []).reduce((sum, c) => sum + c.subtotal, 0);
+      const roomBase = s.baseRoomPrice || 0;
+      const extras = (s.overtimeCharge || 0) + consumptionsSum;
+
+      if (stayTime >= todayStartAnalytics) {
+        todayRev += split.total;
+        todayCash += split.cash;
+        todayQr += split.qr;
+        todayCount += 1;
+        const h = getBoliviaHour(stayTime);
+        if (hourlyToday[h]) {
+          hourlyToday[h].totalBs += split.total;
+          hourlyToday[h].count += 1;
+        }
+      } else if (stayTime >= yesterdayStartAnalytics && stayTime < todayStartAnalytics) {
+        yesterdayRev += split.total;
+        yesterdayCount += 1;
+      }
+
+      if (stayTime >= thisWeekStartAnalytics) {
+        thisWeekRev += split.total;
+        thisWeekCash += split.cash;
+        thisWeekQr += split.qr;
+        thisWeekCount += 1;
+        const dow = getBoliviaDayOfWeek(stayTime);
+        const idx = dow === 0 ? 6 : dow - 1;
+        weekdayComparison[idx].thisWeekBs += split.total;
+        weekdayComparison[idx].thisWeekCount += 1;
+      } else if (stayTime >= lastWeekStartAnalytics && stayTime < thisWeekStartAnalytics) {
+        lastWeekRev += split.total;
+        lastWeekCount += 1;
+        const dow = getBoliviaDayOfWeek(stayTime);
+        const idx = dow === 0 ? 6 : dow - 1;
+        weekdayComparison[idx].lastWeekBs += split.total;
+      }
+
+      if (stayTime >= thisMonthStartAnalytics) {
+        thisMonthRev += split.total;
+        thisMonthCash += split.cash;
+        thisMonthQr += split.qr;
+        thisMonthCount += 1;
+      } else if (stayTime >= lastMonthStartAnalytics && stayTime <= lastMonthEndAnalytics) {
+        lastMonthRev += split.total;
+        lastMonthCount += 1;
+      }
+
+      const dateKey = getBoliviaDateKey(stayTime);
+      const dEntry = ensureDay(dateKey);
+      dEntry.totalBs += split.total;
+      dEntry.cash += split.cash;
+      dEntry.qr += split.qr;
+      dEntry.roomRev += roomBase;
+      dEntry.minibarAndExtrasRev += extras;
+      dEntry.count += 1;
+
+      const wEntry = ensureWeek(stayTime);
+      wEntry.totalBs += split.total;
+      wEntry.cash += split.cash;
+      wEntry.qr += split.qr;
+      wEntry.count += 1;
+
+      const mEntry = ensureMonth(dateKey);
+      mEntry.totalBs += split.total;
+      mEntry.cash += split.cash;
+      mEntry.qr += split.qr;
+      mEntry.roomRev += roomBase;
+      mEntry.minibarAndExtrasRev += extras;
+      mEntry.count += 1;
+    });
+
+    extraConsumptions.forEach((ec) => {
+      const ecTime = new Date(ec.date).getTime();
+      if (Number.isNaN(ecTime)) return;
+      const amt = ec.totalAmount || 0;
+      const isCash = ec.paymentMethod === 'efectivo';
+      const cash = isCash ? amt : 0;
+      const qr = isCash ? 0 : amt;
+
+      if (ecTime >= todayStartAnalytics) {
+        todayRev += amt;
+        todayCash += cash;
+        todayQr += qr;
+        const h = getBoliviaHour(ecTime);
+        if (hourlyToday[h]) {
+          hourlyToday[h].totalBs += amt;
+        }
+      } else if (ecTime >= yesterdayStartAnalytics && ecTime < todayStartAnalytics) {
+        yesterdayRev += amt;
+      }
+
+      if (ecTime >= thisWeekStartAnalytics) {
+        thisWeekRev += amt;
+        thisWeekCash += cash;
+        thisWeekQr += qr;
+        const dow = getBoliviaDayOfWeek(ecTime);
+        const idx = dow === 0 ? 6 : dow - 1;
+        weekdayComparison[idx].thisWeekBs += amt;
+      } else if (ecTime >= lastWeekStartAnalytics && ecTime < thisWeekStartAnalytics) {
+        lastWeekRev += amt;
+        const dow = getBoliviaDayOfWeek(ecTime);
+        const idx = dow === 0 ? 6 : dow - 1;
+        weekdayComparison[idx].lastWeekBs += amt;
+      }
+
+      if (ecTime >= thisMonthStartAnalytics) {
+        thisMonthRev += amt;
+        thisMonthCash += cash;
+        thisMonthQr += qr;
+      } else if (ecTime >= lastMonthStartAnalytics && ecTime <= lastMonthEndAnalytics) {
+        lastMonthRev += amt;
+      }
+
+      const dateKey = getBoliviaDateKey(ecTime);
+      const dEntry = ensureDay(dateKey);
+      dEntry.totalBs += amt;
+      dEntry.cash += cash;
+      dEntry.qr += qr;
+      dEntry.minibarAndExtrasRev += amt;
+
+      const wEntry = ensureWeek(ecTime);
+      wEntry.totalBs += amt;
+      wEntry.cash += cash;
+      wEntry.qr += qr;
+
+      const mEntry = ensureMonth(dateKey);
+      mEntry.totalBs += amt;
+      mEntry.cash += cash;
+      mEntry.qr += qr;
+      mEntry.minibarAndExtrasRev += amt;
+    });
+
+    const dailyListDesc = Object.values(dailyMap).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+    const dailyListAsc14 = dailyListDesc.slice(0, 14).reverse();
+    const maxDaily14 = Math.max(...dailyListAsc14.map((d) => d.totalBs), 1);
+
+    const weeklyListDesc = Object.values(weeklyMap).sort((a, b) => b.weekKey.localeCompare(a.weekKey));
+    const weeklyListAsc8 = weeklyListDesc.slice(0, 8).reverse();
+    const maxWeekly8 = Math.max(...weeklyListAsc8.map((w) => w.totalBs), 1);
+
+    const monthlyListDesc = Object.values(monthlyMap).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+    const monthlyListAsc12 = monthlyListDesc.slice(0, 12).reverse();
+    const maxMonthly12 = Math.max(...monthlyListAsc12.map((m) => m.totalBs), 1);
+
+    const maxHourly = Math.max(...hourlyToday.map((h) => h.totalBs), 1);
+    const maxWeekday = Math.max(...weekdayComparison.map((w) => Math.max(w.thisWeekBs, w.lastWeekBs)), 1);
+
+    // Month projection
+    const todayDateKey = getBoliviaDateKey(nowMsAnalytics);
+    const currentDayOfMonth = Math.max(1, parseInt(todayDateKey.slice(8, 10), 10) || 1);
+    const [curY, curM] = todayDateKey.split('-').map(Number);
+    const daysInCurrentMonth = new Date(curY, curM, 0).getDate();
+    const monthProjection = (thisMonthRev / currentDayOfMonth) * daysInCurrentMonth;
+
+    // Best day this month
+    const currentMonthPrefix = todayDateKey.slice(0, 7);
+    const currentMonthDays = dailyListDesc.filter((d) => d.dateKey.startsWith(currentMonthPrefix));
+    const bestDayThisMonth = currentMonthDays.reduce(
+      (best, cur) => (cur.totalBs > best.totalBs ? cur : best),
+      { dateKey: '', label: '—', totalBs: 0, count: 0 }
+    );
+    const avgDailyThisMonth = currentMonthDays.length > 0 ? thisMonthRev / currentDayOfMonth : 0;
+
+    return {
+      todayRev,
+      todayCash,
+      todayQr,
+      todayCount,
+      yesterdayRev,
+      yesterdayCount,
+      dailyGrowthPercent: yesterdayRev > 0 ? ((todayRev - yesterdayRev) / yesterdayRev) * 100 : 0,
+      thisWeekRev,
+      thisWeekCash,
+      thisWeekQr,
+      thisWeekCount,
+      lastWeekRev,
+      lastWeekCount,
+      weeklyGrowthPercent: lastWeekRev > 0 ? ((thisWeekRev - lastWeekRev) / lastWeekRev) * 100 : 0,
+      thisMonthRev,
+      thisMonthCash,
+      thisMonthQr,
+      thisMonthCount,
+      lastMonthRev,
+      lastMonthCount,
+      monthGrowthPercent: lastMonthRev > 0 ? ((thisMonthRev - lastMonthRev) / lastMonthRev) * 100 : 0,
+      monthProjection,
+      avgDailyThisMonth,
+      bestDayThisMonth,
+      hourlyToday,
+      maxHourly,
+      weekdayComparison,
+      maxWeekday,
+      dailyListDesc,
+      dailyListAsc14,
+      maxDaily14,
+      weeklyListDesc,
+      weeklyListAsc8,
+      maxWeekly8,
+      monthlyListDesc,
+      monthlyListAsc12,
+      maxMonthly12,
+    };
+  }, [allUnifiedStays, extraConsumptions, todayStartAnalytics, yesterdayStartAnalytics, thisWeekStartAnalytics, lastWeekStartAnalytics, thisMonthStartAnalytics, lastMonthStartAnalytics, lastMonthEndAnalytics, nowMsAnalytics]);
+
+  const thisWeekRevenue = periodAnalytics.thisWeekRev;
+  const thisWeekCount = periodAnalytics.thisWeekCount;
+  const thisMonthRevenue = periodAnalytics.thisMonthRev;
+  const thisMonthCount = periodAnalytics.thisMonthCount;
+  const lastMonthRevenue = periodAnalytics.lastMonthRev;
+  const lastMonthCount = periodAnalytics.lastMonthCount;
+  const monthGrowthPercent = periodAnalytics.monthGrowthPercent;
+
+  // ── Tendencia de Ingresos Diarios (Para Gráfico de Barras del filtro activo en hora de Bolivia) ──
   const dailyTrendList = useMemo(() => {
-    const map: Record<string, { dateStr: string; label: string; totalBs: number; count: number }> = {};
+    const map: Record<string, { dateStr: string; label: string; totalBs: number; cash: number; qr: number; count: number }> = {};
     validStays.forEach((s) => {
-      const d = new Date(s.startTime);
-      const year = d.getFullYear();
-      const month = (d.getMonth() + 1).toString().padStart(2, '0');
-      const day = d.getDate().toString().padStart(2, '0');
-      const dateKey = `${year}-${month}-${day}`;
+      const dateKey = getBoliviaDateKey(s.startTime);
+      const [, month, day] = dateKey.split('-');
       const label = `${day}/${month}`;
+      const split = getStayPaymentSplit(s);
 
       if (!map[dateKey]) {
-        map[dateKey] = { dateStr: dateKey, label, totalBs: 0, count: 0 };
+        map[dateKey] = { dateStr: dateKey, label, totalBs: 0, cash: 0, qr: 0, count: 0 };
       }
-      map[dateKey].totalBs += (s.totalAmount || s.baseRoomPrice || 0);
+      map[dateKey].totalBs += split.total;
+      map[dateKey].cash += split.cash;
+      map[dateKey].qr += split.qr;
       map[dateKey].count += 1;
     });
 
@@ -472,7 +781,7 @@ export const SalesReports: React.FC = () => {
         </div>
 
         {/* Data Management Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <input
             type="file"
             ref={fileInputRef}
@@ -483,7 +792,7 @@ export const SalesReports: React.FC = () => {
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs"
+            className="flex-1 sm:flex-initial justify-center px-3.5 py-2.5 sm:py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs"
           >
             <Upload className="w-3.5 h-3.5" />
             Importar Backup
@@ -491,7 +800,7 @@ export const SalesReports: React.FC = () => {
 
           <button
             onClick={exportDatabaseJson}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+            className="flex-1 sm:flex-initial justify-center px-3.5 py-2.5 sm:py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
           >
             <Download className="w-3.5 h-3.5" />
             Exportar Backup JSON
@@ -765,14 +1074,636 @@ export const SalesReports: React.FC = () => {
         </div>
       </div>
 
-      {/* 📈 GRÁFICA DE TENDENCIA DIARIA / CRONOLÓGICA */}
+      {/* ======================================================== */}
+      {/* 📊 CENTRO DE INFORMES DE INGRESOS: DIARIO • SEMANAL • MENSUAL */}
+      {/* ======================================================== */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Header + Period Tabs */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70">
+          <div>
+            <div className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-brand-600 shrink-0" />
+              <h3 className="font-black text-base text-slate-900">
+                Informe de Ingresos: Diario, Semanal y Mensual
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Comparativas claras, desglose Efectivo vs QR y gráficas de evolución en hora de Bolivia.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5 bg-slate-200/70 p-1 rounded-xl w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setReportPeriodTab('daily')}
+              className={`px-3 py-2 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
+                reportPeriodTab === 'daily'
+                  ? 'bg-white text-brand-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" />
+              <span>Diario</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportPeriodTab('weekly')}
+              className={`px-3 py-2 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
+                reportPeriodTab === 'weekly'
+                  ? 'bg-white text-brand-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Semanal</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportPeriodTab('monthly')}
+              className={`px-3 py-2 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
+                reportPeriodTab === 'monthly'
+                  ? 'bg-white text-brand-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span>Mensual</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-5 space-y-6">
+          {/* ────────────────── TAB 1: DIARIO ────────────────── */}
+          {reportPeriodTab === 'daily' && (
+            <div className="space-y-5">
+              {/* Daily Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-gradient-to-br from-emerald-50 to-white p-4 rounded-xl border border-emerald-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold text-emerald-800 uppercase">Ingresos Hoy</span>
+                    {periodAnalytics.yesterdayRev > 0 && (
+                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        periodAnalytics.dailyGrowthPercent >= 0
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {periodAnalytics.dailyGrowthPercent >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                        {periodAnalytics.dailyGrowthPercent >= 0 ? '+' : ''}{periodAnalytics.dailyGrowthPercent.toFixed(0)}% vs Ayer
+                      </span>
+                    )}
+                  </div>
+                  <strong className="text-2xl font-black font-mono text-slate-900 block mt-1">
+                    {formatBs(periodAnalytics.todayRev)}
+                  </strong>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-600">
+                    <span>{periodAnalytics.todayCount} hab.</span>
+                    <span className="text-emerald-700 font-bold">Efec: {formatBs(periodAnalytics.todayCash)}</span>
+                    <span className="text-sky-700 font-bold">QR: {formatBs(periodAnalytics.todayQr)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-extrabold text-slate-500 uppercase block">Ayer</span>
+                  <strong className="text-2xl font-black font-mono text-slate-800 block mt-1">
+                    {formatBs(periodAnalytics.yesterdayRev)}
+                  </strong>
+                  <span className="text-[11px] text-slate-500 mt-1.5 block">
+                    {periodAnalytics.yesterdayCount} habitaciones registradas
+                  </span>
+                </div>
+
+                <div className="bg-amber-50/70 p-4 rounded-xl border border-amber-200">
+                  <span className="text-[11px] font-extrabold text-amber-800 uppercase block">Promedio & Mejor Día (Mes)</span>
+                  <strong className="text-2xl font-black font-mono text-amber-950 block mt-1">
+                    {formatBs(periodAnalytics.avgDailyThisMonth)}
+                    <span className="text-xs font-semibold text-amber-700"> /día</span>
+                  </strong>
+                  <span className="text-[11px] text-amber-800 mt-1.5 block">
+                    Mejor: <strong>{periodAnalytics.bestDayThisMonth.label}</strong> ({formatBs(periodAnalytics.bestDayThisMonth.totalBs)})
+                  </span>
+                </div>
+              </div>
+
+              {/* Charts Grid: Últimos 14 Días (Apilado Efec/QR) + Por Hora Hoy */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Stacked Daily Chart (Last 14 Days) */}
+                <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 text-brand-600" />
+                      Últimos 14 Días (Efectivo vs QR)
+                    </h4>
+                    <div className="flex items-center gap-3 text-[10px] font-bold">
+                      <span className="flex items-center gap-1 text-emerald-700">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> Efectivo
+                      </span>
+                      <span className="flex items-center gap-1 text-sky-700">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-sky-500 inline-block" /> QR
+                      </span>
+                    </div>
+                  </div>
+
+                  {periodAnalytics.dailyListAsc14.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400">Sin datos diarios aún.</div>
+                  ) : (
+                    <div className="overflow-x-auto pb-1">
+                      <div className="flex items-end justify-between gap-1.5 h-44 min-w-[340px] pt-6 px-1">
+                        {periodAnalytics.dailyListAsc14.map((d) => {
+                          const totalH = Math.max(8, (d.totalBs / periodAnalytics.maxDaily14) * 100);
+                          const cashShare = d.totalBs > 0 ? (d.cash / d.totalBs) * 100 : 0;
+                          const qrShare = 100 - cashShare;
+                          return (
+                            <div key={d.dateKey} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                                {d.label}: {formatBs(d.totalBs)} ({d.count} hab.)
+                              </div>
+                              <span className="text-[9px] font-mono font-bold text-slate-500">
+                                {Math.round(d.totalBs)}
+                              </span>
+                              <div className="w-full max-w-[26px] bg-slate-200/70 rounded-t-md overflow-hidden flex flex-col justify-end h-[120px]">
+                                <div style={{ height: `${totalH}%` }} className="w-full flex flex-col justify-end rounded-t-md overflow-hidden">
+                                  <div style={{ height: `${qrShare}%` }} className="w-full bg-sky-500" />
+                                  <div style={{ height: `${cashShare}%` }} className="w-full bg-emerald-500" />
+                                </div>
+                              </div>
+                              <span className="text-[9px] font-bold text-slate-600">{d.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Hourly Peak Chart (Today) */}
+                <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-indigo-600" />
+                      Ingresos de Hoy por Hora (00h–23h)
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-500">Hora Bolivia</span>
+                  </div>
+
+                  <div className="overflow-x-auto pb-1">
+                    <div className="flex items-end justify-between gap-0.5 h-44 min-w-[360px] pt-6 px-1">
+                      {periodAnalytics.hourlyToday.map((h) => {
+                        const heightPct = h.totalBs > 0 ? Math.max(10, (h.totalBs / periodAnalytics.maxHourly) * 100) : 3;
+                        return (
+                          <div key={h.hour} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
+                            {h.totalBs > 0 && (
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                                {h.label}: {formatBs(h.totalBs)} ({h.count} hab.)
+                              </div>
+                            )}
+                            <div className="w-full bg-slate-200/50 rounded-t flex items-end h-[120px]">
+                              <div
+                                style={{ height: `${heightPct}%` }}
+                                className={`w-full rounded-t transition-all ${
+                                  h.totalBs > 0
+                                    ? 'bg-gradient-to-t from-indigo-600 to-violet-400'
+                                    : 'bg-slate-200'
+                                }`}
+                              />
+                            </div>
+                            <span className="text-[8px] font-bold text-slate-500">
+                              {h.hour % 3 === 0 ? h.hour.toString().padStart(2, '0') : ''}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Detail: Mobile Cards + Desktop Table */}
+              <div>
+                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-2.5">
+                  Detalle Día por Día (Últimos 15 días con movimiento)
+                </h4>
+                {periodAnalytics.dailyListDesc.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-4 text-center">No hay días registrados.</p>
+                ) : (
+                  <>
+                    {/* Mobile Cards */}
+                    <div className="grid grid-cols-1 gap-2.5 md:hidden">
+                      {periodAnalytics.dailyListDesc.slice(0, 15).map((d) => (
+                        <div key={d.dateKey} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <strong className="text-sm font-black text-slate-900">{d.label}</strong>
+                              <span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600">
+                                {d.count} hab.
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2.5 text-[11px] text-slate-600 mt-1">
+                              <span className="text-emerald-700 font-bold">Efec: {formatBs(d.cash)}</span>
+                              <span className="text-sky-700 font-bold">QR: {formatBs(d.qr)}</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <strong className="text-base font-black font-mono text-brand-700 block">{formatBs(d.totalBs)}</strong>
+                            <span className="text-[10px] text-slate-400">Extras: {formatBs(d.minibarAndExtrasRev)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Desktop Table */}
+                    <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[10px]">
+                          <tr>
+                            <th className="py-2.5 px-3">Fecha</th>
+                            <th className="py-2.5 px-3 text-center">Estadías</th>
+                            <th className="py-2.5 px-3 text-right">Habitaciones</th>
+                            <th className="py-2.5 px-3 text-right">Minibar & Extras</th>
+                            <th className="py-2.5 px-3 text-right">Efectivo</th>
+                            <th className="py-2.5 px-3 text-right">QR</th>
+                            <th className="py-2.5 px-3 text-right">Total Día</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {periodAnalytics.dailyListDesc.slice(0, 15).map((d) => (
+                            <tr key={d.dateKey} className="hover:bg-slate-50">
+                              <td className="py-2.5 px-3 font-bold text-slate-900">{d.dateKey}</td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold">{d.count}</td>
+                              <td className="py-2.5 px-3 text-right font-mono">{formatBs(d.roomRev)}</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-slate-600">{formatBs(d.minibarAndExtrasRev)}</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-emerald-700 font-bold">{formatBs(d.cash)}</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-sky-700 font-bold">{formatBs(d.qr)}</td>
+                              <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">{formatBs(d.totalBs)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ────────────────── TAB 2: SEMANAL ────────────────── */}
+          {reportPeriodTab === 'weekly' && (
+            <div className="space-y-5">
+              {/* Weekly Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-gradient-to-br from-indigo-50 to-white p-4 rounded-xl border border-indigo-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold text-indigo-800 uppercase">Esta Semana (Lun–Hoy)</span>
+                    {periodAnalytics.lastWeekRev > 0 && (
+                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        periodAnalytics.weeklyGrowthPercent >= 0
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {periodAnalytics.weeklyGrowthPercent >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                        {periodAnalytics.weeklyGrowthPercent >= 0 ? '+' : ''}{periodAnalytics.weeklyGrowthPercent.toFixed(0)}% vs Sem. Pasada
+                      </span>
+                    )}
+                  </div>
+                  <strong className="text-2xl font-black font-mono text-slate-900 block mt-1">
+                    {formatBs(periodAnalytics.thisWeekRev)}
+                  </strong>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-600">
+                    <span>{periodAnalytics.thisWeekCount} hab.</span>
+                    <span className="text-emerald-700 font-bold">Efec: {formatBs(periodAnalytics.thisWeekCash)}</span>
+                    <span className="text-sky-700 font-bold">QR: {formatBs(periodAnalytics.thisWeekQr)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-extrabold text-slate-500 uppercase block">Semana Pasada (Lun–Dom)</span>
+                  <strong className="text-2xl font-black font-mono text-slate-800 block mt-1">
+                    {formatBs(periodAnalytics.lastWeekRev)}
+                  </strong>
+                  <span className="text-[11px] text-slate-500 mt-1.5 block">
+                    {periodAnalytics.lastWeekCount} habitaciones cerradas
+                  </span>
+                </div>
+
+                <div className="bg-rose-50/70 p-4 rounded-xl border border-rose-200">
+                  <span className="text-[11px] font-extrabold text-brand-800 uppercase block">Ticket Promedio Semanal</span>
+                  <strong className="text-2xl font-black font-mono text-brand-950 block mt-1">
+                    {formatBs(periodAnalytics.thisWeekCount > 0 ? periodAnalytics.thisWeekRev / periodAnalytics.thisWeekCount : 0)}
+                    <span className="text-xs font-semibold text-brand-700"> /hab.</span>
+                  </strong>
+                  <span className="text-[11px] text-brand-800 mt-1.5 block">
+                    Ingreso promedio por estadía esta semana
+                  </span>
+                </div>
+              </div>
+
+              {/* Weekly Charts Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Mon-Sun Grouped Bar Chart: This Week vs Last Week */}
+                <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-brand-600" />
+                      Comparativa Lun–Dom (Actual vs Pasada)
+                    </h4>
+                    <div className="flex items-center gap-3 text-[10px] font-bold">
+                      <span className="flex items-center gap-1 text-brand-700">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-brand-600 inline-block" /> Esta Sem.
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-500">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-slate-300 inline-block" /> Pasada
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-end justify-between gap-2 h-44 pt-6 px-1">
+                    {periodAnalytics.weekdayComparison.map((w) => {
+                      const hThis = w.thisWeekBs > 0 ? Math.max(8, (w.thisWeekBs / periodAnalytics.maxWeekday) * 100) : 3;
+                      const hLast = w.lastWeekBs > 0 ? Math.max(8, (w.lastWeekBs / periodAnalytics.maxWeekday) * 100) : 3;
+                      return (
+                        <div key={w.label} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                            {w.label}: Hoy {formatBs(w.thisWeekBs)} | Ant {formatBs(w.lastWeekBs)}
+                          </div>
+                          <span className="text-[9px] font-mono font-bold text-brand-700">
+                            {w.thisWeekBs > 0 ? Math.round(w.thisWeekBs) : ''}
+                          </span>
+                          <div className="w-full flex items-end justify-center gap-1 h-[115px]">
+                            <div
+                              style={{ height: `${hLast}%` }}
+                              className="w-2.5 sm:w-3.5 bg-slate-300 rounded-t"
+                            />
+                            <div
+                              style={{ height: `${hThis}%` }}
+                              className="w-2.5 sm:w-3.5 bg-gradient-to-t from-brand-600 to-rose-400 rounded-t"
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-700">{w.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Last 8 Weeks Stacked Chart */}
+                <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 text-indigo-600" />
+                      Últimas 8 Semanas (Efectivo vs QR)
+                    </h4>
+                  </div>
+
+                  {periodAnalytics.weeklyListAsc8.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400">Sin datos semanales aún.</div>
+                  ) : (
+                    <div className="overflow-x-auto pb-1">
+                      <div className="flex items-end justify-between gap-2 h-44 min-w-[320px] pt-6 px-1">
+                        {periodAnalytics.weeklyListAsc8.map((w) => {
+                          const totalH = Math.max(8, (w.totalBs / periodAnalytics.maxWeekly8) * 100);
+                          const cashShare = w.totalBs > 0 ? (w.cash / w.totalBs) * 100 : 0;
+                          const qrShare = 100 - cashShare;
+                          return (
+                            <div key={w.weekKey} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                                {w.label}: {formatBs(w.totalBs)} ({w.count} hab.)
+                              </div>
+                              <span className="text-[9px] font-mono font-bold text-slate-600">
+                                {Math.round(w.totalBs)}
+                              </span>
+                              <div className="w-full max-w-[32px] bg-slate-200/70 rounded-t-md overflow-hidden flex flex-col justify-end h-[115px]">
+                                <div style={{ height: `${totalH}%` }} className="w-full flex flex-col justify-end rounded-t-md overflow-hidden">
+                                  <div style={{ height: `${qrShare}%` }} className="w-full bg-sky-500" />
+                                  <div style={{ height: `${cashShare}%` }} className="w-full bg-emerald-500" />
+                                </div>
+                              </div>
+                              <span className="text-[8px] sm:text-[9px] font-bold text-slate-600 truncate max-w-[52px]">{w.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Weekly Detail: Mobile Cards + Desktop Table */}
+              <div>
+                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-2.5">
+                  Historial Semanal (Últimas 8 semanas)
+                </h4>
+                <div className="grid grid-cols-1 gap-2.5 md:hidden">
+                  {periodAnalytics.weeklyListDesc.slice(0, 8).map((w) => (
+                    <div key={w.weekKey} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                      <div>
+                        <strong className="text-sm font-black text-slate-900 block">Sem. {w.label}</strong>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-600 mt-1">
+                          <span>{w.count} hab.</span>
+                          <span className="text-emerald-700 font-bold">Efec: {formatBs(w.cash)}</span>
+                          <span className="text-sky-700 font-bold">QR: {formatBs(w.qr)}</span>
+                        </div>
+                      </div>
+                      <strong className="text-base font-black font-mono text-brand-700">{formatBs(w.totalBs)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Semana (Lun–Dom)</th>
+                        <th className="py-2.5 px-3 text-center">Estadías</th>
+                        <th className="py-2.5 px-3 text-right">Prom. / Día</th>
+                        <th className="py-2.5 px-3 text-right">Efectivo</th>
+                        <th className="py-2.5 px-3 text-right">QR</th>
+                        <th className="py-2.5 px-3 text-right">Total Semana</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {periodAnalytics.weeklyListDesc.slice(0, 8).map((w) => (
+                        <tr key={w.weekKey} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{w.label}</td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold">{w.count}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-600">{formatBs(w.totalBs / 7)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-emerald-700 font-bold">{formatBs(w.cash)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-sky-700 font-bold">{formatBs(w.qr)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">{formatBs(w.totalBs)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ────────────────── TAB 3: MENSUAL ────────────────── */}
+          {reportPeriodTab === 'monthly' && (
+            <div className="space-y-5">
+              {/* Monthly Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-gradient-to-br from-purple-50 to-white p-4 rounded-xl border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold text-purple-800 uppercase">Este Mes (Acumulado)</span>
+                    {periodAnalytics.lastMonthRev > 0 && (
+                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        periodAnalytics.monthGrowthPercent >= 0
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {periodAnalytics.monthGrowthPercent >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                        {periodAnalytics.monthGrowthPercent >= 0 ? '+' : ''}{periodAnalytics.monthGrowthPercent.toFixed(0)}% vs Mes Ant.
+                      </span>
+                    )}
+                  </div>
+                  <strong className="text-2xl font-black font-mono text-slate-900 block mt-1">
+                    {formatBs(periodAnalytics.thisMonthRev)}
+                  </strong>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-600">
+                    <span>{periodAnalytics.thisMonthCount} hab.</span>
+                    <span className="text-emerald-700 font-bold">Efec: {formatBs(periodAnalytics.thisMonthCash)}</span>
+                    <span className="text-sky-700 font-bold">QR: {formatBs(periodAnalytics.thisMonthQr)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-extrabold text-slate-500 uppercase block">Mes Anterior</span>
+                  <strong className="text-2xl font-black font-mono text-slate-800 block mt-1">
+                    {formatBs(periodAnalytics.lastMonthRev)}
+                  </strong>
+                  <span className="text-[11px] text-slate-500 mt-1.5 block">
+                    {periodAnalytics.lastMonthCount} estancias cerradas
+                  </span>
+                </div>
+
+                <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200">
+                  <span className="text-[11px] font-extrabold text-emerald-800 uppercase block">Proyección Cierre de Mes</span>
+                  <strong className="text-2xl font-black font-mono text-emerald-950 block mt-1">
+                    {formatBs(periodAnalytics.monthProjection)}
+                  </strong>
+                  <span className="text-[11px] text-emerald-700 mt-1.5 block">
+                    Estimado según ritmo diario actual
+                  </span>
+                </div>
+              </div>
+
+              {/* Monthly Evolution Chart (Last 12 Months) */}
+              <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    <BarChart3 className="w-4 h-4 text-purple-600" />
+                    Evolución Mensual (Efectivo vs QR)
+                  </h4>
+                  <div className="flex items-center gap-3 text-[10px] font-bold">
+                    <span className="flex items-center gap-1 text-emerald-700">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> Efectivo
+                    </span>
+                    <span className="flex items-center gap-1 text-sky-700">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-500 inline-block" /> QR
+                    </span>
+                  </div>
+                </div>
+
+                {periodAnalytics.monthlyListAsc12.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400">Sin datos mensuales aún.</div>
+                ) : (
+                  <div className="overflow-x-auto pb-1">
+                    <div className="flex items-end justify-between gap-2 h-48 min-w-[320px] pt-6 px-1">
+                      {periodAnalytics.monthlyListAsc12.map((m) => {
+                        const totalH = Math.max(8, (m.totalBs / periodAnalytics.maxMonthly12) * 100);
+                        const cashShare = m.totalBs > 0 ? (m.cash / m.totalBs) * 100 : 0;
+                        const qrShare = 100 - cashShare;
+                        return (
+                          <div key={m.monthKey} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                              {m.label}: {formatBs(m.totalBs)} ({m.count} hab.)
+                            </div>
+                            <span className="text-[9px] font-mono font-bold text-slate-600">
+                              {Math.round(m.totalBs)}
+                            </span>
+                            <div className="w-full max-w-[36px] bg-slate-200/70 rounded-t-md overflow-hidden flex flex-col justify-end h-[125px]">
+                              <div style={{ height: `${totalH}%` }} className="w-full flex flex-col justify-end rounded-t-md overflow-hidden">
+                                <div style={{ height: `${qrShare}%` }} className="w-full bg-sky-500" />
+                                <div style={{ height: `${cashShare}%` }} className="w-full bg-emerald-500" />
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-700">{m.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Monthly Detail: Mobile Cards + Desktop Table */}
+              <div>
+                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-2.5">
+                  Resumen Mes por Mes
+                </h4>
+                <div className="grid grid-cols-1 gap-2.5 md:hidden">
+                  {periodAnalytics.monthlyListDesc.map((m) => (
+                    <div key={m.monthKey} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-sm font-black text-slate-900">{m.label}</strong>
+                          <span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600">
+                            {m.count} hab.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-[11px] text-slate-600 mt-1">
+                          <span className="text-emerald-700 font-bold">Efec: {formatBs(m.cash)}</span>
+                          <span className="text-sky-700 font-bold">QR: {formatBs(m.qr)}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <strong className="text-base font-black font-mono text-purple-700 block">{formatBs(m.totalBs)}</strong>
+                        <span className="text-[10px] text-slate-400">Extras: {formatBs(m.minibarAndExtrasRev)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Mes</th>
+                        <th className="py-2.5 px-3 text-center">Estadías</th>
+                        <th className="py-2.5 px-3 text-right">Habitaciones</th>
+                        <th className="py-2.5 px-3 text-right">Minibar & Extras</th>
+                        <th className="py-2.5 px-3 text-right">Efectivo</th>
+                        <th className="py-2.5 px-3 text-right">QR</th>
+                        <th className="py-2.5 px-3 text-right">Total Mes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {periodAnalytics.monthlyListDesc.map((m) => (
+                        <tr key={m.monthKey} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{m.label} ({m.monthKey})</td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold">{m.count}</td>
+                          <td className="py-2.5 px-3 text-right font-mono">{formatBs(m.roomRev)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-600">{formatBs(m.minibarAndExtrasRev)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-emerald-700 font-bold">{formatBs(m.cash)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-sky-700 font-bold">{formatBs(m.qr)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">{formatBs(m.totalBs)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 📈 GRÁFICA DE TENDENCIA DIARIA DEL FILTRO ACTIVO */}
       {dailyTrendList.list.length > 0 && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-brand-600" />
               <h3 className="font-extrabold text-sm text-slate-900">
-                Gráfica de Tendencia: Evolución Diaria de Ventas
+                Tendencia del Filtro Seleccionado (Día por Día)
               </h3>
             </div>
             <span className="text-xs font-bold text-slate-400">
@@ -780,30 +1711,30 @@ export const SalesReports: React.FC = () => {
             </span>
           </div>
 
-          {/* Bar Chart Visual */}
-          <div className="pt-4 pb-2">
-            <div className="flex items-end justify-between gap-1.5 h-44 px-2">
+          {/* Bar Chart Visual (Scrollable cleanly on mobile if many days) */}
+          <div className="overflow-x-auto pb-2">
+            <div className="flex items-end justify-between gap-1.5 h-44 px-2 pt-6" style={{ minWidth: `${Math.max(320, dailyTrendList.list.length * 36)}px` }}>
               {dailyTrendList.list.map((item) => {
                 const heightPercent = Math.max(8, (item.totalBs / dailyTrendList.maxRevenue) * 100);
                 return (
-                  <div key={item.dateStr} className="flex-1 flex flex-col items-center gap-1 group relative">
+                  <div key={item.dateStr} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
                     {/* Tooltip on hover */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 bg-slate-900 text-white text-[10px] font-mono font-bold px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-20 pointer-events-none">
                       {item.label}: {formatBs(item.totalBs)} ({item.count} hab.)
                     </div>
 
-                    <span className="text-[9px] font-mono font-bold text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {formatBs(item.totalBs)}
+                    <span className="text-[9px] font-mono font-bold text-slate-500">
+                      {Math.round(item.totalBs)}
                     </span>
 
-                    <div className="w-full max-w-[28px] bg-slate-100 rounded-t-lg overflow-hidden flex items-end h-full">
+                    <div className="w-full max-w-[28px] bg-slate-100 rounded-t-lg overflow-hidden flex items-end h-[120px]">
                       <div
                         style={{ height: `${heightPercent}%` }}
                         className="w-full bg-gradient-to-t from-brand-600 to-rose-400 group-hover:from-brand-500 group-hover:to-rose-300 transition-all rounded-t-lg"
                       />
                     </div>
 
-                    <span className="text-[10px] font-bold text-slate-600 truncate max-w-[32px]">
+                    <span className="text-[10px] font-bold text-slate-600 truncate max-w-[34px]">
                       {item.label}
                     </span>
                   </div>
@@ -1245,7 +2176,90 @@ export const SalesReports: React.FC = () => {
             No se encontraron habitaciones registradas con los filtros actuales.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* Mobile Card List (No horizontal zoom/scroll needed) */}
+            <div className="md:hidden divide-y divide-slate-200 px-3 pb-3 space-y-2.5">
+              {filteredStays.map((stay) => {
+                const consumptionsSum = (stay.consumptions || []).reduce((sum, c) => sum + c.subtotal, 0);
+                const finalTotal = stay.totalAmount || (stay.baseRoomPrice + (stay.overtimeCharge || 0) + consumptionsSum);
+
+                return (
+                  <div key={stay.id} className="bg-slate-50/90 rounded-xl border border-slate-200 p-3.5 space-y-2.5">
+                    {/* Top Row: Room + Status + Total */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <strong className="font-black text-slate-900 text-sm">{stay.roomName}</strong>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getRoomBadgeColor(stay.roomType)}`}>
+                            {getRoomTypeLabel(stay.roomType)}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-semibold text-slate-500 block mt-0.5">
+                          {formatDateTime(stay.startTime)}
+                          {stay.endTime ? ` → ${formatTimeOnly(stay.endTime)}` : ' • En curso'}
+                        </span>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <strong className="text-base font-black font-mono text-slate-900 block">
+                          {formatBs(finalTotal)}
+                        </strong>
+                        {stay.status === 'cancelled' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                            ANULADA
+                          </span>
+                        ) : stay.status === 'active' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Ocupada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                            Finalizada
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Details Row */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] pt-2 border-t border-slate-200/80">
+                      <span className="font-bold text-slate-700">
+                        👤 {stay.receptionistName}
+                      </span>
+                      <span className="font-bold text-slate-800">
+                        {getPlanLabel(stay.chosenPlan)} ({formatBs(stay.baseRoomPrice)})
+                      </span>
+                      <span className="font-semibold text-slate-600">
+                        {stay.paymentMethod === 'efectivo' ? '💵 Efectivo' : stay.paymentMethod === 'qr' || stay.paymentMethod === 'qr_vendis' || stay.paymentMethod === 'qr_union' ? '📱 QR' : '💳 Mixto'}
+                      </span>
+                    </div>
+
+                    {/* Consumptions / Overtime / Plate if any */}
+                    {((stay.consumptions && stay.consumptions.length > 0) || (stay.overtimeCharge && stay.overtimeCharge > 0) || stay.vehiclePlate) && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px]">
+                        {stay.vehiclePlate && (
+                          <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-mono text-slate-600">
+                            🚗 {stay.vehiclePlate}
+                          </span>
+                        )}
+                        {stay.overtimeCharge && stay.overtimeCharge > 0 && (
+                          <span className="bg-rose-100 text-brand-800 font-bold px-2 py-0.5 rounded border border-rose-200 font-mono">
+                            ⏱️ +{formatBs(stay.overtimeCharge)} ({stay.overtimeMinutes}m)
+                          </span>
+                        )}
+                        {stay.consumptions && stay.consumptions.length > 0 && (
+                          <span className="bg-amber-50 text-amber-900 font-bold px-2 py-0.5 rounded border border-amber-200">
+                            🍾 Minibar: +{formatBs(consumptionsSum)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-y border-slate-200">
                 <tr>
@@ -1409,7 +2423,8 @@ export const SalesReports: React.FC = () => {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>
